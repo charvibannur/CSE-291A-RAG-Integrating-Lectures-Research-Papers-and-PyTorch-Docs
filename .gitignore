@@ -1,34 +1,27 @@
-# Byte-compiled / cache files
+
 __pycache__/
 *.py[cod]
 *.pyo
 
-# Virtual environments
 .venv/
 venv/
 env/
 
-# System files
 .DS_Store
 Thumbs.db
 
-# Logs and checkpoints
 *.log
 *.ckpt
 *.pth
 
-# Jupyter notebook checkpoints
 .ipynb_checkpoints/
 
-# Large data or output folders
 data/
 outputs/
 runs/
 
-# Environment variables or API keys
 .env
 
-# Build or distribution folders
 build/
 dist/
 *.egg-info/
