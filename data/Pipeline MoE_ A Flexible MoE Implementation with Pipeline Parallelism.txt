@@ -1,0 +1,719 @@
+Technical Report
+PIPELINE MOE: A F LEXIBLE MOE IMPLEMENTATION
+WITH PIPELINE PARALLELISM
+Xin Chen, Hengheng Zhang, Xiaotao Gu, Kaifeng Bi, Lingxi Xie, Qi Tian
+Huawei Cloud
+fchenxin061, imhmhm, guxt1994, 198808xc g@gmail.com
+fbikaifeng1, tian.qi1 g@huawei.com
+ABSTRACT
+The Mixture of Experts (MoE) model becomes an important choice of large lan-
+guage models nowadays because of its scalability with sublinear computational
+complexity for training and inference. However, existing MoE models suffer
+from two critical drawbacks, 1) tremendous inner-node and inter-node communi-
+cation overhead introduced by all-to-all dispatching and gathering, and 2) limited
+scalability for the backbone because of the bound data parallel and expert par-
+allel to scale in the expert dimension. In this paper, we systematically analyze
+these drawbacks in terms of training efﬁciency in the parallel framework view
+and propose a novel MoE architecture called Pipeline MoE (PPMoE) to tackle
+them. PPMoE builds expert parallel incorporating with tensor parallel and re-
+places communication-intensive all-to-all dispatching and gathering with a simple
+tensor index slicing and inner-node all-reduce. Besides, it is convenient for PP-
+MoE to integrate pipeline parallel to further scale the backbone due to its ﬂexible
+parallel architecture. Extensive experiments show that PPMoE not only achieves
+a more than 1:75speed up compared to existing MoE architectures but also
+reaches 90% throughput of its corresponding backbone model that is 20smaller.
+1 I NTRODUCTION
+Large language models (LLM) have shown their dominance in various natural language processing
+(NLP) tasks by largely pushing the limit of few-shot learning and zero-shot inference (Brown et al.,
+2020; Hoffmann et al., 2022; Scao et al., 2022). Currently, it obeys a scaling law that a larger model
+brings better performance. While being powerful and promising, scaling up to models like GPT-3
+from small models and training them are expensive and non-trivial work.
+Multiple techniques emerge to tackle the scaling problem. Tensor parallel is currently a widely
+applied technique that scales models up on the width dimension with a split-compute-gather man-
+ner (Shoeybi et al., 2019). However, tensor parallel produces massive and intensive communication
+operations between devices, limiting its application to inner-node scenarios. Pipeline parallel, a
+scheme that scales models from the depth dimension, is complementary to tensor parallel and able
+to reach a limit of more than 500 billion parameters when incorporated with tensor parallel (Smith
+et al., 2022).
+However, training a model of more than 100 billion parameters is time- and resource-consuming.
+Further scaling up is unacceptable both technically and ﬁnancially. Fortunately, MoE model is an
+appropriate choice because it maintains scalability on the width dimension with sparsely activated
+experts while keeping computational complexity nearly unchanged. The MoE architecture usually
+cooperates with data parallel where on the device that holds one data parallel replica or rank (Lep-
+ikhin et al., 2020; Fedus et al., 2021; Rajbhandari et al., 2022), there is one or a speciﬁc number of
+experts on it. Thus, it is very natural and easy to scale models up by scaling the number of experts, i.
+e., number of data parallel replicas. That is to say, we can scale up MoE models almost limitlessly as
+long as new devices are engaged. One critical drawback of this architecture is that the computation
+of MoE layers follows a dispatch-compute-gather ﬂow, which introduces two all-to-all operators on
+hidden embeddings, leading to a huge communication overhead that largely decreases the training
+efﬁciency.
+1arXiv:2304.11414v1  [cs.DC]  22 Apr 2023Technical Report
+Recent work reveals that a moderate number of experts with a thick backbone which is wider on the
+hidden dimension obtains better performance than a thin backbone with massive experts (Zoph et al.,
+2022; Du et al., 2022), which also strongly coincides with our experimental results. This indicates
+that the previous parallel architecture is not suitable for the new request and we need a uniﬁed
+scheme of scaling both expert and backbone to efﬁciently enlarge model capacity and capability.
+As depicted previously, there are existing techniques for scaling up backbones (tensor parallel and
+pipeline parallel) and experts (MoE). However, Adopting them together within a uniﬁed framework
+is non-trivial.
+In this work, we systematically analyze the drawbacks of existing MoE architecture and propose a
+uniﬁed framework called Pipeline MoE to efﬁciently and effectively scale model capacity and capa-
+bility. To tackle the communication overhead of all-to-all on MoE layers, we propose a new expert
+parallel scheme that all experts in an MoE layer are integrated inside a node so that it can be well
+aligned with tensor parallel and no inter-node communication happens inside the MoE layer. Addi-
+tionally, we replace the resource-consuming all-to-all communication with easy-implement tensor
+slicing to largely diminish the communication overhead. To better scale model capacity, we incor-
+porate pipeline parallel with expert parallel and tensor parallel in our Pipeline MoE, which makes
+our system able to scale up to a trillion-level without duplicating backbone parameters.
+Extensive experiments show that the Pipeline MoE can easily scale models to hundreds of billions
+of and trillions of parameters and train it 1:75faster than existing ones. Moreover, the Pipeline
+MoE achieves a throughput of 90% its corresponding backbone model which is 20smaller.
+2 R ELATED WORK
+Scaling Up Large Language Model. Large language models (LLMs) have reported dominating
+performance of zero-shot and few-shot learning in various NLP tasks. After the introduction of trans-
+former Vaswani et al. (2017), transformer language models rapidly go across the small and medium
+scale Devlin et al. (2018); Radford et al. (2018; 2019); Raffel et al. (2020) and step into the era of
+large language models with over 100 billion parameters Brown et al. (2020); Lieber et al. (2021);
+Scao et al. (2022); Smith et al. (2022); Chowdhery et al. (2022). GPT-3 Brown et al. (2020), with
+175 billion parameters, is the ﬁrst dense LLM that pushed the limit of 100 billion parameters and
+achieved dramatic improvements in zero-shot and few-shot learning. Two open-source projects Scao
+et al. (2022); Zhang et al. (2022) also published LLMs with similar sizes. Recently, the model sizes
+(parameter count) are further increased to an incredible 530 billion (Megatron-Turing-NLG Smith
+et al. (2022)) and 540 billion (PaLM Chowdhery et al. (2022)), because the scaling law Henighan
+et al. (2020) is still working.
+Efﬁcient Distributed Model Training. Scaling model training to tens of or hundreds of billion
+parameters is a complicated task, which requires a lot of algorithmic innovations and engineer-
+ing optimization. One of the most critical challenges is that the model cannot ﬁt into one single
+device or even one single node due to limited onboard memory. Fortunately, researchers and en-
+gineers proposed various techniques to jointly tackle this challenge including tensor model paral-
+lel Shoeybi et al. (2019); Karakus et al. (2021), pipeline model parallel Narayanan et al. (2021);
+Harlap et al. (2018); Narayanan et al. (2019), sequence parallel Korthikanti et al. (2022), checkpoint
+activation Chen et al. (2016), etc.Such techniques have largely mitigated memory burden in train-
+ing large language models. Our work is built upon some of these existing approaches and further
+increases the efﬁciency of MoE model training with a novel parallel architecture.
+Mixture of Experts. Mixture of Experts or MoE is early introduced for machine learning ap-
+plications Jacobs et al. (1991); Masoudnia & Ebrahimpour (2014). Recently, MoE is leveraged to
+enhance model capability because it is able to enlarge parameter count while keeping computational
+complexity nearly unchanged for both training and inference Shazeer et al. (2017) due to its sparse
+activating nature. Thanks to this fascinating property, the community achieve a huge leap in model
+size from a billion to a trillion parameters Lepikhin et al. (2020); Fedus et al. (2021); Artetxe et al.
+(2021).
+Early MoE models usually applied an aggressive scaling scheme of a thin backbone with massive
+experts to well ﬁt the demand of enlarging model sizes and the architecture of bound expert parallel
+and data parallel Lepikhin et al. (2020); Kim et al. (2021); Artetxe et al. (2021), which, however,
+2Technical Report
+showed limited enhancement for model capability Rajbhandari et al. (2022). This scheme and par-
+allel strategy bring huge communication overhead due to two all-to-all operations introduced by
+expert parallel for each MoE layer. Recent works Zoph et al. (2022); Du et al. (2022) have shown
+that a contradictory scheme with a thick backbone and a mild expert scaling schedule results in more
+powerful MoE models. However, the existing parallel architecture designed for scaling experts is no
+longer well suited for this new strategy. On the contrary, our scheme is designed to scale both the
+backbone and experts, which is more ﬂexible and conﬁgurable.
+3 M ODEL ARCHITECTURE
+3.1 P RELIMINARY : PARALLEL AND MOE
+3.1.1 B ASICS OF TRANSFORMER
+In this paper, we take the decoder-only transformer architecture as an example to instantiate the
+proposed architecture. In a densely connected transformer, a batch of sequences with stokens is
+ﬁrst mapped to a tensor with a shape of bshthrough an embedding layer (word and positional),
+wherebis the batch size, sis the sequence length, and his the hidden dimension. Then intermediate
+states are fed through transformer blocks that are mainly composed of a self-attention module and
+a feed-forward network (FFN) module. Finally, the processed intermediate states are sent to the
+ﬁnal layers to calculate output information. Here, we dive into a transformer block and showcase
+its detailed structure. The input is ﬁrst normalized with a LayerNorm layer, which keeps the tensor
+shape unchanged. An attention module is applied to extract interaction between token embeddings.
+After the attention module, another LayerNorm is placed. Then an FFN is used to further extract
+information from input embeddings. With necessary skip connections, the processed embedding is
+sent to a later block. For more details, we refer readers to Phuong & Hutter (2022) and Shoeybi et al.
+(2019).
+3.1.2 D ATA PARALLEL
+Data parallel (DP) is the most broadly used technique to scale up deep neural network (DNN) train-
+ing in recent years. As DNN models become larger, a single GPU or device may only provide a
+relatively small throughput due to limited computing power and memory, while a larger batch size
+may be needed to ensure training stability or faster training is required. Data parallel replicates
+models between devices and split input data into micro-batches then feed to each replica. After all
+replicas ﬁnish computing (both forward and backward), model replicas on each device are synchro-
+nized by executing an all-reduce communication on gradients.
+InputSelf AttentionLinear
+LayerNormLinearGeLU
+LayerNormLinearDropout
+DropoutOutput
+Dropout
+Dropout
+X𝒇𝒇X XXA1 XA2Y1 Y2
+GeLU GeLUY1A1 Y2A2Z1 Z2𝒈𝒈DropoutZAttention MLPTransformer Layers  (N× )
+Figure 1: Illustration of tensor parallel. A merged version of Figure 2 and Figure 3 from Megatron
+paper Shoeybi et al. (2019).
+3Technical Report
+3.1.3 M ODEL PARALLEL
+Model parallel can be applied when models get even larger and cannot be ﬁt into one GPU or even
+one node. Commonly, model parallel is composed of tensor parallel and pipeline parallel Shoeybi
+et al. (2019); Narayanan et al. (2021).
+Tensor Parallel Tensor parallel (TP) partitions input matrices of general matrix multiply (GEMM)
+into multiple sub-matrices along proper dimensions and executes smaller GEMMs inside each de-
+vice. In a transformer layer, there are two groups of GEMMs that can be well-partitioned, i. e., the
+self-attention module and the FFN module. With necessary communications, a transformer layer
+can be well distributed into a set of devices and trained with tensor parallel.
+Here, we take the FFN module as an example to brieﬂy introduce how tensor parallel works. An
+FFN module is composed of a sequence of a GEMM, a GeLU, another GEMM, and a Dropout,
+which can be presented as Z= Dropout(GeLU( XA)B). Considering that GeLU(a+b)6=
+GeLU(a) + GeLU(b)andcat(Dropout( a);Dropout(b))6= Dropout(cat( a;b))where catrep-
+resents concatenation along the proper axis, the weight matrix of the ﬁrst GEMM is partitioned
+along its columns and the second is along its rows, as shown in Fig. 1. Thus, for each way, all
+calculations are independent until Dropout, i.e.,Yi= GeLU(XAi)Bi, wherei= 1;2in this case.
+In the forward pass, the Dropout operation needs to see the whole batch of input data so that the
+goperation should be an all-reduce communication, while nothing for f. On the contrary, in the
+backward pass, gradients should be all-reduced at f, while nothing at g. In this way, we distribute
+parameters and calculations of GEMM equally into multiple devices with limited communication
+overhead (only an all-reduce for forward and another for backward). For more details of tensor
+parallel, we refer readers to the original paper of Megatron-LM Shoeybi et al. (2019).
+1234 152637485 6 7 8
+123 14253647586 7 8
+12 1324354657687 8
+1122334455667788Device 1
+Device 2
+Device 3
+Device 4
+Time
+Forward Pass Backward Pass
+Figure 2: Illustration of 1F1B Pipeline schedule. A re-built version of Figure 8 from PipeDream Har-
+lap et al. (2018).
+Pipeline Parallel While tensor parallel can handle models with over 10 billion parameters with a
+single node of 8 Nvidia V100 GPUs, e.g., GPT-2, larger models like GPT-3 can barely ﬁt into a single
+node. It is natural to split a model into multiple stages and ﬁt each stage into different nodes, which
+formulate the core motivation of pipeline parallel (PP). When a former stage ﬁnishes computing,
+intermediate hidden states are sent to the next stage via p2p communications and continue to process
+in a forward pass. In backward, a latter stage ﬁnishes its backward computing, sends intermediate
+gradient tensors into its pre-positioned stage, and continues to execute backward computing. Such
+processes operate like a pipeline with a few micro-batches concurrently processed, as demonstrated
+in Fig. 2 (here we take the mostly applied 1F1B pipeline as an example).
+3.1.4 M IXTURE OF EXPERTS
+Mixture of Experts (MoE) is ﬁrst introduced in machine learning to divide a problem space into ho-
+mogeneous regions and conquer them with distinct experts. Recently, MoE is leveraged into sparse
+model architectures to increase model capacity while keeping computational complexity unchanged.
+As shown in Fig. 3, an MoE system is usually bound with data parallel, and an MoE layer is built
+upon the FFN module and placed across multiple devices with expert parallel (EP). Inside an MoE
+4Technical Report
+InputMHA
+LayerNormLayerNormTransformer Layers  (N/2)×FFNMHA
+LayerNormLayerNormExpert 1Output
+Gating
+InputMHA
+LayerNormLayerNormTransformer Layers  (N/2)×FFNMHA
+LayerNormLayerNormExpert EOutput
+Gatingall-to-allall-to-all
+…
+Devices EDevices 1
+Figure 3: Illustration of an MoE model. A re-built version of Figure 3 from GShard paper Lepikhin
+et al. (2020).
+layer, token embeddings of each data-parallel rank are ﬁrstly fed into a gating module composed of
+a linear layer and a softmax function, to generate scores for each token embedding that decide which
+expert (FFN) this token should be processed in. Then token embeddings are dispatched to their desti-
+nation experts via an all-to-all communication and processed by those experts. After that, processed
+embeddings are combined with the pre-gating order with another all-to-all communication.
+In this way, each token embedding is automatically sharded to the expert that is well-learned to pro-
+cess such tokens, which implicitly strengthens the representative power of the model with negligible
+computational overhead. However, the price is two additional all-to-all operations for each MoE
+layer, which may largely slow down training and inference. Besides, a data parallel replica usually
+holds all layers except for MoE layers on a single GPU or a node, largely limiting the backbone size
+(nearly equal to the model with only one expert on each MoE layer). One way to scale up the model
+may be partitioning along the layer axis, but distributing experts into all devices makes it much more
+complicated to design the parallel scheme.
+3.2 A S YSTEMATIC VIEW ON TRAINING EFFICIENCY OF MOE
+The parallel architecture of MoE is a natural choice for scaling up model size and capacity. Most
+existing parallel techniques including data parallel, tensor parallel, and expert parallel are adjusted
+into its training framework. In this subsection, we showcase the parallel architecture of existing
+MoE systems and analyze its advantages and drawbacks in terms of training efﬁciency in a system-
+atic view. Two important conclusions can be drawn:
+(1)The parallel architecture with bound DP and EP of existing MoE models is the key bottle-
+neck of training efﬁciency .
+(2)Current parallel architecture hinders the integration of TP and PP into existing MoE mod-
+els, especially TP.
+In the rest of this paper, we call the MoE with this typical architecture DPMoE (Data Parallel MoE)
+since it is ﬁrmly bound with data parallel.
+Expert Parallel and Data Parallel As we discussed previously, data parallel and expert parallel are
+bound together to guarantee that experts are evenly distributed in the training cluster, which also
+limits the ﬂexibility of model architecture and training conﬁguration. Assuming that there are D-
+way data parallel and Eexperts, there are E=D experts on each data parallel rank1. As introduced
+in subsection 3.1.4, token embeddings need to be dispatched to each expert and return to the original
+data parallel rank after ﬁnishing processing on each expert, resulting in two inter-device all-to-all
+1Eis always divisible by Din typical conﬁgurations.
+5Technical Report
+communication of bshdata size in the forward pass. Thus, the forward time of an MoE layer
+is composed of gating, 1st all-to-all ( 1st a2a in the equation), FFN forward, and 2nd all-to-all ( 2nd
+a2a), as shown in Eq. 12.
+tforward =tgating +t1st a2a+tFFN +t2nd a 2a (1)
+Here, we only consider the situation of DP + EP and leave TP for simplicity. Since the latency of
+the gating module ( tforward ) is relatively small compared to the other three items, we simply omit
+it here, and thus, tforwardt1st a2a+tFFN +t2nd a 2a. According to Narayanan et al. (2021), the
+FFN module consumes 16bsh2=EFLOPs on each expert. Assume that each expert is able to process
+F FLOPs per second, then the theoretical latency of the FFN module is t0
+FFN = 16bsh2=(EF)3.
+The latency of an all-to-all operation is rough (N 1)(ts+mN= (2B)), wheretsis an initial time
+and we omit it for simplicity since it is small compared to the other item, Bis the communication
+bandwidth,Nis the number of ranks involved in the all-to-all operation and is equal to Ein this
+case, andmis the data count on each rank, which is equal to 2bsh=E , where 2indicates that
+each element consumes 2bytes. Thus, the theoretical latency of an all-to-all operation is roughly
+t0
+a2a= (E 1)bsh=B . Combining these terms together, we have:
+t0
+a2a=t0
+FFN = (E 1)EF=(16Bh): (2)
+Taking the Nvidia SXM2 server with 8 V100 GPU as an example, F= 1251012,B= 12:5109
+for inter-node communication (InﬁniBand inter-node connection in the Huawei Cloud cluster we
+experiment on) which is the case of PPMoE, and his generally in the range of 103104. Thus, we
+roughly have:
+t0
+a2a=t0
+FFN>(E 1)E=16: (3)
+Thus, for normally used value of E,e. g. ,64or256,t0
+a2at0
+FFN4and these two all-to-all
+operations would be a critical bottleneck of the DPMoE framework.
+In practice, there are other components in the forward process, and the ratio of t0
+a2a=t0
+FFN will be
+largely shrunk. We count the elapsed time of each part in a forward step of a 6.7B-to-143B DPMoE
+model and list numbers in Table 1. These two all-to-all operations in MoE layers occupied 65:5%of
+total forward time and 79:2%of MoE forward time, making it still a critical bottleneck in training
+and inference. Besides, it also results in two other drawbacks: relatively low base-model capacity
+(small backbone) and requiring a large cluster to train the model.
+Table 1: Components of elapsed time in a forward step. Elapsed time is in ms and the Percentage
+represents the proportion to the total forward time.
+Total Fwd. MoE Fwd. 1st all-to-all 2nd all-to-all Gating Others
+Elapsed time 7617 6294 2566 2423 156 1323
+Percentage 100% 82 :6% 33 :7% 31 :8% 2:1% 17:3%
+Tensor Parallel Tensor parallel is usually applied when a single device cannot hold the model, or
+one data parallel rank and its corresponding on-device experts in MoE model that roughly contains
+a backbone and E=D 1experts. Under such circumstances, tensor parallel is able to enlarge the
+backbone that can be held on a data parallel rank by almost T, whereTis the world size of tensor
+parallel and usually set to be the device count in a single node, with the price of two additional
+all-reduce communications of a bshtensor each self-attention and FFN module. Fortunately, these
+all-reduce communications are inner-node and the latency is relatively low since high-speed inner-
+node interconnection techniques like Nvidia NV-Link are standard conﬁgurations of GPU servers.
+Tensor parallel can be applied on all self-attention and FFN modules, or only on non-MoE blocks in
+the current PPMoE implementation. Here, we take a tensor-paralleled FFN module as an example
+to showcase the components of its forward latency. The forward latency of a tensor-paralleled FFN
+module is composed of the computational latency and the all-reduce latency:
+tFFN =tcal+tall reduce: (4)
+2This equation can be well applied to the backward pass, with the gating and FFN computation time roughly
+doubled while communication time unchanged.
+3This is the best case that tokens are evenly distributed in all experts. For the worst case that all tokens are
+processed on one expert, t0
+FFN = 16bsh2=(F).
+4Even for the worst case that t0
+FFN = 16bsh2=(F),t0
+a2ais still multiple times larger than t0
+FFN since the
+discarded terms in Eq. 2 to Eq. 3 is larger than 1in practice.
+6Technical Report
+As discussed previously, tcal= 16bsh2=(TF), where T is the tensor parallel world size and is
+usually set to be 8, the number of GPUs inside a node. According to the NCCL document, the
+latency of an all-reduce operation can be formulated as tall reduce = 2(N 1)(ts+m=B )).
+Ignoring the tsterm and ﬁtting to the discussed scenario, we have tall reduce4(T 1)bsh=B .
+Thus, we have:
+tall reduce=tcal= (T 1)TF=(4Bh): (5)
+TakingF= 1251012,B= 300109,T= 8andh= 103into Eq. 5,tall reduce=tcal= 35=6
+6. Thus, the communication overhead of tensor parallel with inner-node all-reduce is dramatically
+smaller compared to expert parallel with inter-node all-to-all, which is a strong motivation for us to
+design the proposed framework.
+Pipeline Parallel Pipeline parallel is a powerful scheme to scale models to hundreds or even thou-
+sands of billions of parameters when collaborated with tensor parallel, while tensor parallel can only
+reach a few billion since inter-node all-reduce of large data is time-consuming. Currently, pipeline
+parallel is mostly leveraged in dense model training, e. g., BLOOM Scao et al. (2022), and barely
+applied in MoE. The reason is two folds. On one hand, existing DPMoE frameworks usually involve
+data parallel, expert parallel, and tensor parallel, composing a complex parallel system that requires
+a lot of engineering effort. Combining such a complex scheme with pipeline parallel is an even
+further complicated task5. On the other hand, with a large number of experts, the combination of
+data parallel, expert parallel, and tensor parallel is already able to scale models to a trillion level.
+However, the conﬁguration of a small base model and massive experts may hurt the representative
+power of MoE models and some recent work empirically shows that a large backbone with limited
+experts performs better Du et al. (2022); Zoph et al. (2022). Recall that the upper bound of tensor
+parallel to scale backbone is relatively low due to resource constraints of an individual node, pipeline
+parallel becomes a signiﬁcant approach to scale MoE models.
+Parallel
+Transformer
+Layer
+InputTransformer Layers  (N/2P)× Parallel 
+MHA
+LayerNormLayerNormE0Output
+GatingNode 0 Devices 0E1
+𝒇𝒇𝒈𝒈
+Parallel
+Transformer
+Layer
+InputTransformer Layers  (N/2P)× Parallel 
+MHA
+LayerNormLayerNormE2Output
+GatingNode 0 Devices 1E3
+𝒇𝒇𝒈𝒈X
+XX0
+X1Y0
+Y1
+X2
+X3Y2
+Y3X0
+01234567Gating
+X47203647X1
+X2
+X3Node P Devices 0
+Node P Devices 1…
+…Parallel Transformer 
+Layer with MoE
+Parallel Transformer 
+Layer with MoE
+Figure 4: Illustration of Pipeline MoE.
+3.3 P IPELINE MOE
+To tackle drawbacks described in subsection 3.2, we propose a novel MoE framework called Pipeline
+MoE (PPMoE) to efﬁciently improve the conﬁguration ﬂexibility and largely speed up its training
+5There may be two ways to integrate pipeline parallel into existing frameworks: splitting the whole network
+(both MoE and non-MoE layers) into stages and splitting only non-MoE layers and distributing experts in the
+whole training cluster. The former requires a Plarger cluster to train the model since it replicates existing
+systems for Ptimes. The latter brings about additional communication overhead instead of resource burden
+because both pipeline parallel and expert parallel requires inter-node communication. Besides, the parallel
+scheme is much more complex since all types of parallelisms and communications are coupled and involved.
+7Technical Report
+and inference process. In this subsection, we will delve into the framework of PPMoE and show
+how it works.
+3.3.1 O VERVIEW
+Pipeline MoE decouples expert parallel from data parallel, in order to conveniently enjoy the ben-
+eﬁts of all four parallel strategies (TP, DP, EP and PP) Before entering into the MoE layer, hidden
+embeddings are synchronized by the all-reduce communication after the self-attention block so that
+each tensor parallel rank receives identical inputs, which is guaranteed by tensor parallel. Hidden
+embeddings are then fed to the gating module and generate the dispatching order. Since all inputs,
+parameters, and algorithms are exactly the same, the dispatching order on each rank is also identical.
+Then token embeddings are dispatched to their corresponding experts according to the dispatching
+order by an index selection operation. After processed by related experts, token embeddings are
+gathered by an all-reduce communication, ﬁnishing forward computing of this MoE layer. A global
+view of Pipeline MoE is illustrated in Fig. 4.
+3.3.2 E XPERT PARALLEL
+Unlike previous expert parallel of DPMoE built upon data parallel, expert parallel in our scheme
+is coupled with tensor parallel. On a tensor parallel group with a world size of T(Tdevices in
+this group), Eexperts are evenly distributed on these Tdevices, where there are Nexperts on
+each device and NT=E. Note that there are Nexperts on each device and we have to
+serialize the computation of each expert on each device. Fortunately, the computational speed of
+serially processing a few small tensors is nearly the same as processing a big tensor, according to our
+measurement with multiple experiments, indicating that there is little extra latency introduced by the
+serial computing of experts6. Such a satisfactory property guarantees a comparable computational
+efﬁciency to DPMoE on experts.
+3.3.3 G ATING AND DISPATCHING
+The gating module of an MoE layer usually consists of a linear mapping, a softmax score function,
+and the gating schedule to generate dispatching orders. Our framework is compatible with existing
+gating schedules including top-1, top-2, etc.Token embeddings are then dispatched to corresponding
+experts with the generated dispatching order. Recall that all token embeddings and dispatching
+orders on each tensor parallel rank are identical and that all experts are located in the same tensor-
+parallel group, i. e. , the same node, we can easily replace the communication-intensive all-to-
+all operation with a simple index selection operation that is well supported in most existing deep
+learning platforms like PyTorch Paszke et al. (2019) or MindSpore Huawei Technologies Co. (2022).
+We instantiate this process with ﬁg. 4 as an example. Assume that we have 8 token embeddings
+(X) as input with a shape of [8;:::], 2 slices in the tensor-parallel group, and 4 experts in the expert
+parallel group. The dispatching order is 2;3;1;2;0;3;2;0, which means that the 1st, 4th and 7th
+token embedding should be sent to expert 2 ( E2), the 2nd and 6th token embedding should be
+processed on expert 3 ( E3), the 3rd on expert 1 ( E1), and the 5th and 8th on expert 0 ( E0). Since
+Xis on all ranks of the tensor-parallel group, we can dispatch token embeddings to corresponding
+experts byX0=X[[4;7];:::],X1=X[2;:::],X2=X[[0;3;6];:::]andX3=X[[1;5];:::]. After
+processed by corresponding experts, output embeddings are ﬁrst gathered inside each tensor parallel
+rank by index assignment and then collected by an all-reduce communication across the tensor
+parallel group. A PyTorch-like pseudo code is shown in Algorithm 1.
+3.3.4 C OMMUNICATION OVERHEAD
+In the forward pass, output embeddings with a shape of bshneed to be collected via an all-
+reduce communication since the Dropout layer requires full access to its input data inside the data
+parallel rank, which is the same as tensor parallel. In the backward pass, the corresponding gradients
+should be synchronized before feeding into the LayerNorm layer via another all-reduce communica-
+tion. Besides, parameters inside the gating module need to be synchronized in each training step via
+6This may be due to well-optimized low-level operators of PyTorch
+8Technical Report
+Algorithm 1: Forward and Backward Functions in Expert Parallel
+def forward(hidden_states):
+# All-reduce gradients in the backward pass
+hidden_states = copy_to_tensor_parallel_region(hidden_states)
+logits = wg(hidden_states)
+scores = softmax(logits)
+indices, weights, l_aux = gate_function(scores)
+sliced_inputs = []
+for iin range (num_local_experts):
+sliced_inputs.append(hidden_states.index_select(indices[i]))
+expert_outputs = []
+for i, expert inenumerate(experts):
+expert_outputs.append(expert(sliced_inputs[i]))
+output_hidden_states = torch.zeros_like(hidden_states)
+for iin range (num_local_expert):
+output_hidden_states[indices[i], ...] = expert_outputs[i]
+# all-reduce output_hidden_states in the forward pass
+output_hidden_states = reduce_from_tensor_parallel_region(
+output_hidden_states)
+return output_hidden_states, l_aux
+an all-reduce communication on gradients for each update (each global batch). Luckily, the com-
+munication overhead of an MoE layer for data and gradient gathering is exactly the same as tensor
+parallel, indicating that no extra communication overhead on data is introduced compared to tensor
+parallel. The only overhead is the synchronization of the linear mapping parameters in the gating
+module with a shape of hE. Compared to the communication overhead on data i. e.,2bsh
+for each global batch, it is negligible since 2bs>>E (45 orders larger). In a word, almost
+no extra communication overhead compared to tensor parallel is required.
+3.3.5 S CALING WITH PIPELINE PARALLEL
+Since all experts and tensor parallel partitions of the same group lie inside an individual node, mod-
+els built with our proposed expert parallel scheme can be easily scaled with pipeline parallel like
+those dense models do Narayanan et al. (2021). From a layer-wise view, an MoE layer can be easily
+replaced by a non-MoE FFN without dramatically changing its input/output format and communi-
+cation pattern. In other words, a dense model powered by tensor parallel and pipeline parallel can be
+seamlessly transformed into an MoE model by just replacing some of those FFNs with MoE layers
+build with our proposed expert parallel. Scaling MoE models with pipeline parallel in the layer axis,
+or equally, scaling large dense models with MoE layers in the expert axis can be easily achieved.
+Besides, our proposed framework is well decoupled and compatible with data parallel and could be
+further efﬁcient by incorporating memory-saving techniques like ZeRO optimizer Rajbhandari et al.
+(2020).
+3.3.6 R ELATIONSHIP TO PRIOR SCHEMES
+DPMoE takes one micro-batch of data as input for each data parallel replica and processes these
+data in parallel, which composes of a global batch. On contrary, the Pipeline MoE, integrating the
+pipeline parallel inside, takes and processes multiple micro-batches that make up a global batch
+sequentially. Note that all parameters keep unchanged during processing one global batch of data
+and the gradient of each parameter is summed up across micro-batches for both DPMoE (by gradient
+all-reduce) and PPMoE (by gradient accumulation) and then updated. These two approaches could
+be regarded as two different patterns to span micro-batches of data in a global batch, DPMoE from
+a spatial view, and PPMoE from a temporal view. Thus, Pipeline MoE and previous MoE are
+equivalent functionally but different in parallel architectures.
+9Technical Report
+4 E XPERIMENTS
+In this section, we show the effectiveness of our proposed Pipeline MoE with extensive experiments.
+Since PPMoE is functionally equivalent to DPMoE, we only conduct a convergence veriﬁcation on
+training/validation loss and mainly focus on speed and resource analysis.
+4.1 E XPERIMENT SETUP AND IMPLEMENTATION DETAILS
+We mainly take the GPT-3 Medium with 350M parameters (24 layers, 1024 hidden size, 16 atten-
+tion heads) and GPT-3 6.7B (32 layers, 4096 hidden size, 32 attention heads) as backbones or base
+models and scale them with 64experts on every other FFNs to 6:7B and143B parameters
+(referred as small setting and large setting), respectively. In our experiments, we use Dense to rep-
+resent backbone models, DPMoE for MoE models with previous parallel architecture, and PPMoE
+for MoE models with our proposed parallel architecture. The MoE gating schedule is always set to
+top-1, which only activates the top-ranked expert for each token. This setting guarantees that the
+MoE model keeps nearly the same computational complexity as its corresponding base model. A
+small difference between PPMoE and DPMoE is that the PPMoE abandoned the capacity limit of
+each expert7because the max number of tokens for one expert is bswhile it isDbs for DPMoE.
+The latter makes it easier to encounter out-of-memory (OOM) errors when almost all tokens lean
+to choose the same expert in training. Following Gshard Lepikhin et al. (2020), we also apply an
+auxiliary loss term to balance expert assignment.
+The micro-batch-size of training each model is set adaptively so that the GPU and/or GPU memory
+utilization is above 80%. Following the GPT-3 paper Brown et al. (2020), the sequence length is
+always set to be 2;048. For a fair comparison, we use ﬂoat16 (fp16) for all parameters except for
+the MoE gating module in ﬂoat32(fp32) . We always adopt an fp16 Adam optimizer that stores
+parameters in fp16 and the main copy of parameters, the ﬁrst and second momentums in fp32, so
+that the storage for each parameter is 18 bytes. During training, ZeRO optimizer Rajbhandari et al.
+(2020) is adopted in all DPMoE models with bound data parallel and expert parallel to further save
+memory unless unnecessary, while not in all dense models and all Pipeline MoE models. All models
+are trained on our private corpus composed of encyclopedia data, web data, ebook data, etc.
+For DPMoE, we perform all the experiments with our implementation based on Megatron-LM8v2.5
+and DeepSpeed9v0.5.10. For PPMoE, we build our codebase upon the implementation of Megatron-
+LM v2.6. It is notable that although we did not leverage DeepSpeed and ZeRO optimizer when
+training PPMoE models since we ignored data parallel, it is feasible to integrate those techniques
+into PPMoE to further scale its training with data parallel.
+4.2 C ONVERGENCE VERIFICATION
+Firstly, we conduct experiments to verify the convergence of Pipeline MoE. We use the 6.7B PPMoE
+model that is scaled from a backbone of GPT-3 Medium and trains the model for 40B tokens. Both
+models are trained on a cluster of 4 nodes with 32 Nvidia V100 GPUs. Since the longest training
+process in our experiment is far from reaching an entire epoch, we just randomly sample a subset
+from each component of our corpus to ﬁnish the veriﬁcation. Additionally, a corresponding dense
+backbone model with 350M parameters (GPT-3 Medium) is also trained for 40B tokens for compar-
+ison. For the PPMoE model, the learning rate is set to be 1:2e 4, while 3e 4for the backbone
+model, and ( 1,2) is set to be (0.9, 0.95) for both modes. We plot loss curves of training and
+validation in Fig. 5. As demonstrated in Fig 5, the training/validation loss curve of PPMoE is stable
+under the Dense counterpart after the initial warmup and shows a satisfactory trend of convergence.
+The reason that the loss of the PPMoE model is higher than its backbone at the beginning of training
+may lie in that the gating module needs some steps to reach a relatively stable status and so there is
+a small period that the training loss of the PPMoE model is higher than the backbone model.
+7Although it may slightly increase computation of Pipeline MoE theoretically, we observed that the auxiliary
+loss term guarantees a balanced assignment of experts in most of our training.
+8https://github.com/NVIDIA/Megatron-LM
+9https://github.com/microsoft/DeepSpeed
+10Technical Report
+0 5 10 15 20 25 30 35 40
+number of tokens (B)345678910lm lossTraining Curves
+dense train
+ppmoe
+dense val
+ppmoe val
+Figure 5: Training and validation loss of 6.7B PPMoE model and its corresponding backbone model
+(0.3B dense) for 40B tokens.
+Table 2: Comparison on training speed between Dense, DPMoE, and PPMoE models. The through-
+put is counted as tokens per second per GPU, and the speed ratio is the ratio between the throughput
+of the current model and its corresponding base model.
+Model DP TP PP EP ZeRO Training Cluster Throughput Speed Ratio
+0.3B Dense 1 8 4 1  32 V100 3244 -
+0.3B Dense 4 8 1 1 X 32 V100 4174 -
+0.3B Dense 32 1 1 1 X 32 V100 5120 -
+6.7B DPMoE 32 1 1 64 X 32 V100 2147 66:2%
+6.7B DPMoE 4 8 1 64 X 32 V100 218 6:7%
+6.7B PPMoE 1 8 4 64  32 V100 2708 81:4%
+6.7B Dense 1 8 16 1  128 V100 356 -
+6.7B Dense 16 8 1 1 X 128 V100 597 -
+6.7B Dense 128 1 1 1 X 128 V100 410 -
+143B DPMoE 256 1 1 64 X 256 V100 93 26:1%
+143B DPMoE 128 2 1 64 X 256 V100 183 51:4%
+143B DPMoE 32 8 1 64 X 256 V100 63 17:7%
+143B PPMoE 1 8 16 64  128 V100 323 90:7%
+4.3 T RAINING SPEED ANALYSIS
+We conduct extensive experiments to verify the effectiveness of the proposed method in terms of
+training throughput (number of tokens processed per second per device). For Dense models or
+backbone models, we report performance on three settings of parallel schemes: the combination of
+tensor parallel and pipeline parallel, the combination of tensor parallel and data parallel, and data
+parallel only. For DPMoE models, we test two settings of parallel schemes: the combination of data
+parallel and expert parallel, and the combination of data parallel, tensor parallel, and expert parallel.
+For PPMoE models, we only test one setting and just ignore data parallel since data parallel only
+scales the batch size of training. Most models with data parallel are trained with ZeRO optimizer to
+reduce memory overhead. It is notable that the 143B DPMoE model is not able to ﬁt into 16 nodes
+11Technical Report
+(128 V100 GPUs) without involving tensor parallel, so we increase the cluster to 256 V100 GPUs
+to make it possible.
+Experimental results are listed in Table 2. For Dense models, pipeline parallel is a critical factor that
+largely slows down training, which is the reason that state-of-the-art dense models like BLOOM
+omits pipeline parallel when models are not extremely large and can be ﬁt into a single node. For
+a fair comparison, we take the slowest ones as baselines to calculate the speed ratio. For DPMoE
+models of both the small setting and the large setting, the DP + EP setting achieves higher through-
+putS ( 66:2%and26:1%, respectively) than the DP + TP + EP setting with TP = 8 ( 6:7%and17:7%,
+respectively). This is because, with a large TP size, the communication overhead is relatively heavy.
+The MoE layer in DPMoE introduces two additional all-to-all operations in the forward pass, further
+intensifying the communication burden. For the large setting, a better balance with DP + TP + EP
+with TP = 2 achieves a higher throughput of 51:4%baseline than the other settings. The reason that
+the one with TP is better than the one without TP is that the time complexity of ring-style all-to-all
+communication is proportional to the number of processes and a larger world size of expert parallel
+brings longer communication time. The above results indicate that it is non-trivial to efﬁciently scale
+with DPMoE since there are many factors that can largely inﬂuence the performance.
+One can easily discover that PPMoE models consistently achieve high throughput for both small
+and large settings. Speciﬁcally, for the small setting, PPMoE obtains a 24:6%improvement over
+DPMoE, while for the large setting, the improvement goes further to 76:5%. The consistent im-
+provements clearly verify the effectiveness of our proposed Pipeline MoE architecture. We notice
+that the improvement in the large setting is much more obvious than it in the small setting. This is
+because the relative cost of pipeline parallel is heavier on small models than on large ones, which
+also coincides with the phenomenon on Dense models.
+Table 3: Components of elapsed time in a forward step of Pipeline MoE. Elapsed times are listed in
+the second line and in ms, and the percentage to total forward time is in the third line. Numbers in
+blue and cyan indicate that they belong to the same process and numbers in bold is the total elapsed
+time for the process.
+Total Fwd. MoE Fwd. Gating Exp. Calc. MoE A.-R. FFN Fwd. FFN A.-R.
+6257 2393 491 437 1294 1714 1176
+100% 38 :2% 7:8% 7:0% 20 :7% 27 :4% 18 :8%
+4.4 C OMPONENTS OF ELAPSED TIME FOR PIPELINE MOE
+To better depict the resource consumption of the training process, we count components of elapsed
+time for a single forward step of a small setting PPMoE model and list elapsed time for dominating
+operations in Table 3. Compared to DPMoE which spends 82:6%of forward time in MoE forward,
+PPMoE decreases it to 38:2%. In DPMoE, main communication (two all-to-all operators) occupies
+65:5%of total forward time and 79:2%of MoE forward time, while PPMoE reduces them to 20:7%
+and54:1%. It is notable that the MoE all-reduce time is very close to FFN all-reduce time (only
+1:9%of total forward time difference), which coincides with our functional analysis in 3.3.4 and
+evidently veriﬁes the effectiveness of eliminating all-to-all communication in MoE.
+Delving deeper into the MoE forward time and FFN forward time, we can ﬁnd that the inner-node
+all-reduce communication occupied a large proportion of forward time ( 54:0%and68:6%, respec-
+tively). Thus, there is more room for further speeding up training if a faster all-reduce scheme is
+adopted.
+5 C ONCLUSION AND DISCUSSION
+In this work, we introduce PPMoE, a novel MoE framework that efﬁciently solves two critical
+drawbacks of DPMoE. By replacing communication-intensive all-to-all dispatching and gathering
+of DPMoE with a simple tensor slicing and an inner-node all-reduce, PPMoE largely eases the com-
+munication burden of MoE models. By incorporating with pipeline parallel, PPMoE enhances the
+scalability of the backbone of MoE models. Experimental results have demonstrated the effective-
+ness of the proposed framework.
+12Technical Report
+Our work paves a new step towards decoupling expert parallel from data parallel and eliminating
+the communication-intensive all-to-all operations from expert parallel. We expect that in the future
+with more powerful computational resources and parallel computing techniques, MoE models with
+reduced communication burden and increased conﬁguration ﬂexibility plays a more signiﬁcant role
+in building large language models and their variants for better training/validation efﬁciency and
+representative capability.
+REFERENCES
+Mikel Artetxe, Shruti Bhosale, Naman Goyal, Todor Mihaylov, Myle Ott, Sam Shleifer, Xi Victo-
+ria Lin, Jingfei Du, Srinivasan Iyer, Ramakanth Pasunuru, et al. Efﬁcient large scale language
+modeling with mixtures of experts. arXiv preprint arXiv:2112.10684 , 2021.
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal,
+Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are
+few-shot learners. Advances in neural information processing systems , 33:1877–1901, 2020.
+Tianqi Chen, Bing Xu, Chiyuan Zhang, and Carlos Guestrin. Training deep nets with sublinear
+memory cost. arXiv preprint arXiv:1604.06174 , 2016.
+Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam
+Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, et al. Palm:
+Scaling language modeling with pathways. arXiv preprint arXiv:2204.02311 , 2022.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep
+bidirectional transformers for language understanding. arXiv preprint arXiv:1810.04805 , 2018.
+Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim
+Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al. Glam: Efﬁcient scaling of language
+models with mixture-of-experts. In International Conference on Machine Learning , pp. 5547–
+5569. PMLR, 2022.
+William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion parameter
+models with simple and efﬁcient sparsity, 2021.
+Aaron Harlap, Deepak Narayanan, Amar Phanishayee, Vivek Seshadri, Nikhil Devanur, Greg
+Ganger, and Phil Gibbons. Pipedream: Fast and efﬁcient pipeline parallel dnn training. arXiv
+preprint arXiv:1806.03377 , 2018.
+Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo
+Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative
+modeling. arXiv preprint arXiv:2010.14701 , 2020.
+Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza
+Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Train-
+ing compute-optimal large language models. arXiv preprint arXiv:2203.15556 , 2022.
+Ltd. Huawei Technologies Co. Deep learning frameworks. In Artiﬁcial Intelligence Technology , pp.
+123–135. Springer, 2022.
+Robert A Jacobs, Michael I Jordan, Steven J Nowlan, and Geoffrey E Hinton. Adaptive mixtures of
+local experts. Neural computation , 3(1):79–87, 1991.
+Can Karakus, Rahul Huilgol, Fei Wu, Anirudh Subramanian, Cade Daniel, Derya Cavdar, Teng Xu,
+Haohan Chen, Arash Rahnama, and Luis Quintela. Amazon sagemaker model parallelism: A
+general and ﬂexible framework for large model training. arXiv preprint arXiv:2111.05972 , 2021.
+Young Jin Kim, Ammar Ahmad Awan, Alexandre Muzio, Andres Felipe Cruz Salinas, Liyang Lu,
+Amr Hendy, Samyam Rajbhandari, Yuxiong He, and Hany Hassan Awadalla. Scalable and efﬁ-
+cient moe training for multitask multilingual models. arXiv preprint arXiv:2109.10465 , 2021.
+Vijay Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch, Mohammad
+Shoeybi, and Bryan Catanzaro. Reducing activation recomputation in large transformer models.
+arXiv preprint arXiv:2205.05198 , 2022.
+13Technical Report
+Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang,
+Maxim Krikun, Noam Shazeer, and Zhifeng Chen. Gshard: Scaling giant models with conditional
+computation and automatic sharding. arXiv preprint arXiv:2006.16668 , 2020.
+Opher Lieber, Or Sharir, Barak Lenz, and Yoav Shoham. Jurassic-1: Technical details and evalua-
+tion. White Paper. AI21 Labs , 2021.
+Saeed Masoudnia and Reza Ebrahimpour. Mixture of experts: a literature survey. Artiﬁcial Intelli-
+gence Review , 42(2):275–293, 2014.
+Deepak Narayanan, Aaron Harlap, Amar Phanishayee, Vivek Seshadri, Nikhil R Devanur, Gre-
+gory R Ganger, Phillip B Gibbons, and Matei Zaharia. Pipedream: generalized pipeline par-
+allelism for dnn training. In Proceedings of the 27th ACM Symposium on Operating Systems
+Principles , pp. 1–15, 2019.
+Deepak Narayanan, Mohammad Shoeybi, Jared Casper, Patrick LeGresley, Mostofa Patwary, Vi-
+jay Korthikanti, Dmitri Vainbrand, Prethvi Kashinkunti, Julie Bernauer, Bryan Catanzaro, et al.
+Efﬁcient large-scale language model training on gpu clusters using megatron-lm. In Proceed-
+ings of the International Conference for High Performance Computing, Networking, Storage and
+Analysis , pp. 1–15, 2021.
+Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor
+Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style, high-
+performance deep learning library. Advances in neural information processing systems , 32, 2019.
+Mary Phuong and Marcus Hutter. Formal algorithms for transformers. arXiv preprint
+arXiv:2207.09238 , 2022.
+Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever, et al. Improving language under-
+standing by generative pre-training. 2018.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. Language
+models are unsupervised multitask learners. OpenAI blog , 1(8):9, 2019.
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi
+Zhou, Wei Li, Peter J Liu, et al. Exploring the limits of transfer learning with a uniﬁed text-to-text
+transformer. J. Mach. Learn. Res. , 21(140):1–67, 2020.
+Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He. Zero: Memory optimizations
+toward training trillion parameter models. In SC20: International Conference for High Perfor-
+mance Computing, Networking, Storage and Analysis , pp. 1–16. IEEE, 2020.
+Samyam Rajbhandari, Conglong Li, Zhewei Yao, Minjia Zhang, Reza Yazdani Aminabadi, Am-
+mar Ahmad Awan, Jeff Rasley, and Yuxiong He. Deepspeed-moe: Advancing mixture-of-experts
+inference and training to power next-generation ai scale. arXiv preprint arXiv:2201.05596 , 2022.
+Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ili ´c, Daniel Hesslow, Roman
+Castagn ´e, Alexandra Sasha Luccioni, Franc ¸ois Yvon, Matthias Gall ´e, et al. Bloom: A 176b-
+parameter open-access multilingual language model. arXiv preprint arXiv:2211.05100 , 2022.
+Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton,
+and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer.
+arXiv preprint arXiv:1701.06538 , 2017.
+Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan
+Catanzaro. Megatron-lm: Training multi-billion parameter language models using model par-
+allelism. arXiv preprint arXiv:1909.08053 , 2019.
+Shaden Smith, Mostofa Patwary, Brandon Norick, Patrick LeGresley, Samyam Rajbhandari, Jared
+Casper, Zhun Liu, Shrimai Prabhumoye, George Zerveas, Vijay Korthikanti, et al. Using deep-
+speed and megatron to train megatron-turing nlg 530b, a large-scale generative language model.
+arXiv preprint arXiv:2201.11990 , 2022.
+14Technical Report
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural informa-
+tion processing systems , 30, 2017.
+Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christo-
+pher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, et al. Opt: Open pre-trained transformer
+language models. arXiv preprint arXiv:2205.01068 , 2022.
+Barret Zoph, Irwan Bello, Sameer Kumar, Nan Du, Yanping Huang, Jeff Dean, Noam Shazeer, and
+William Fedus. Designing effective sparse expert models. arXiv preprint arXiv:2202.08906 ,
+2022.
+15

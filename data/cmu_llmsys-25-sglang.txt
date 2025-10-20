@@ -1,0 +1,185 @@
+Efficient LLM Inference with SGLang
+Speaker:
+Ying Sheng (xAI, LMSYS, UCLA)
+Content
+SGLang overview
+Techniques covered in this talk
+•Efficient KV cache reuse with RadixAttention
+•Cache -aware load balancing with SGL Router
+•Zero -overhead CPU scheduling
+•Hierarchical KV cache
+Open -source community and industry deployment
+•Hot topics in LLM inference systems and roadmap
+•Large scale deployment practice –A case study of DeepSeek inference system
+2SGLang Overview
+SGLang is a fast serving framework for large language models 
+and vision language models.
+3What is SGLang?
+4Comes with its unique features for better performance
+Serves the production and research workloads at xAI(100K+ GPUs)Anopen -source  inference engine for LLMs
+https://grok.com/  
+SGLang provides leading inference performance
+5v0.1 (Jan. 2024)
+5x higher throughput with automatic KV cache reuse
+3x faster grammar -based constrained decoding 
+v0.2 (July 2024)
+3x higher throughput with low -overhead CPU runtime
+v0.3 (Sept. 2024)
+7x faster triton attention backend for custom attention variants ( DeepSeek  MLA)
+1.5x lower latency with torch.compile  Compared to the other popular inference engines:
+v0.4 (Dec. 2024)
+Zero -overhead CPU scheduler and structured outputs
+Cache -aware load balancer
+Fastest DeepSeek  inferenceSGLang architecture overview
+6OpenAI -compatible APINative generation API
+Structured language frontendClientServer
+API server
+Tokenizer
+Model Worker
+Memory pool
+Radix tree cache 
+Attention backend
+Detokenizer
+Lightweight and customizable codebase in Python/ PyT orchMajor Techniques
+7Four techniques covered in this talk
+1.Efficient KV cache reuse with RadixAttention
+2.Cache -aware load balancing with SGL -Router
+3.Zero -overhead CPU scheduling
+4.Hierarchical KV cache
+8LLM inference pattern:
+Complex pipeline with multiple LLM calls
+9QuestionUser
+Requests
+LLM Calls Answer 1Follow -up question
+Answer 2Clarification
+Answer 3Chained calls
+Parallel callsQuestionUser
+Requests
+LLM CallsAnswer 1
+Answer 2 Select
+Answer 310Multi -call structure brings optimization opportunities 
+(e.g., caching, parallelism, shortcut)Chained calls
+Parallel callsLLM inference pattern:
+Complex pipeline with multiple LLM calls(a) Multi -turn chat
+(b) Few -shot
+learningFew -shot examples Question 1 Answer 1 Prompt 1
+Few -shot examples Question 2 Answer 2 Prompt 2
+Few -shot examples Question 3 Answer 3 Prompt 3There are rich structures in LLM calls
+11Reusable KV cache (Key -Value cache, some intermediate tensors)Turn 1 (Q) Turn 1 (A)
+Chat History Turn 2 (Q) Turn 2 (A)
+Chat History Turn 3 (Q) Turn 3 (A)
+Chat History Turn 4 (Q) Turn 4 (A)QuestionQuestion  1 Answer 1
+Search History Q 1.1 A 1.1
+Search History Q 1.1.1 A 1.1.1
+Search History Q 1.2 A 1.2
+Search History Q 1.2.1 A 1.2.1
+Question 2 Answer 2
+Search History Q 2.1 A 2.1
+Search History Q 2.1.1 A 2.1.1
+Search History Q 2.2 A 2.2
+Search History Q 2.2.1 A 2.2.1Reusable KV cache
+ (intermediate tensors) 12(c) Tree search
+with LLM agentsThe structures can be very complicated
+Parallelizable branchesTechnique 1 : Efficient KV cache reuse with RadixAttention
+13KV Cache
+-Some reusable intermediate tensors
+-Can be very large (>20GB, larger than model weights)
+-Only depends on the prefix tokens
+Existing systems : Discard KV cache after an LLM call finishes
+Ours : Maintain the KV cache of all LLM calls  in a radix tree (compact prefix tree)Chat History Turn 4 (Q) Turn 4 (A)14
+RadixAttention maintains the KV cache of all 
+LLM calls  in a radix tree (compact prefix tree)RadixAttention handles complex reuse patterns
+15
+RadixAttention enables 
+efficient prefix matching, 
+insertion, and eviction.
+It handles trees with hundreds 
+of thousands of tokens.Cache -aware scheduling increases cache hit rate
+16Single worker case
+Sort the requests in the queue according to matched prefix lengthIdea : Utilize user annotations and runtime metrics  for scheduling
+Results
+•Up to 5x higher throughput  with KV cache reuse and parallelism
+17 Source: SGLang v0.1 blog, https://lmsys.org/blog/2024 -01-17-sglang/  •Works  automatically across workloads and text/image tokens
+Technique 2: Cache -aware load balancer
+- SGL Router
+18
+Technique 2: Cache -aware load balancer
+- SGL Router
+19Round robin Cache aware
+load balancer
+Throughput (token/s) 82665 158596
+Cache hit rate 20% 75%Prefix 1
+Prefix 2Replica 1, replica 2
+Replica 3, replica 4Technique 3: Zero -overhead CPU scheduling
+An unoptimized inference engine can waste more than 50% time on 
+CPU scheduling.
+20 Source: https://mlsys.wuklab.io/posts/scheduling_overhead/  010203040
+vLLM v0.5.4 SGLang v0.3Cost breakdown of running Llama 1.3B
+GPU Computation CPU OverheadAverage iteration time (ms)Overlap CPU scheduler and GPU worker
+21Scheduler
+Model WorkerScheduler
+Model WorkerScheduler
+Model Worker
+Scheduler
+Model WorkerScheduler
+Model Worker Model WorkerSchedulerBlocking
+Scheduler
+Overlapped
+Scheduler
+Jobs of the CPU scheduler
+•Receive input messages
+•Stream model outputs
+•Check the stop conditions
+•Maintaining radix tree and run prefix matching
+•Allocate memory for the next batchIdeas
+•Resolve the dependency by delaying the stop 
+condition check
+•Use CUDA events and streams to do fine -grained 
+scheduling
+NanoFlow : T owards Optimal Large Language Model Serving Throughput. Kan Zhu et al.22
+Performance
+23
+Zero CPU time according
+tothe nsight  profiler
+1.3x faster than 
+SOTA OSS baselineTechnique 4: Hierarchical KV cache
+24SkippedOpen -Source Community and
+Industry Deployment
+25Industry adoption
+26
+SGLang has been deployed to large -scale production, generating trillions of tokens 
+every day. It is supported by the following institutions (incomplete list) with 400+
+OSS contributors :Feature coverage
+•Support allcommon optimizations
+•Continuous batching, prefix caching, token attention (paged attention),
+speculative decoding, tensor parallelism, chunked prefill, structured
+outputs, quantization (FP4/FP8/INT4), multi -lora serving
+•Support allmajor OSS models
+•Text: DeepSeek V3/R1, Llama 1/2/3, Qwen ,Mixtral
+•Vision: Llama 4, QwenVL ,DeepSeek -VL, Llava ,Pixtral
+•Documentation w/interactive notebooks: https://docs.sglang.ai/
+27Open -source development roadmap
+Throughput -oriented large -scale deployment
+Prefill -decode disaggregation ( link )
+Expert/pipeline/context parallelism
+Reinforcement learning integration
+Weight sync, asynchronous algorithms, memory saver
+veRL  Integration ( link ),Areal, LlamaFactory
+Low latency optimizations
+Speculative decoding (e.g., EAGLE 3 ), kernel optimizations
+The full roadmap : https://github.com/sgl -project/sglang/issues/4042  
+28A case study of the DeepSeek  system
+29
+Load balancer + prefill / decode disaggregation + speculative decoding + quantization + 
+tensor/expert/pipeline parallelism + external KVCache  storageA case study of the DeepSeek  system
+30
+Within the 24 -hour statistical period
+-Total input tokens: 608B, of which 342B tokens (56.3%) hit the on -disk KV cache.
+-Total output tokens: 168B. 
+If all tokens were billed at DeepSeek -R1’s pricing, the total daily revenue would be $562,027, with a 
+cost profit margin of 545%.Question & Answer
+Github : https://github.com/sgl -project/sglang
+X (twitter): https://x.com/lmsysorg
+Paper (NeurIPS’24) : https://arxiv.org/abs/2312.07104  
+Welcome to join the slack  and bi -weekly dev meeting!
+31

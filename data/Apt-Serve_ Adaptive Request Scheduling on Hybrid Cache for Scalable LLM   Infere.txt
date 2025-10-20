@@ -1,0 +1,1347 @@
+Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for
+Scalable LLM Inference Serving
+SHIHONG GAO, The Hong Kong University of Science and Technology, China
+XIN ZHANG, The Hong Kong University of Science and Technology, China
+YANYAN SHEN∗,Shanghai Jiao Tong University, China
+LEI CHEN, The Hong Kong University of Science and Technology (Guangzhou), China and The Hong Kong
+University of Science and Technology, China
+Large language model (LLM) inference serving systems are essential to various LLM-based applications. As
+demand for LLM services continues to grow, scaling these systems to handle high request rates while meeting
+latency Service-Level Objectives (SLOs), referred to as effective throughput, becomes critical. However, existing
+systems often struggle to improve effective throughput, primarily due to a significant decline in Time To
+First Token (TTFT) SLO attainment. We identify two major causes of this bottleneck: (1) memory-intensive
+KV cache that limits batch size expansion under GPU memory constraints, and (2) rigid batch composition
+enforced by the default First-Come-First-Serve scheduling policy. In this paper, we introduce Apt-Serve , a
+scalable framework designed to enhance effective throughput in LLM inference serving. Apt-Serve features a
+new hybrid cache scheme that combines KV cache with a memory-efficient hidden cache for reusable input
+hidden state vectors, allowing large batch sizes and improving request concurrency. Based on the hybrid cache,
+Apt-Serve employs an adaptive runtime scheduling mechanism that dynamically optimizes batch composition.
+We formally define the adaptive scheduling optimization problem and propose an efficient algorithm with
+theoretical guarantees. Extensive evaluations on three real-world datasets and LLMs ranging from 13B to 66B
+parameters demonstrate that Apt-Serve achieves up to 8.8×improvement in effective throughput compared to
+the state-of-the-art inference serving systems.
+CCS Concepts: •Information systems →Data management systems .
+Additional Key Words and Phrases: request scheduling, cache management, inference serving
+ACM Reference Format:
+Shihong Gao, Xin Zhang, Yanyan Shen, and Lei Chen. 2025. Apt-Serve : Adaptive Request Scheduling on Hybrid
+Cache for Scalable LLM Inference Serving. Proc. ACM Manag. Data 3, 3 (SIGMOD), Article 130 (June 2025),
+28 pages. https://doi.org/10.1145/3725394
+1 Introduction
+Large language models (LLMs) [ 10,15,21,36,68,74,84] have emerged as a transformative force in
+artificial intelligence, demonstrating exceptional capabilities across a wide range of tasks including
+natural language understanding, question answering, and code generation. This technological
+∗Yanyan Shen is the corresponding author.
+Authors’ Contact Information: Shihong Gao, sgaoar@connect.ust.hk, The Hong Kong University of Science and Technology,
+Hong Kong SAR, China; Xin Zhang, The Hong Kong University of Science and Technology, Hong Kong SAR, China,
+sean.zhang@connect.ust.hk; Yanyan Shen, Shanghai Jiao Tong University, Shanghai, China, shenyy@sjtu.edu.cn; Lei Chen,
+The Hong Kong University of Science and Technology (Guangzhou), Guangzhou, China and The Hong Kong University of
+Science and Technology, Hong Kong SAR, China, leichen@cse.ust.hk.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee
+provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the
+full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored.
+Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires
+prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+©2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 2836-6573/2025/6-ART130
+https://doi.org/10.1145/3725394
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.arXiv:2504.07494v1  [cs.LG]  10 Apr 2025130:2 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+Fig. 1. Serving sampled requests from the ShareGPT [ 9] dataset using the vLLM [ 37] system with the OPT-13B
+model [ 84] on an NVIDIA A100 GPU. The X-axis represents the request rate (req/s), and the Y-axis shows the
+SLO attainment (%) (TTFT: 1s, P99 TBT: 1s).
+leap has catalyzed the development of LLM-based applications such as versatile chatbots [ 1,4,10],
+advanced search engines [2, 5, 6, 67], and sophisticated programming assistants [3, 8, 22].
+At the core of these applications are LLM inference serving systems, which generate highly
+contextual and coherent responses to varied user inputs. Given an input request (i.e., a sequence of
+prompt tokens), the standard LLM inference process utilizes a Transformer-based decoder [ 70] and
+consists of two major phases. Initially, the prefill phase processes the input prompt and generates
+the first response token. Subsequently, the decode phase iteratively produces the next token based
+on the prompt and previously generated tokens until a termination token is encountered. To ensure
+user satisfaction, LLM inference serving systems must adhere to Service-Level-Objectives (SLOs)
+that focus on two per-request latency metrics: i) Time To First Token (TTFT), measuring the duration
+of the prefill phase; ii) Time Between Tokens (TBT), quantifying the time between consecutive token
+generations during the decode phase.
+With the growing demand for real-time LLM services, LLM inference serving systems have to
+continuously scale up to accommodate the increasing number of requests. This scaling challenge
+requires systems to enhance the effective throughput [12,62,89] which is defined as the highest
+sustainable online request rate that meets specified SLOs attainment criteria , such as serving at least
+70% of requests within the target SLOs of (TTFT=1 second, 99th percentile TBT=1 second). To achieve
+this, existing systems [ 12,37,59,62,89] mainly adopt an iteration-level batching approach [ 81] to
+process multiple requests on the GPU concurrently. Specifically, at the beginning of each iteration,
+a batch of requests is scheduled to the GPU for execution using the First-Come-First-Serve (FCFS)
+policy [ 12,37,89]. To reduce the computational cost of self-attention operations in LLMs, the
+systems implement KV cache [ 70] to store reusable key and value vectors for both the prompt and
+generated tokens in each Transformer layer. During execution, the GPU memory maintains the
+corresponding KV caches for all requests in the current batch. The iteration ends by generating one
+output token for every request within the batch. Some recent works [ 12,32,58,59,89] focus on
+improving computation resource utilization by accounting for the different computational demands
+of the prefill and decode phases in LLM inference. They effectively mitigate interference between
+requests in different phases, reducing unnecessary SLO violations for both TTFT and TBT, thereby
+enhancing effective throughput.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:3
+Despite these advancements, we identify a performance wall that limits further effective through-
+put improvements of existing LLM inference serving systems. This wall stems from the system’s
+inability to maintain TTFT SLO attainment as the request rate increases. As shown in Figure 1,
+in a cutting-edge system [ 37], an increase in request rate significantly diminishes overall SLO
+attainment, i.e., most requests fail to meet both TTFT and TBT requirements. Notably, higher
+request rates cannot be sustained primarily due to a sharp decline in TTFT SLO attainment, while
+TBT SLO attainment remains largely unaffected. The question we would like to ask is: can we break
+through this performance wall and achieve a higher effective throughput of LLM inference service?
+To answer the question, we identify two primary factors leading to the significant drop in
+TTFT SLO attainment in existing systems as the request rate increases. First , the extensive use of
+memory-intensive KV cache prevents further enlarged batch size under memory constraint. The
+size of the KV cache grows with the number of tokens processed per request. When the KV cache
+of ongoing requests nearly saturates the GPU memory, the system struggles to accommodate a
+larger batch size, leading to queuing delays for subsequent requests. As a result, frequent reaching
+of the batch size limit during serving can exacerbate queue delays, which causes more widespread
+TTFT SLO violations for incoming requests. Empirically, we observe that TTFT SLO attainment
+generally decreases as the system operates for longer periods at its maximum batch size capacity
+(Section 3.1). Second , the default FCFS scheduling policy enforces rigid batch composition. When
+the system schedules a batch of requests for execution at the start of each inference iteration, the
+FCFS policy consistently prioritizes the earliest arriving requests, subject to the memory constraint
+of their cache storage. However, online requests often vary in sequence length, comprising different
+numbers of prompt and output tokens. This rigid FCFS policy limits the system’s flexibility to
+optimize batch composition, which could otherwise improve TTFT SLO attainment under the same
+request load. In practice, we observe that FCFS policy can even result in much worse TTFT SLO
+attainment compared to completely random scheduling under the same request rate for the same
+set of incoming requests (Section 3.2).
+In this paper, we introduce Apt-Serve , a new framework designed to enhance effective throughput
+in LLM inference serving. Building on the two previously discussed insights, Apt-Serve incorporates
+two innovative designs to tackle the bottleneck in existing LLM serving systems. First , to obtain
+a larger attainable batch size, Apt-Serve introduces a novel hybrid KV cache and hidden cache
+scheme. Specifically, both KV cache and hidden cache serve as reusable computation results during
+inference, while hidden cache stores input hidden vectors instead of intermediate key and value
+vectors for the self-attention in each Transformer layer. Hidden cache reduces cache memory
+consumption per request by half compared to the KV cache, at the expense of extra computational
+overhead when retrieving comprehensive past information. Therefore, when the system reaches its
+batch size limit under KV cache usage preventing subsequent requests from being served, Apt-Serve
+can reassign hidden cache usage in place of KV cache usage for some ongoing requests, and assign
+hidden cache for certain subsequent requests directly from the outset. Under the same memory
+consumption, this enables a larger batch size, reducing queuing delays for subsequent requests at a
+manageable cost of extra latency increase (TBT) for ongoing requests. Second , to optimize batch
+composition, Apt-Serve employs an adaptive runtime scheduling mechanism. As the fullprocessing
+time and memory usage of each request cannot be known in advance due to the non-deterministic
+final end token [ 37],Apt-Serve continuously monitors key runtime metrics for every request at
+hand in each inference iteration, such as their pending time and memory requirement so far. Based
+on such tracked runtime information, Apt-Serve formalizes the scheduling process in each inference
+iteration as an optimization problem, aiming to compose a batch of requests with appropriate cache
+type assignments to maximize the reduction in overall pending time, while respecting memory
+constraints for cache storage. By framing the per-iteration scheduling process this way, batch
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:4 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+compositions are adaptively adjusted to account for changing runtime conditions across iterations.
+As the formulated optimization problem is NP-hard, Apt-Serve adopts an efficient greedy-based
+solution, for which we establish a theoretical approximation ratio of 2.
+We implement Apt-Serve atop the state-of-the-art LLM serving system vLLM [ 37], seamlessly
+incorporating all previously mentioned designs. We add additional supports including runtime
+information tracking and quantification to facilitate adaptive scheduling design, and implement a
+tailored block-wise storage scheme with customized CUDA kernels to streamline the hybrid cache
+usage.
+In summary, this paper makes the following major contributions:
+•We pinpoint two key factors that prevents the existing system from delivering higher effective
+throughput: (1) the exhaustive use of memory intensive-KV cache limits the batch size, and
+(2) the rigid FCFS scheduling policy causes suboptimal batch composition.
+•We introduce a new LLM inference serving framework named Apt-Serve that optimizes
+effective throughput. It employs a new hybrid cache scheme to enlarge batch size, and an
+innovative adaptive scheduling mechanism to optimize the batch composition based on
+runtime information.
+•We formulate the per-iteration scheduling process in Apt-Serve as an optimization problem,
+allowing batch compositions to be adaptively refined based on changing runtime conditions.
+We show the problem is NP-Hard and propose an efficient greedy-based solution with a
+theoretical guarantee.
+•We conduct extensive experimental evaluations to validate the effectiveness of Apt-Serve
+using three real-world datasets that correspond to diverse application scenarios, as well
+as across LLMs varying in size from 13B to 66B parameters. Compared to state-of-the-art
+systems, Apt-Serve enhances the effective throughput by up to 8.8 ×.
+2 Preliminaries
+In this section, we first introduce the transformer-based large language models. We further illustrate
+the necessary preliminaries for the online LLM inference serving. Table 1 summarizes the key
+notations used throughout this paper.
+2.1 Transformer-based Large Language Models
+Prevalent large language models (LLMs) such as GPT [ 10], OPT [ 84] and LLaMA [ 68] are decoder-
+only Transformer [ 70] models designed for the next-token prediction task. Generally, these LLMs
+are composed of an input embedding layer, followed by a series of Transformer layers, and finally
+end with an output projection layer. The input embedding layer converts a sequence of tokens
+𝑇=(𝑡1,𝑡2,...,𝑡𝑛)into a sequence of initial input vectors X=(x1,x2,...,x𝑛). Then, the stack of
+Transformer layers processes the initial input vectors Xto generate the output vectors O=
+(o1,o2,...,o𝑛). Finally, the output projection layer projects the last output vector o𝑛into logits
+for predicting the next token 𝑡𝑛+1. As an essential component in LLMs, each Transformer layer
+consists of two key modules: the self-attention module and the feed-forward network module.
+LetXℓ=(xℓ
+1,xℓ
+2,..., xℓ
+𝑛) ∈R𝑛×𝑑be the sequence of input hidden state vectors at theℓ-th
+Transformer layer.
+Self-attention Module. This module aims to generate contextualized vector representations by
+modeling complex correlations among the vectors. It first performs three linear transformations
+on each input hidden state vector xℓ
+𝑖inXℓto obtain the query, key andvalue vectors, using the
+following equations.
+qℓ
+𝑖=Wℓ
+𝑞xℓ
+𝑖,kℓ
+𝑖=Wℓ
+𝑘xℓ
+𝑖,vℓ
+𝑖=Wℓ
+𝑣xℓ
+𝑖. (1)
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:5
+Table 1. Summary of key notations.
+xℓ
+𝑖input hidden state vector for token 𝑖in theℓ-th Transformer layer
+qℓ
+𝑖,kℓ
+𝑖,vℓ
+𝑖query, key, value vectors for token 𝑖in theℓ-th Transformer layer
+hℓ
+𝑖output vector for token 𝑖in theℓ-th Transformer layer
+W𝑒waiting queue of requests at iteration 𝑒
+R𝑒running queue of requests at iteration 𝑒
+U𝑒set of candidate requests to be scheduled at iteration 𝑒
+M𝑒memory constraint for cache storage at iteration 𝑒
+m𝑒
+𝑖maximum memory requirement by request 𝑖at iteration𝑒
+p𝑒
+𝑖pending time of request 𝑖at iteration𝑒
+g𝑒
+𝑖the value of scheduling request 𝑖at iteration𝑒
+𝛼𝑒
+𝑖binary variable for scheduling request 𝑖at iteration𝑒
+𝛽𝑒
+𝑖binary variable for hidden cache usage of request 𝑖at iteration𝑒
+It then computes the scaled dot-product of each query vector qℓ
+𝑖with all the preceding key vectors
+{kℓ
+𝑗}𝑖
+𝑗=1, and obtain the normalized attention scores {𝑎ℓ
+𝑖𝑗}𝑖
+𝑗=1as follows.
+𝑎ℓ
+𝑖𝑗=exp
+qℓ
+𝑖⊤kℓ
+𝑗/√
+d
+Í𝑖
+𝑚=1exp
+qℓ
+𝑖⊤kℓ𝑚/√
+d. (2)
+Finally, the output vector oℓ
+𝑖is computed by performing a weighted sum of the value vectors {vℓ
+𝑗}𝑖
+𝑗=1,
+which is defined as:
+oℓ
+𝑖=Wℓ
+𝑜𝑖∑︁
+𝑗=1𝑎ℓ
+𝑖𝑗vℓ
+𝑖. (3)
+In this way, at each token position 𝑖(𝑖=1,...,𝑛 ), self-attention computation is performed by
+attending to all of the preceding tokens and itself, to generate the corresponding output vector
+representation. This leads to a computational complexity of O(𝑛2), which scales quadratically with
+the number of input tokens.
+Feed-Forward Network (FFN) Module. After the self-attention module, the feed-forward network
+uses an MLP layer followed by a linear transformation to obtain the final output vectors {hℓ
+𝑖}𝑛
+𝑖=1of
+theℓ-th Transformer layer:
+zℓ
+𝑖=𝜎 Wℓ
+𝑧oℓ
+𝑖,hℓ
+𝑖=Wℓ
+ℎzℓ
+𝑖, (4)
+where𝜎denotes an activation function such as ReLU [ 11]. Typically, Wℓ
+𝑧expands the attention
+output oℓ
+𝑖from the dimension 𝑑to a higher dimension 𝑑′(i.e.,𝑑′>𝑑), and Wℓ
+ℎprojects the
+intermediate vector zℓ
+𝑖back to the dimension 𝑑.
+2.2 Generative LLM Inference Serving
+Auto-regressive Inference. Nowadays LLMs [ 10,68,84] employ an auto-regressive inference
+fashion. Given a request 𝑟consisting of a sequence of tokens (𝑡1,𝑡2,...,𝑡𝑛)as the prompt, an
+LLM generates the output tokens (𝑡𝑛+1,𝑡𝑛+2,...,𝑡𝑛+𝑇)sequentially until an “end-of-sequence” (EOS)
+termination token is produced. This process is divided into two phases. The prefill phase involves a
+single iteration where LLM processes the entire prompt (𝑡1,𝑡2,...,𝑡𝑛)to generate the first output
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:6 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+token𝑡𝑛+1. The decode phase performs multiple iterations where LLM repeatedly takes the prompt
+tokens plus the previously generated output tokens as input and generates the next output token.
+Essentially, the model generates subsequent tokens based on the continuously expanding context.
+KV Cache Technique. The KV cache technique optimizes inference at a target token position 𝑖
+by storing the key vectors Kℓ
+𝑖=(kℓ
+1,..., kℓ
+𝑖−1)and value vectors Vℓ
+𝑖=(vℓ
+1,..., vℓ
+𝑖−1)from previous
+token positions in GPU memory for each Transformer layer ℓ=1,...,𝐿 . Without the KV cache,
+every token position 𝑗(𝑗=1,2,...,𝑖 ) in a given layer ℓmust go through all computations from
+Eq.1 to Eq.4 for each decode iteration across all layers. This is due to the cascading nature of
+Transformer layers: the computation of the next layer ℓ+1still requires the input hidden vectors
+xℓ+1
+𝑗for all token positions ( 𝑗=1,2,...,𝑖 ), which are derived from the output hℓ
+𝑗of the current
+layerℓ. By caching Kℓ
+𝑖andVℓ
+𝑖at each layer, only the current token position 𝑖needs to undergo the
+computation from Eq.1 to Eq.4. This reduces the complexity of self-attention (Eq.2-3) from O(𝑛2)to
+O(𝑛), and the complexity of other operations (Eq.1 and Eq.4) from O(𝑛)toO(1)per layer during
+each decoding iteration.
+Block-wise KV Cache Storage. Existing LLM inference serving systems [ 12,37,58,59,66,89]
+adopt a block-wise storage approach [ 37] to optimize the GPU memory utilization for KV cache.
+The earlier approach [ 81] pre-allocates a contiguous memory space for each request’s KV cache
+storage up to the maximum sequence length by the model. Such pre-allocation allows for fast
+KV cache retrieval during inference. However, since the actual output length of each request is
+unpredictable and typically shorter than the maximum, this method can lead to internal memory
+fragmentation [ 37], which limits the batch size. In contrast, block-wise KV cache storage divides the
+total available GPU memory into fixed-size blocks. As the output length increases, cache blocks are
+allocated on demand. In this way, the cache blocks for the same request may scatter across different
+physical locations. Such a strategy improves memory efficiency by reducing internal fragmentation,
+thus enabling larger batch sizes for concurrent request processing. However, it is crucial to notice
+that KV cache space still grows linearly to the sequence length. Its memory-intensive nature still
+imposes a burden for GPU memory consumption and inevitably constrains batch size.
+Iteration-level Batching in LLM Inference Serving. LLM inference serving has been a critical
+workload in modern data centers [66]. It is thus required to handle dynamically arriving requests
+with varying sequence lengths. To achieve this, existing systems perform iteration-level batch-
+ing [ 81] that allows a new request to join the ongoing batch and a finished request to leave the
+batch at each inference iteration. Specifically, at the beginning of each inference iteration, the
+serving system assesses available GPU memory for KV cache storage of the requests at hand. It
+then decides whether to admit some new requests for a prefill iteration or continue with a decode
+iteration for active requests. Each request in the batch has its associated KV cache stored in GPU
+memory, which expands incrementally as a new output token is generated. Our proposed Apt-Serve
+framework adopts the standard iteration-level batching, but introduces an innovative adaptive
+scheduling mechanism that incorporates a new hybrid cache scheme.
+3 Bottlenecks and Opportunities
+We focus on improving the effective throughput of LLM inference services, which currently expe-
+rience performance bottlenecks due to the rapid decline in TTFT SLO attainment as the request
+rate increases. Through a close look at the practical inference process, we attribute the TTFT
+SLO violation to two critical factors: (1) the heavy reliance on memory-intensive KV cache which
+restricts batch size, and (2) the inflexibility of the FCFS scheduling policy which often results in
+suboptimal batch compositions. In this section, we provide an in-depth empirical analysis to disclose
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:7
+(a)
+ (b)
+Fig. 2. (a) SLO attainment rate (%) and time ratio at batch size limit (%) under varying request rates. The left
+Y-axis is the percentage of served requests adhering to the SLOs, while the right Y-axis is the percentage
+of serving time the system operates at the batch size limit. The X-axis is the varied request rates. (b) A
+comparison of specific SLO attainments at request rates of 2.0/reqs and 3.0 req/s.
+!!"××===×,SoftmaxSelf-attention Module×, %Feed-forward Networks Module×××!$"!%"!&"!'"'("""(("""×)#"!)"
+CachedLinearComplexityCurrent Token&#"
+Past TokensCachedPast Tokens
+(a) Decoding with KV cache in a Transformer layer
+𝑊!"××===×,SoftmaxSelf-attention Module×, 𝜎Feed-forward Networks Module×𝑋#"
+××𝑊$"𝑊%"𝑊&"𝑊'"𝐾("""𝑉("""×𝑄#"𝑊)"××Current TokenLinearComplexity
+Extra Computation NeededCachedPast Tokens (b) Decoding with hidden cache in a Transformer layer
+Fig. 3. The illustrations of the computations performed during the decode phase for a request (a) with KV
+cache and (b) with hidden cache. Assume the original input hidden state vectors for the target request consist
+of a length of 3 (1 current token + 2 past tokens), and each vector has a dimension of 3.
+the performance bottlenecks caused by the two factors and identify the potential opportunities to
+mitigate their impact on the effective throughput.
+3.1 Memory-Intensive KV Cache Usage
+It has been recognized that KV caches tend to consume high GPU memory space [ 37], especially
+when dealing with long-latency requests, i.e., those with extensive prompts or lengthy output
+sequences. The memory-intensive nature of KV cache causes limited batch size, thereby reducing
+the parallelism in request processing and delaying the serving of subsequent requests. These
+deplayed requests are more likely to voilate the specified TTFT SLO constraint and hurts the
+effective throughput of the system.
+To assess the effect of the memory-intensive KV cache usage on the inference performance, we
+simulate a workload of 500 requests, randomly sampled from the ShareGPT dataset [ 9], with request
+arrivals following a Poisson distribution. The requests are served using the OPT-13B model [ 84]
+on an NVIDIA A100 GPU with 40GB memory. We employ a state-of-the-art inference serving
+system [ 37] with block-wise KV cache management enabled. We vary the request rates and set the
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:8 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+(a) SLO attainment comparison
+ (b) FCFS scheduling
+ (c) Random scheduling
+Fig. 4. (a) SLO attainment (%) comparison between FCFS and random scheduling policies. The X-axis repre-
+sents the request rate, and the Y-axis shows the percentage of requests meeting SLOs. (b) Distribution of
+per-request SLO attainment using FCFS scheduling. (c) Distribution of per-request SLO attainment using
+random scheduling. In (b) and (c), the X-axis displays request IDs sorted by arrival time, the upper Y-axis is
+the TTFT latency, and the lower Y-axis is the P99 TBT latency for served requests.
+latency SLOs to 1 second for both TTFT and P99 TBT1. We record the TTFT SLO attainment (%)
+and measure the proportion of total serving time during which the batch size is at its maximum
+capacity. This maximum is determined by the GPU memory constraint at runtime, beyond which
+the batch size cannot be increased further.
+Figure 2a shows that with a 90% SLO attainment threshold, the effective throughput is around
+2.6 requests per second. For 60% of the overall serving time, i.e., the time to finish all the incoming
+requests’ generation, the batch size cannot be increased to accommodate more requests regarding
+the available GPU memory space. When the request rate reaches 3 requests per second, the system
+hits the batch size limit for over 80% of the serving time (due to insufficient space for storing
+additional requests’ cache), causing the SLO attainment to drop sharply to approximately 70%.
+Figure 2b compares the SLO attainments at two request rates, 2.6 req/s and 3 req/s, indicating the
+SLO violation is mainly due to the decline in TTFT SLO attainment. These findings suggest that
+hitting the batch size limit frequently hampers concurrent request processing, resulting in many
+requests being delayed and failing to meet the TTFT requirements.
+Opportunity I: Utilizing Hybrid Cache. We observe that the hidden state vectors Xℓ
+𝑖=
+(xℓ
+1,xℓ
+2,..., xℓ
+𝑖−1), which serve as the input at any given ℓ-th Transformer layer ( ℓ=1,2,...,𝐿 )
+are also reusable intermediate results to address quadratic self-attention complexity, as we can
+temporarily transform the cached input hidden vectors Xℓ
+𝑖to required key and value vectors Kℓ
+𝑖
+andVℓ
+𝑖by the self-attention operation on the fly (illustrated by the yellow lines in Figure 3b).
+Such input hidden state vectors demands half the storage space compared to the key and value
+vectors (Figure 3a). This inspires us to develop a hidden cache (Figure 3b) for storing reusable input
+hidden state vectors as an alternative to the KV cache for certain requests. When the system hits
+its batch size limit due to the extensive use of KV caches, it becomes advantageous to 1) convert
+the KV caches of some ongoing requests to hidden caches, and 2) assign hidden caches to new
+requests, allowing them to begin their prefill phase without delay. As a benefit, the system is
+allowed to expand its batch size to promote the overall effective throughput. However, hidden cache
+usage causesO(𝑛)complexity for key and value linear projection in each Transformer layer (Eq.1)
+required for restoring the key and value vectors, as opposed to O(1)by the usage of direct KV
+cache. This extra step may decrease batch processing speed. To this end, we introduce an effective
+1P99 TBT refers to the 99th percentile of TBT latency for each individual request, where the generation of one output token
+in the decode phrase contributes to a TBT latency value [12, 62].
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:9
+hybrid cache scheme to balance batch size and processing speed. We dynamically determine the
+optimal timing and cache type allocation for each request to maximize the effective throughput.
+3.2 Rigid FCFS Scheduling Policy
+Existing LLM inference serving systems [ 12,37,59,62,89] typically employ the First-Come-
+First-Serve (FCFS) scheduling policy to form a batch for each inference iteration. This method
+prioritizes requests based solely on their arrival time, overlooking the variability in prompt lengths
+or expected output sizes across different requests. Such rigid scheduling may lead to suboptimal
+batch compositions, undermining the overall inference performance of the system. To evaluate how
+different scheduling policies affect system performance, we substitute the original FCFS scheduling
+with a random scheduling method in the cutting-edge system [ 37]. We use the same simulation
+setup as described in Section 3.1, and compare the effective throughput of the system under both
+scheduling methods. To ensure a fair comparison, we maintain identical request arrival sequences
+across various request rates.
+The comparison results are shown in Figure 4a. Notably, random scheduling consistently achieves
+higher SLO attainment than FCFS scheduling across all request rates. This suggests that FCFS
+scheduling leads to suboptimal batch compositions. To delve deeper into this observation, we
+examine the distribution of SLO attainment on a per-request basis under two scheduling policies
+with a request rate of 3.4 req/s. Figures 4b and 4c visualize the distributions for FCFS and the
+random scheduling policies, respectively. It is evident that random scheduling leads to fewer TTFT
+SLO violations. Moreover, we notice that under FCFS scheduling, TTFT SLO violations tend to
+occur in clusters of consecutive requests, whereas these violations are more evenly distributed
+under random scheduling.
+Opportunity II: Runtime Dynamic Scheduling. The potential benefits of random scheduling
+inspire us to develop a more sophisticated scheduling policy, leading to better batch compositions
+that reduce TTFT SLO violations, e.g., it may dynamically initiate the prefill phase for certain
+new requests while earlier ones are still in their decode phase, recalling that a higher request
+rate generally does not affect the TBT SLO attainment (see Figure 1 and Figure 2b). However,
+determining the ideal optimal batch composition through runtime dynamic scheduling is a non-
+trivial task. The difficulties arise from 1) the dynamic nature of request arrivals in an online serving
+environment, and 2) the uncertainty of each request’s duration, due to the unpredictable output
+lengths in auto-regressive LLM inference. In this paper, we propose a novel scheduling mechanism
+that adapts to the system’s runtime conditions and request characteristics, leading to more flexible
+batch compositions.
+4 Apt-Serve
+In this section, we first present an overview of our Apt-Serve framework. We then elaborate on the
+details of the request manager and the hybrid cache assigner with the cache engine.
+4.1 Framework Overview
+Figure 5 presents an overview of Apt-Serve . Its high-level architecture aligns with standard practices
+in existing serving systems [ 12,37,58,66,89], consisting of an iteration-level batch scheduler and
+an inference engine that work in close coordination to stream output tokens one by one to each user.
+The request manager is responsible for determining the batch schedule at the start of each inference
+iteration, while the inference engine assigns GPU workers to efficiently process the scheduled
+batch of requests. In each iteration, the workers perform a pass over the model parameters to
+generate one output token in parallel for each request within the batch. Within the scheduler and
+the inference engine, Apt-Serve further incorporates more sophisticated lower-level designs. The
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:10 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+ApplicationsResponding UsersArriving RequestsChatbotCode CompletionSummarizationBatch SchedulePending time?
+Waiting Queue:Running Queue:
+Memory Requirement?QuantificationHybrid Cache Assigner (§4.3)
+Assign Cache MapInference EngineScheduler
+Worker 0…Generating Tokens
+Worker 1Worker 2Worker N-1HiddenKVKVCache Type
+KVKV
+LLM Shard 0
+Cache EngineCache Type12345
+KVHiddenHiddenHiddenHiddenRequest Manager (§4.2)
+GPU 0
+LLM Shard 1
+Cache EngineGPU 1
+LLM Shard 2
+Cache EngineGPU 2
+LLM Shard N-1
+Cache EngineGPU N-1
+Fig. 5. An overview of Apt-Serve.
+request manager inside the scheduler considers crucial factors such as pending time and memory
+requirements to optimize batch composition for each inference iteration. The tailored hybrid cache
+manager within the scheduler and the customized cache engine equipped in the inference engine
+help to streamline the novel usage of hybrid KV cache and hidden cache during inference.
+4.2 Request Manager
+The request manager maintains a waiting queue W𝑒and a running queue R𝑒for each target inference
+iteration𝑒, where𝑒=1,...,∞. The waiting queue W𝑒includes requests that are currently on hold
+due to their cache being unavailable in GPU memory. Specifically, this comprises requests that have
+arrived at the system but have not yet entered the prefill phase (with no output tokens received),
+and those that are in the decoding phase but were preempted in earlier iterations2. Conversely,
+the running queue R𝑒contains requests in the decode phase, with their associated cache currently
+in the GPU memory. Drawing inspirations from the cost/value-based scheduling widely adopted
+in data management community [ 14,16,19,20,31,38,48,71,72], the request manager develops
+a quantification model along with an adaptive runtime scheduling mechanism to optimize batch
+composition during serving.
+2These preempted requests can be resumed via a prefill iteration, with their initial prompt tokens and previously generated
+output tokens as the new input.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:11
+Workflow. In each inference iteration, it utilizes the tracked runtime information of the relevant
+requests as input, which is then processed by the quantification model to calculate the value of each
+candidate schedule for the current iteration. Ultimately, through the adaptive runtime scheduling
+mechanism, the request manager generates the final batch schedule by selecting from all candidate
+schedules based on their associated quantified values.
+Runtime Information Tracking. As the arrivals and lifetime of online requests are not known
+as a priori (Section 3.2), the request manager continuously tracks the available runtime information
+for every request at hand in each inference iteration. Specifically, at a target iteration 𝑒, for a
+candidate request 𝑖from either the waiting queue W𝑒or running queue R𝑒, the request manager
+records its maximum memory requirement m𝑒
+𝑖(i.e., size of KV cache rather than hidden cache) and
+pending time p𝑒
+𝑖so far. For the pending time 𝑝𝑒
+𝑖, if the request 𝑖has not entered the prefill phase, its
+pending time p𝑒
+𝑖is calculated as the current time minus the time it arrives. Otherwise, its pending
+time𝑝𝑒
+𝑖is calculated as the current time minus the last time it has received an output token.
+Quantification Model. The quantification model within the request manager leverages the
+tracked runtime information for any given request 𝑖,∀𝑖∈W𝑒∪R𝑒, in any iteration 𝑒,∀𝑒=1,2,...,∞,
+to explicitly quantify the value g𝑒
+𝑖of its potential schedule. Specifically under Apt-Serve , the
+potential schedule associated with a request 𝑖in an iteration 𝑒can be described as a tuple (𝛼𝑒
+𝑖,𝛽𝑒
+𝑖),
+where𝛼𝑒
+𝑖is a binary variable indicating whether request 𝑖is selected to composite the execution
+batch in the iteration 𝑒, and𝛽𝑒
+𝑖is also a binary variable indicating whether request 𝑖is assigned
+with hidden cache usage.
+Intuitively, the scheduling value g𝑒
+𝑖is quantified by assessing its contribution ( 𝛼𝑒
+𝑖=1) to reducing
+the sum of pending time across all requests handled by the system in iteration 𝑒(∀𝑖∈W𝑒∪R𝑒).
+Such a value is formally defined as follows:
+g𝑒
+𝑖=p𝑒
+𝑖−𝛽𝑒
+𝑖(|W𝑒|+|R𝑒|)t𝑒
+𝑖, (5)
+t𝑒
+𝑖=𝜌m𝑒
+𝑖. (6)
+The reason for the first part p𝑒
+𝑖in Eq.5 is that if the request 𝑖is scheduled at a target iteration 𝑒,
+its pending time in the next iteration p𝑒+1
+𝑖is refreshed with a relatively small number close to
+zero, thus contributing to reducing the sum of latency across all requests. While the second part
+𝛽𝑒
+𝑖(|W𝑒|+|R𝑒|)t𝑒
+𝑖in Eq.5 represents a potential penalty if request 𝑖is assigned with hidden cache
+for its schedule ( 𝛽𝑒
+𝑖=1). Specifically, t𝑒
+𝑖is the extra linear transformation cost by its hidden cache
+usage. The reason for the scaling factor |W𝑒|+|R𝑒|is that the extra cost of hidden cache usage of a
+single request actually causes a reduced batch execution speed (Section 3.1), which further leads to
+an increase of latency perceivable by all requests ( ∀𝑖∈W𝑒∪R𝑒). Furthermore, for the extra cost t𝑒
+𝑖,
+it can be well approximated using a linear model. This approximation is reasonable as the time
+complexity of the linear transformation is proportional to the sequence length of request 𝑖. The
+coefficient𝜌in Eq. 6 can be determined before activating the serving pipeline, involving a marginal
+preprocessing cost of approximately 30 seconds in practice. In this way, the request manager can
+estimate the extra cost by any amount of hidden cache usage during serving.
+Additionally, the quantification model incorporates an SLO-aware fallback mechanism. For a
+given request 𝑖in the inference iteration 𝑒, its tracked pending time p𝑒
+𝑖may exceed the latency
+SLOs. Including such a request in the running queue without proper consideration could block
+other requests that are still within their latency SLOs. This may lead to a chain reaction of SLO
+violations for numerous subsequent requests, as illustrated in Section 3.2. To address this issue,
+when a request 𝑖has already violated its SLOs in iteration 𝑒, the request manager substitutes its
+original scheduling value g𝑒
+𝑖with a near-zero constant for a priority demotion.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:12 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+WherewillSIGMOD25beheld?BerlininGermany.WhatdoesSIGMODstandfor?SpecialInterestWherewillSIGMOD25beheld?BerlininGermany.GroupofManagementofData.Request A (Assigned with KV Cache)Input Prompt: Where will SIGMOD 25 be held?Output Tokens: Berlin in Germany.
+Request B (Assigned with Hidden Cache)Input Prompt: What does SIGMOD stand for?Output Tokens: Special Interest Group of Management of Data.OccupiedUnusedK/V CacheHidden CacheKKK
+VVVHiddenHiddenHiddenHidden
+Fig. 6. An illustration of managing both KV cache and hidden cache in the unified memory pool.
+Using the quantification model, the request manager performs adaptive runtime scheduling (as
+detailed in Section 5) to produce the final batch schedule {(𝛼𝑒
+𝑖,𝛽𝑒
+𝑖)|𝑖∈W𝑒∪R𝑒,𝛼𝑒
+𝑖=1}for the
+target inference iteration 𝑒. This final schedule is then passed to the hybrid cache assigner, which,
+in coordination with the cache engine, oversees the low-level allocation of the corresponding cache
+for each scheduled request in the GPU memory during iteration 𝑒.
+4.3 Hybrid Cache Assigner and Cache Engine
+The hybrid cache assigner and cache engine manage a global memory pool for cache storage
+throughout the entire streaming serving process, following common practice in existing works [ 12,
+37,66,89]. To ensure seamless hybrid cache utilization during serving, the hybrid cache assigner
+and cache engine closely coordinate to efficiently allocate different types of cache for various
+requests within the global memory pool.
+Workflow. In each inference iteration, the hybrid cache assigner begins by receiving the finalized
+batch schedule from the request manager. Using this schedule, it creates a cache map for each
+request, detailing the physical location where the corresponding cache is stored in the global
+memory pool. These cache maps are then utilized by the cache engine to handle the storage and
+retrieval of caches during the inference process.
+Tailored Global Memory Pool. To enable memory-efficient and flexible hybrid cache utilization
+during serving (Section 3.1), we design a tailored global memory pool for the storage of both types
+of cache. First, since both KV cache and hidden cache can expand dynamically with the sequence
+length of target requests, organizing the global memory pool into a number of fixed-size blocks for
+storing both types of cache can help minimize memory fragmentation, thereby maximizing GPU
+memory utilization as illustrated in Section 2.2. Second, to accommodate both types of cache within
+the global memory pool, a straightforward approach is to pre-allocate distinct storage spaces, taking
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:13
+into account their differing sizes. However, this naive storage strategy may lead to potential memory
+contention, limiting the flexibility to switch cache types when needed. For example, in a specific
+inference iteration, if a larger batch size is preferred, the system might encounter challenges due
+to insufficient storage space assigned for the hidden cache. Similarly, if a higher batch processing
+speed is desired, the system may be unable to meet this requirement because of inadequate space
+allocated for KV cache.
+To address the problem, Apt-Serve jointly manages the storage of KV cache and hidden cache
+over the unified block-wise memory pool. Specifically, the subtlety lies in the granularity of cache
+blocks. Within the global memory pool by existing KV-cache-only systems, each cache block stores
+both the key kℓ
+(·)and value vectors vℓ
+(·)for a fixed number of tokens ( ℓ=1,...,𝐿 ). While in
+Apt-Serve ’s tailored global memory pool, each cache block stores either the key kℓ
+(·), value vℓ
+(·),
+or input xℓ
+(·)vectors (∀ℓ=1,2,...,𝐿 ) for a fixed number of tokens. This design leverages the fact
+that these vectors share the same dimension for each token position within a request. The unified
+memory pool thus enables the K cache, V cache, and hidden cache to occupy any cache block in a
+space-sharing manner, allowing a flexible cache type switch during serving.
+Cache Block Allocation. Utilizing the finalized batch schedule {(𝛼𝑒
+𝑖,𝛽𝑒
+𝑖)|𝑖∈W𝑒∪R𝑒,𝛼𝑒
+𝑖=1}
+from the request manager, the hybrid cache assigner first identifies the cache type ( 𝛽𝑒
+𝑖) for a target
+scheduled request 𝑖(𝛼𝑒
+𝑖=1), and generates or updates its cache map c𝑒
+𝑖, depending on whether the
+request is in the prefill or decode iteration. The cache map c𝑒
+𝑖is a list that associates each token
+position of the cache for request 𝑖with a specific cache block.
+Given the cache maps from the hybrid cache assigner, the cache engine decides the actual cache
+allocation for the scheduled requests in the unified memory pool during the target inference
+iteration. Importantly, a single cache block stores cached vectors that are contiguous with respect
+to the token positions of a request. While the total blocks that contain the entire cache content for
+a request do not have to be contiguous within the unified memory pool.
+Figure 6 offers an example to illustrate how the KV cache and hidden cache for two different
+requests are jointly managed within the unified memory pool. In the example, the unified memory
+pool consists of 16 cache blocks (vertically) with block size 4 (horizontally), i.e., each block can
+accommodate K/V/hidden cache of 4 token positions. Request A in the figure is assigned with KV
+cache, which has 11 tokens (7 prompt tokens + 4 output tokens) in total. Its K cache occupies block
+0, 2, and 4, while its V cache takes up block 8, 10, and 12 in the unified memory pool. By contrast,
+request B, with 14 tokens (6 prompts + 8 output) and assigned with hidden cache, places its hidden
+cache in block 5, 7, 13, and 15. In summary, the different types of cache for the two requests are
+divided into multiple cache blocks. The hybrid cache assigner selects the specific cache blocks
+for a target request on demand, by scanning the available unused cache blocks within the unified
+memory pool.
+5 Adaptive Runtime Scheduling in Apt-Serve
+In this section, we elaborate on how the request manager in Apt-Serve adaptively derives the batch
+schedule in each inference iteration. In general, such an adaptive runtime scheduling process is
+composed of two stages. Firstly, the iteration type is decided, i.e., whether it is a prefill or decode
+iteration. Subsequently, the final batch schedule is determined, regarding not only which requests
+to composite the batch, but also which type of cache to assign to each scheduled request.
+Deciding the Iteration Type. To decide the iteration type for a target inference iteration 𝑒,
+a common practice [ 37] is to judiciously prioritize prefill iterations when sufficient memory is
+available to accommodate the cache of requests from the waiting queue W𝑒. This allows for a larger
+batch size during decoding. However, this may cause significant generation stalls for requests
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:14 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+already in the running queue R𝑒, leading to latency violations (TBT) for those requests [ 12]. To
+tackle this, the request manager adaptively determines the iteration type by assessing the real-time
+urgency of requests from both the waiting queue W𝑒and the running queue R𝑒. Specifically, the
+iteration type is chosen based on which queue has a higher cumulative pending time, signaling
+greater urgency. Once the iteration type is decided, the candidate set of requests U𝑒(U𝑒=W𝑒or
+U𝑒) to derive the batch schedule is determined.
+Deriving the Batch Schedule. Based on the potential schedules derived from the candidate
+set of requests U𝑒, along with their corresponding quantified values (Section 4.2), the subsequent
+scheduling process at each inference iteration is formalized as a hybrid-cache-based scheduling
+problem (Definition 1). The goal is to maximize the reduction of overall pending time across all
+unfinished requests, subject to a memory constraint for cache storage.
+Definition 1 (Hybrid-cache-based Scheduling Problem). Given a set of candidate requests
+U𝑒to be scheduled for execution, and a memory constraint M𝑒for cache storage in a serving iteration
+𝑒, the objective is to select a subset of schedules associated with candidate requests 𝑈𝑒that achieves the
+maximum sum of values:
+𝑚𝑎𝑥∑︁
+𝑖∈𝑈𝑒g𝑒
+𝑖𝛼𝑒
+𝑖,
+s.t.∑︁
+𝑖∈𝑈𝑒
+1−𝛽𝑒
+𝑖
+2
+m𝑒
+𝑖𝛼𝑒
+𝑖≤M𝑒, (7)
+g𝑒
+𝑖=p𝑒
+𝑖−𝛽𝑒
+𝑖(|W𝑒|+|R𝑒|)𝜌m𝑒
+𝑖, (8)
+𝛼𝑒
+𝑖∈{0,1},𝛽𝑒
+𝑖∈{0,1},∀𝑖∈U𝑒. (9)
+Note that𝛼𝑒
+𝑖and𝛽𝑒
+𝑖are binary decision variables indicating whether request 𝑖is selected to
+composite the execution batch in iteration 𝑒, and whether it is assigned hidden cache usage. The
+pending time p𝑒
+𝑖and maximum memory requirement m𝑒
+𝑖for request𝑖at iteration 𝑒are directly
+accessible, as they are tracked each iteration (Section 4.2). The scheduling value g𝑒
+𝑖for request𝑖is
+based on the pending time p𝑒
+𝑖(explained in Section 4.2) and can be calculated before scheduling.
+The memory constraint M𝑒in Eq. 7 depends on the iteration type and the global memory pool
+sizeeM. For prefill iterations, M𝑒=eM−Í
+𝑖∈𝑅𝑒𝑚𝑒
+𝑖. Otherwise, M𝑒=eM. This memory constraint is
+computed in real-time during each iteration.
+Greedy-based Solution. From Definition 1, it can be observed that the classic NP-hard 0-1
+knapsack problem [ 49] is a special case of the hybrid-cache-based scheduling problem (when
+𝛽𝑒
+𝑖=0for all𝑖∈𝑈𝑒, which means no hidden cache usage is allowed). This confirms the inherent
+NP-hardness of the formulated optimization problem. To address such an NP-hard problem, the
+request manager in Apt-Serve uses a greedy-based approximate solution, which favors request
+schedules that have higher marginal gain of scheduling value per unit of memory consumption.
+For simplicity, we omit the superscript 𝑒denoting the iteration in the following illustration.
+For a given request 𝑖, denote its current memory usage as m𝑖, ifm𝑖=0, a marginal memory usage
+increase Δm𝑖to it involves assigning half of its maximum memory requirementm𝑖
+2, indicating
+that request 𝑖is scheduled using hidden cache. Similarly, if m𝑖=m𝑖
+2, the marginal memory usage
+increase Δm𝑖involves assigning the other half of its maximum memory requirement, indicating
+that request 𝑖is now scheduled using KV cache, given that it was previously scheduled with
+hidden cache. If m𝑖=m𝑖, assigning further memory does not provide any additional gain in value.
+Therefore, for a given request 𝑖, its marginal gain in value 𝜃𝑖based on its current memory usage
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:15
+m𝑖, is as follows:
+𝜃𝑖= 
+(p𝑖−(|W|+|R|)𝜌m𝑖)−0
+m𝑖/2−0=2p𝑖
+m𝑖−2(|W|+|R|)𝜌, 𝑖𝑓 m𝑖=0;
+p𝑖−(p𝑖−(|W|+|R|)𝜌m𝑖)
+𝑚𝑖−𝑚𝑖/2=2(|W|+|R|)𝜌, 𝑖𝑓 m𝑖=m𝑖
+2;
+0, 𝑖𝑓 m𝑖=m𝑖.
+Note that for a given request 𝑖to be scheduled, there may be cases where its hidden cache usage
+imposes too much of a negative impact on other requests. This is evident when the marginal gain
+to the overall scheduling value from allocating just enough memory to hold its hidden cache (from
+m𝑖=0tom𝑖=m𝑖
+2) is smaller than which by directly assigning the exact memory space to hold
+its KV cache (from 𝑚𝑖=0to𝑚𝑖=𝑚𝑖). In such cases, its hidden cache usage is avoided, thus its
+marginal gain is refined as follows:
+𝜃𝑖=(p𝑖−0
+m𝑖−0=p𝑖
+m𝑖, 𝑖𝑓 m𝑖=0;
+0, 𝑖𝑓 m𝑖=m𝑖.
+Assume the total number of candidate schedules (how much marginal memory usage increase
+to which requests) is 𝑛, all the possible marginal gain 𝜃1,𝜃2,...,𝜃𝑛associated with each candidate
+request can be pre-recomputed. Then, we can derive the candidate schedule set Υdescribed as
+follow:
+Υ={(𝜃𝑗,r𝑗,Δm𝑗,mr𝑗)|𝑗=1,2,...,𝑛}. (10)
+For the𝑗-th candidate schedule in the set Υ,𝜃𝑗represents its marginal gain in value. r𝑗corresponds
+to the request associated with the 𝑗-th candidate schedule. Δm𝑗indicates the marginal increase in
+memory usage required by this schedule, while mr𝑗denotes the maximum memory required by
+request r𝑗for the𝑗-th candidate schedule. With the candidate schedule set Υderived, together with
+the candidate request set 𝑈and the memory constraint 𝑀, it is fed to a greedy-based scheduling
+process as input, to derive the final scheduling decisions 𝑆as follow:
+𝑆={(𝛼𝑖,𝛽𝑖)|𝑖∈𝑈}. (11)
+We further theoretically prove that such a solution has an approximation ratio of 2. Due to
+page limit, we move the details of the scheduling algorithm and relevant theoretical proof to
+online appendix3. Since the request manager in Apt-Serve dynamically forms request compositions
+based on scheduling outcomes that adapt to runtime information in each inference iteration, it is
+important to note that a request may need to switch cache types according to the scheduling result
+of a particular iteration. In such cases, Apt-Serve discards the existing cache and schedules a prefill
+iteration to recompute the cache in the required type.
+6 Experiments
+In this section, we first provide the implementation details of Apt-Serve (Section 6.1) and the
+experiment setups (Section 6.2). Next, we compare the effective throughput of Apt-Serve with
+three advanced inference serving systems (Section 6.3), and assess Apt-Serve ’s robustness under
+varying request arrival patterns (Section 6.4). We also examine the effects of the hybrid cache
+and the adaptive runtime scheduling (Section 6.5). We further evaluate the impact of Apt-Serve ’s
+scheduling in depth (Section 6.6), as well as the Apt-Serve ’s generalization ability (Section 6.7).
+3https://github.com/eddiegaoo/Apt-Serve/blob/main/greedy_scheduling_appendix.pdf
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:16 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+6.1 Implementation Details
+We implement Apt-Serve4on top of the advanced open-source serving system vLLM [ 37], inheriting
+several de facto systematic optimizations including FlashAttention [ 23] and iteration-level batch-
+ing [ 81]. For the scheduler part, we implement runtime information checking and quantification
+and the adaptive scheduling algorithm to automatically decide the batch composition with the
+desired cache type for requests within the batch in each iteration, and the tailored block-wise
+memory pool of to support hybrid cache storage. For the inference engine, both the KV cache and
+hidden cache are stored in a block-wise format to allow flexible batch size configurations. However,
+irregular memory access can frequently occur due to the fragmented nature of the cache data,
+which is scattered across the physical memory space, even for a single request. Such fragmentation
+can increase inference latency by causing additional memory access overhead [ 51]. To mitigate
+this, we devise a specialized CUDA kernel that optimizes block-wise hidden cache I/O operations,
+similar to the one used for KV cache [ 37]. This kernel fuses reshaping with read/write operations,
+and enables efficient parallel access to fragmented cache on the GPU. For the model executor part,
+we use the NCCL [ 7] for tensor parallel communication among GPU workers as default in the
+original vLLM implementation.
+6.2 Experiment Setups
+Hardware Configurations & Models. We conduct all the experiments on a server with NVIDIA
+A100 GPUs, each with 40GB GPU memory, and the NVLink connections between GPUs are available.
+For the used models, following existing works [ 37,89], we choose the OPT [ 84] model series that is a
+representative LLM family widely used in academia and industry. We use the default FP16 precision
+for each model, and the default tensor model parallelism [ 63] when the model requires more than
+one GPU. Table 2 summarizes the model sizes and the corresponding hardware configurations.
+Datasets & Workloads. To evaluate the effectiveness of Apt-Serve , we choose three typical
+LLM-based applications: chatbot, code-completion, and summarization with their respective bench-
+mark datasets following prior works [ 9,37]. For the chatbot application, we choose ShareGPT
+dataset [ 9] consisting of a collection of user-shared conversations with ChatGPT [ 10]. For the code-
+completion task, we choose HumanEval dataset [ 18], which features 164 programming problems,
+each accompanied by a function signature or docstring, designed to assess the performance of code
+completion models. For the summarization task, we choose LongBench dataset [ 13], which consists
+of summarization of requests with longer prompts compared to the previous two datasets5.
+Following existing works [ 12,37,66,89], we create a distinct serving trace for each dataset respec-
+tively, by randomly sampling 1,000 requests from each dataset. We further generate corresponding
+request arrivals using Poisson distribution with different request rates, as these datasets do not
+include timestamps associated with the requests. Figure 7 shows the distribution of input length
+and output length of the sampled requests in each dataset. It can be noted that the distributions in
+different datasets vary a lot, as they correspond to different downstream tasks of real-time LLM
+inference serving.
+Baselines. We compare Apt-Serve to three representative state-of-the-art LLM inference serving
+systems.
+•vLLM. vLLM [ 37] is an open-sourced LLM inference serving system that is extensively utilized
+in both academia and industry. It features iteration-level batching [ 81] and employs the most
+4Publicly available at: https://github.com/eddiegaoo/Apt-Serve
+5We limit the sequence lengths in LongBench following prior works [ 37,89], due to OPT’s absolute positional embedding
+only supporting a maximum length of 2048.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:17
+Table 2. Model sizes and hardware configurations.
+Model Size 13B 30B 66B
+#GPUs A100 2×A100 4×A100
+Total GPU Memory 40GB 80GB 160GB
+Parameter Size 26GB 60GB 132GB
+Table 3. TTFT & P99 TBT SLOs (s) on different datasets and hardware configurations.
+Model Size 13B 30B 66B
+SLOs TTFT P99 TBT TTFT P99 TBT TTFT P99 TBT
+ShareGPT 1.0 1.0 1.5 1.0 2.0 1.0
+HumanEval 0.5 0.5 1 0.5 1.5 0.5
+LongBench 4.0 1.0 4.5 1.0 5.0 1.0
+Fig. 7. The input & output length distributions of the sampled requests from ShareGPT, HumanEval and
+LongBench datasets.
+advanced block-wise KV cache management, which significantly reduces memory fragmentation
+in KV cache allocation maximizing the attainable batch size under solely the KV cache usage.
+•Sarathi-Serve. Sarathi-Serve [ 12] is a recent state-of-the-art LLM inference serving system
+implemented atop vLLM, which is further equipped with a chunked prefill technique and an
+advanced iteration-level prefill-decode coalescing batching mechanism. It aims to improve the effec-
+tive throughput by optimizing per-batch execution speed via better coordinating the computation
+resource utilization. The newly introduced designs by Apt-Serve in this paper are orthogonal to
+the ones in Sarathi-Serve, and can be combined together for a more enhanced effective throughput.
+•DeepSpeed-FastGen. DeepSpeed-FastGen [ 32] is also a state-of-the-art LLM inference serving
+system equipped with the prefill-decode coalescing batching mechanism. Its optimizations are
+similar to the ones in Sarathi-Serve, but differs in the token composition strategy under the same
+token budget.
+To ensure a fair comparison, we maintain consistent GPU memory utilization of cache storage
+for all the baselines and Apt-Serve .
+Metrics. We focus on effective throughput. Following existing works [ 12,89], we measure the SLO
+attainment rate (%) using the same workloads with different request rates. The SLO attainment
+rate is calculated by the number of served user requests that satisfy both TTFT and P99 TBT SLOs
+divided by the total number of requests during the whole serving process. We can compare the
+effective throughput of different systems by checking the maximum request rate sustained under
+the same level of SLO attainment.
+For different datasets and hardware configurations, we set the application-driven SLOs based
+on the same principle in existing work [ 89]. Specifically, for chatbot and code-completion tasks,
+users usually demand not only immediate real-time response (i.e., the time to see the first token)
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:18 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+(a) ShareGPT
+(b) HumanEval
+(c) LongBench
+Fig. 8. Effective throughput comparison among vLLM, Sarathi-Serve, DeepSpeed-FastGen and Apt-Serve on
+ShareGPT, HumanEval, and LongBench datasets with different models.
+but also satisfactory per-token generation speed. Therefore, both stringent TTFT and P99 TBT
+SLOs are required to be set for these two tasks. For the summarization task, as the input prompts
+are usually long requiring more overhead during the prefill phase, a relatively loose TTFT SLO is
+considered for this type of application. Besides, with the increase of model size, the model execution
+latency also increases. Therefore, for larger models, both TTFT SLO and P99 TBT SLOs are slightly
+relaxed compared to the models of the smaller sizes. Table 3 presents the detailed SLOs for different
+applications under different hardware settings used in the main experiments (Section 6.3).
+6.3 Main Results: Effective Throughput
+We compare the effective throughput between all three baselines and Apt-Serve on three models of
+different sizes, and three datasets of distinct distributions, under different hardware configurations.
+The results are summarized in Figure 8. Within each subfigure, the curves illustrate that as the
+request rate rises, an increasing number of requests fail to meet the latency requirements, resulting
+in a decrease in SLO attainment for all systems. Notably, the baseline systems are highly sensitive to
+even a moderate increase in request rate beyond a certain threshold. In contrast, Apt-Serve remains
+resilient under high request rates, avoiding a sudden collapse in SLO attainment thanks to its hybrid
+cache and adaptive scheduling designs. Compared to vLLM, Sarathi-Serve, and DeepSpeed-FastGen,
+Apt-Serve achieves 2.3×, 1.9×, and 1.8×higher average request rates respectively, with peak values
+reaching 4.0×, 3.4×, and 3.3×at 90% SLO attainment. At 60% SLO attainment, Apt-Serve can handle
+4.9×, 4.4×, and 4.3×higher request rates on average, with maximum values up to 8.8 ×, 7.9×, and
+7.5×, respectively. In the following, we provide a detailed comparative analysis across different
+datasets, exploring how Apt-Serve ’s optimizations perform with different request workloads.
+On ShareGPT, Apt-Serve demonstrates a significant improvement in effective throughput. Fig-
+ure 8a, at the 90% SLO attainment threshold, Apt-Serve can handle 2.3×, 2.0×, and 1.9×higher
+request rates on average compared to vLLM, Sarathi-Serve, and DeepSpeed-FastGen. At the 60%
+SLO attainment threshold, this advantage increases, with Apt-Serve sustaining 7.4×, 6.8×, and
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:19
+Fig. 9. The SLO attainment (%) comparison among vLLM, Sarathi-Serve and Apt-Serve under different levels
+of burstiness on ShareGPT, HumanEval, and LongBench datasets.
+6.4×higher request rates on average. As seen in Figure 7, ShareGPT has the highest mean output
+lengths, resulting in longer cache lifetimes for ongoing requests, which further makes incoming
+request wait longer for available cache space as the request rate rises. Apt-Serve ’s hybrid cache
+design effectively accommodates more requests within the same memory budget, reducing TTFT
+SLO violations. Additionally, the high variance in both input and output lengths in the ShareGPT
+dataset makes Apt-Serve ’s adaptive scheduling particularly beneficial. Since it can dynamically
+adjust the request composition in each inference iteration, reducing unnecessary SLO violations
+under the same memory budget.
+On HumanEval, Apt-Serve shows a moderate improvement in effective throughput as seen in
+Figure 8b. On average, Apt-Serve handles 1.7×, 1.4×, and 1.4×higher average request rates at
+the 90% SLO threshold, and 3.0 ×, 2.6×, and 2.5×higher at the 60% threshold, compared to vLLM,
+Sarathi-Serve, and DeepSpeed-FastGen. The performance difference is expected, as HumanEval
+has smaller average output lengths and lower variance in both input and output lengths (Figure 7).
+These characteristics reduce the impact of Apt-Serve ’s optimizations, as per-request computational
+and memory demands are lower. We also observe that Sarathi-Serve and FastGen perform better on
+HumanEval, likely due to the short per-request cache lifetime (due to smaller output lengths) and
+their prefill-decode coalescing batching, which reduces the generation stall for decode requests and
+frees up cache space faster. However, when per-request cache lifetime increases (e.g., on ShareGPT),
+this optimization alone is inadequate to boost effective throughput.
+On LongBench, Apt-Serve also shows a significant boost in effective throughput. As indicated in
+Figure 8c, on average, Apt-Serve can sustain 2.8×, 2.5×, and 2.3×higher request rates at the 90% SLO
+attainment threshold, and 4.2 ×, 3.9×, and 3.8×higher request rates at the 60% threshold compared to
+the three baselines respectively. LongBench shares similar characteristics with ShareGPT in terms
+of large mean output lengths, but it also has significantly larger mean input lengths, indicating
+higher per-request cache memory consumption. In such cases, Apt-Serve ’s hybrid cache design
+lowers per-request memory consumption, reducing the number of pending requests. Additionally,
+the high variance in input lengths on the LongBench dataset makes Apt-Serve ’s adaptive scheduling
+highly effective, similar to the benefit observed on ShareGPT.
+6.4 Evaluation on Robustness
+We evaluate the robustness of Apt-Serve and the baselines on distinct request arrival patterns of the
+same request rate. We use Gamma distribution to simulate request arrivals across three different
+datasets, keeping the average arrival rate fixed while varying the burstiness of the arrivals, which
+is controlled by the coefficient of variation (CV) in the Gamma distribution. A higher CV indicates
+more bursty arrivals. We choose OPT-13B as a representative model, as the results for other models
+follow a similar trend. The request rates are set to 3.8 req/s for ShareGPT, 9.0 req/s for HumanEval,
+and 1.5 req/s for LongBench, where the original performance of Apt-Serve is close to that of the
+strongest baseline Sarathi-Serve in the main experiments. From Figure 9, we observe that on all
+datasets, the SLO attainment for all systems declines as request burstiness increases. However,
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:20 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+Table 4. The SLO attainment (%) of Apt-Serve with KV cache and with hybrid cache under differed request
+rates and arrival burstiness (CV) on ShareGPT and LongBench datasets.
+Dataset Request Rate CV KV Cache Hybrid Cache
+ShareGPT31 99.5 99.5
+5 94.7 95.9
+10 75.1 78.2
+61 65.7 67.3
+5 66.7 67.7
+10 57.1 58.4
+LongBench1.51 96.6 98.2
+5 70.0 76.0
+10 43.4 50.8
+31 70.0 77.6
+5 58.8 64.8
+10 35.6 42.5
+Table 5. The SLO attainment (%) of Apt-Serve with FCFS and with adaptive scheduling under differed request
+rates and arrival burstiness (CV) on ShareGPT and LongBench.
+Dataset Request Rate CV FCFS Adaptive
+ShareGPT31 26.4 99.5
+5 59.7 95.9
+10 11.9 78.2
+61 20.0 67.3
+5 18.1 67.7
+10 9.9 58.4
+LongBench1.51 11.8 98.2
+5 10.8 76.0
+10 5.4 50.8
+31 4.8 77.6
+5 4.6 64.8
+10 4.2 42.5
+Apt-Serve consistently outperforms the baselines against higher burstiness, with the performance
+gap widening as burstiness increases. Overall, Apt-Serve achieves up to 7.5×higher SLO attainment
+under bursty request conditions compared to the baselines.
+6.5 Ablation Study
+We conduct case studies to evaluate the impact of the hybrid cache design in Apt-Serve using the
+OPT-13B model on the ShareGPT and LongBench datasets. We use Gamma distribution to simulate
+request arrivals and vary both request rates and CVs. Specifically, we compare the performance of
+Apt-Serve with and without the hybrid cache (using only the KV cache) while retaining the adaptive
+scheduling design. The results are presented in Table 4. It is clear that Apt-Serve consistently
+achieves higher SLO attainment when utilizing the hybrid cache. Such performance gain becomes
+more prominent with higher request rate, burstier request load and longer requests, as the hybrid
+cache enables Apt-Serve to enlarge batch size more flexibly during the serving process.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:21
+(a) TTFT CDF
+(b) TBT CDF
+Fig. 10. Request TTFT and P99 TBT distributions on ShareGPT (6.0 req/s), HumanEval (9.0 req/s), and
+LongBench (2.0 req/s) by FCFS scheduling, Apt-Serve’s scheduling and Apt-Serve’s scheduling*.
+We also analyze the effect of scheduling policy in Apt-Serve using the same experimental setup
+described above. We compare Apt-Serve ’s performance with its original adaptive scheduling policy,
+described in Section 5, against the FCFS policy commonly used in other systems. As shown in Table 5,
+the FCFS policy significantly degrades Apt-Serve ’s performance, leading to poor SLO attainment.
+This is because the FCFS policy enforces rigid scheduling outcome, while Apt-Serve ’s scheduling
+policy intelligently leverages runtime information to make adaptive scheduling decisions.
+6.6 Analysis of the Apt-Serve’s Scheduling
+We further analyze Apt-Serve ’s scheduling, focusing on its impact on latency percentiles and its
+scalability.
+Effect on the Request Latency Distributions . We analyze the cumulative distribution func-
+tions (CDFs) of TTFT and TBT for both FCFS scheduling and Apt-Serve ’s scheduling, as illustrated
+in Figure 10. The comparison is conducted at request rates of 6.0 req/s, 9.0 req/s, and 2.0 req/s
+on ShareGPT, HumanEval, and LongBench using the OPT-13B model. At these rates, Apt-Serve ’s
+scheduling demonstrates its ability to ensure that the majority of requests meet their SLO criteria,
+achieving over 90% SLO attainment. In contrast, FCFS scheduling results in a severe performance
+degradation, with less than 30% SLO attainment. While Apt-Serve offers superior performance, it
+may cause a small fraction of requests (10%) experience starvation, as shown by high tail latency.
+This occurs due to the SLO-aware fallback mechanism (described in Section 4.2), where requests
+exceeding their latency SLOs have their scheduling values aggressively reduced to near-zero for
+priority demotion, aiming at maximizing SLO attainment. Despite this, Apt-Serve remains adapt-
+able, allowing further tradeoffs between SLO attainment and tail latency. For example, a feasible
+way is to apply the decaying factor to the scheduling values of SLO-violated requests, instead
+of directly reducing them to near-zero. We present an exemplar result ( Apt-Serve ’s Scheduling*)
+with a uniform decaying factor of 0.4 across all datasets in Figure 10. We can observe that such
+an alternative configuration can achieve a significant reduction in tail latency compared to the
+original Apt-Serve ’s scheduling, while still outperforming FCFS in terms of SLO attainment.
+Scalability in Terms of Candidate Requests. We also evaluate the execution time of Apt-
+Serve ’s scheduling algorithm as the number of candidate requests increases using the OPT-13B
+model on a single GPU. The results, summarized in Table 6, reveal that the algorithm is computation-
+ally efficient. Even when scheduling up to 1.6K requests, the incurred overhead is minimal—only 10.8
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:22 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+Table 6. The execution time (ms) of Apt-Serve’s scheduling algorithm against the number of candidate
+requests.
+# Request 50 100 200 400 800 1600
+Time (ms) 0.3 0.5 1.0 2.1 4.8 10.8
+Table 7. The input & output lengths statistics of three ultra-long datasets, WikiText, Arxiv, and BookCorpus.
+DatasetInput Length Output Length
+Max Median Mean Max Median Mean
+WikiText 1840 871 914 992 552 521
+Arxiv 19600 6853 7812 9754 226 420
+BookCorpus 23706 14781 16944 299 221 185
+Fig. 11. The SLO attainment (%) comparison among vLLM, Sarathi-Serve, Apt-Serve and Apt-Serve-S under
+different request rates on ShareGPT, HumanEval, and LongBench datasets.
+milliseconds—compared to the practical computation time. For example, a single decode iteration
+with 50 requests using the OPT-13B model takes approximately 120 milliseconds.
+6.7 Generalization Study
+We further investigate Apt-Serve ’s generalization capabilities, focusing on (1) its ability to integrate
+with other optimization techniques, and (2) its performance in ultra-long context scenarios.
+Generalization with Other Techniques. AsApt-Serve ’s optimizations were initially built on
+vLLM, we further extend them on top of the Sarathi-Serve’s optimizations, such as chunked prefill
+and coalesced batching of prefill and decode requests. This removes the need for the iteration type
+decision in Section 5, focusing the scheduling process on request composition ( Apt-Serve-S ). We
+further compare vLLM, Sarathi-Serve, Apt-Serve , and Apt-Serve-S using the OPT-13B model across
+ShareGPT, HumanEval, and LongBench datasets (SLOs in Table 3). The results in Figure 11 show that
+Apt-Serve-S not only outperforms the baseline Sarathi-Serve, but also the original Apt-Serve (only
+integrating the vLLM’s optimizations). Such a phenomenon is reasonable, as integrating Sarathi-
+Serve’s optimizations enables better computation resource utilization. These findings suggest
+Apt-Serve ’s techniques could be applicable to other emerging methods [ 58,59,66,89], which we
+leave for future work.
+Generalization to Ultra-Long Context. Due to the 2048-token context limitation of the OPT
+model family, we evaluate Apt-Serve and vLLM using two models with extended context capabilities:
+LLaMA3-8B-Instruct262K and Yi-6B-200K. We test on three ultra-long context datasets—WikiText,
+Arxiv, and BookCorpus—sampling serving traces similar to Section 6.3. The input and output
+statistics for the sampled requests are shown in Table 7. Experiments were run on 1 GPU, 2 GPUs,
+and 4 GPUs for the datasets, respectively, to handle larger context lengths and ensure batching of at
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:23
+(a) LLaMA3-8B-Instruct262K
+(b) Yi-6B-200K
+Fig. 12. The SLO attainment (%) comparison between vLLM and Apt-Serve on WikiText, Arxiv, and BookCorpus
+datasets with two different models.
+least 10 requests per iteration. We set a relaxed TTFT SLO of 10 seconds in response to ultra-long
+prompts by these datasets, while maintaining the strict 1 second P99 TBT SLO.
+The results in Figure 12 show that Apt-Serve outperforms vLLM in SLO attainment, especially
+for TTFT, which is the focus of its optimizations. It is noteworthy that maintaining TBT SLO in the
+ultra-long context scenarios is rather challenging. For example, on BookCorpus with Yi-6B-200K at
+0.5 req/s, both systems struggle to exceed 60% TBT SLO attainment. This is due to interference
+between prefill and decode iterations, which is worsened by long prompts in ultra-long context
+scenarios [ 89]. Integrating disaggregated distributed architectures [ 58,59,89] could help address
+this and offers a promising avenue for future research.
+7 Related Work
+LLM Inference Optimizations. The overlap between data management and machine learning
+has attracted increasing attention, leading to a surge of system related studies from the data
+management community [ 28,29,33,39–42,50,53–57,60,69,73,78,85,86,88,91]. Specifically,
+Inference related system optimizations [ 17,24–26,30,35,43,47,64,79,80,82,90] are critical to
+the efficient deployment of AI-based services. For LLM inference, several advanced techniques
+have been proposed to improve inference performance. FlashAttention [ 23] is a widely adopted
+method that leverages tiling and kernel optimizations to reduce I/O costs, significantly improv-
+ing the speed of attention computation during inference. Furthermore, model compression and
+quantization techniques [ 46,65,76,77] have been employed to lower inference latency, albeit often
+at the cost of reduced model accuracy. To enhance efficiency during the decode phase, the use of
+KV caching [ 61] has become a standard practice. However, addressing the substantial memory
+consumption associated with the KV cache has led to research on KV cache compression and
+quantization [ 44,45,83,87]. While these methods reduce memory usage, they also introduce infor-
+mation loss, resulting in performance degradation similar to that seen with model compression and
+quantization techniques. In contrast, the hidden cache introduced in Apt-Serve maintains model
+effectiveness by preserving comprehensive historical information through additional computation.
+LLM Online Serving Optimizations. Optimizing online serving of LLMs is crucial for main-
+taining scalability, ensuring high throughput, and adhering to latency service level objectives
+(SLOs) in response to streaming request traffic. Orca [ 81] introduces iteration-level batching, where
+requests can dynamically join or exit a batch at each iteration, rather than relying on traditional
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:24 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+run-to-completion batching, thereby improving GPU utilization by enabling larger batch sizes.
+vLLM [ 37] tackles batch size optimization by implementing block-wise KV cache management,
+reducing cache fragmentation. Llumnix [ 66] optimizes memory utilization across multiple instances
+by employing dynamic KV cache migration, allowing for larger batch processing. Sarathi-Serve [ 12]
+and FastGen [ 32] increase throughput by adopting chunked-prefill and prefill-decode coalescing
+batching techniques to maximize computational resource usage. Disaggregated hardware solutions
+such as DistServe [ 89], SplitWise [ 59], and ExeGPT [ 58] further enhance throughput by distributing
+prefill and decode tasks across separate GPUs. Additionally, FastServe [ 75] reduces request comple-
+tion times through a preemptive time-slicing mechanism, while SpotServe [ 52] leverages dynamic
+reparallelization to provide cost-efficient serving on preemptible cloud instances. The strategies
+employed by Apt-Serve complement these existing approaches and can be integrated with them to
+further improve online serving performance. Some other works further propose learning-based
+predictions for output information to assist scheduling [ 27,34].𝑆3[34] predicts exact output lengths,
+while Fu et al. [27] predicts the relative rank of output lengths. These prediction-based methods can
+be integrated with Apt-Serve to enable interval-level scheduling decisions, potentially improving
+scheduling outcomes. Since this requires a new formulation of the scheduling problem, we leave it
+as future work.
+8 Conclusion
+This paper presents Apt-Serve , a scalable framework aimed at improving effective throughput in
+LLM inference serving. We identify two major factors that limit effective throughput: the extensive
+use of KV cache and the First-Come-First-Serve Request Scheduling policy, both of which lead to a
+sharp decline in TTFT SLO attainment as request rate increases. To tackle the bottlenecks, Apt-Serve
+introduces a novel hybrid cache scheme the combines the advantages of the computation-efficient
+KV cache and the memory-efficient hidden cache, enabling larger batch sizes and reducing delays
+for incoming requests. Furthermore, Apt-Serve devises an efficient runtime scheduling mechanism
+that dynamically optimizes the timing and cache allocation for each request. Extensive experiments
+on multiple datasets and LLMs demonstrate that Apt-Serve can boost effective throughput by up to
+8.8×compared to state-of-the-art LLM inference serving systems. For the future work, we plan to
+generalize Apt-Serve’s designs to the multi-instance scenario, incorporating a more comprehensive
+multi-dimensional scheduling problem formulation.
+Acknowledgments
+The authors would like to thank the anonymous reviewers for their insightful reviews. Lei Chen’s
+work is partially supported by National Key Research and Development Program of China Grant
+No. 2023YFF0725100, National Science Foundation of China (NSFC) under Grant No. U22B2060,
+Guangdong-Hong Kong Technology Innovation Joint Funding Scheme Project No. 2024A0505040012,
+the Hong Kong RGC GRF Project 16213620, RIF Project R6020-19, AOE Project AoE/E-603/18,
+Theme-based project TRS T41-603/20R, CRF Project C2004-21G, Guangdong Province Science
+and Technology Plan Project 2023A0505030011, Guangzhou municipality big data intelligence key
+lab, 2023A03J0012, Hong Kong ITC ITF grants MHX/078/21 and PRP/004/22FX, Zhujiang scholar
+program 2021JC02X170, Microsoft Research Asia Collaborative Research Grant, HKUST-Webank
+joint research lab and 2023 HKUST Shenzhen-Hong Kong Collaborative Innovation Institute Green
+Sustainability Special Fund, from Shui On Xintiandi and the InnoSpace GBA. Yanyan Shen’s work
+is supported by the National Key Research and Development Program of China (2022YFE0200500),
+Shanghai Municipal Science and Technology Major Project (2021SHZDZX0102), the Tencent Wechat
+Rhino-Bird Focused Research Program, and SJTU Global Strategic Partnership Fund (2021 SJTU-
+HKUST).
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:25
+References
+[1] 2022. Character ai. https://character.ai.
+[2] 2022. Perplexity ai. https://www.perplexity.ai/.
+[3] 2023. Amazon codewhispere. https://aws.amazon.com/codewhisperer/.
+[4] 2023. Anthropic claude. https://claude.ai.
+[5] 2023. Bing ai. https://www.bing.com/chat.
+[6] 2023. Komo. https://komo.ai/.
+[7] 2023. NCCL: The NVIDIA Collective Communication Library. https://developer.nvidia.com/nccl.
+[8] 2023. Replit ghostwriter. https://replit.com/site/ghostwriter.
+[9] 2023. ShareGPT Team. https://sharegpt.com/.
+[10] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida,
+Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al .2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774
+(2023).
+[11] AF Agarap. 2018. Deep learning using rectified linear units (relu). arXiv preprint arXiv:1803.08375 (2018).
+[12] Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav Gulavani, Alexey Tumanov,
+and Ramachandran Ramjee. 2024. Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve. In 18th
+USENIX Symposium on Operating Systems Design and Implementation (OSDI 24) . 117–134.
+[13] Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu, Jiankai Tang, Zhidian Huang, Zhengxiao Du, Xiao Liu, Aohan Zeng,
+Lei Hou, et al .2023. Longbench: A bilingual, multitask benchmark for long context understanding. arXiv preprint
+arXiv:2308.14508 (2023).
+[14] Luc Bouganim, Françoise Fabret, Chandrasekaran Mohan, and Patrick Valduriez. 2000. Dynamic query scheduling in
+data integration systems. In Proceedings of 16th International Conference on Data Engineering (Cat. No. 00CB37073) .
+IEEE, 425–434.
+[15] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan,
+Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan,
+Rewon Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric Sigler,
+Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya
+Sutskever, and Dario Amodei. 2020. Language Models are Few-Shot Learners. In Advances in Neural Information
+Processing Systems , H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (Eds.), Vol. 33. Curran Associates, Inc.,
+1877–1901. https://proceedings.neurips.cc/paper_files/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf
+[16] Yang Cao, Wenfei Fan, Weijie Ou, Rui Xie, and Wenyue Zhao. 2023. Transaction Scheduling: From Conflicts to Runtime
+Conflicts. Proceedings of the ACM on Management of Data 1, 1 (2023), 1–26.
+[17] Chaokun Chang, Eric Lo, and Chunxiao Ye. 2024. Biathlon: Harnessing Model Resilience for Accelerating ML Inference
+Pipelines. Proc. VLDB Endow. 17, 10 (Aug. 2024), 2631–2640. doi:10.14778/3675034.3675052
+[18] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde De Oliveira Pinto, Jared Kaplan, Harri Edwards,
+Yuri Burda, Nicholas Joseph, Greg Brockman, et al .2021. Evaluating large language models trained on code. arXiv
+preprint arXiv:2107.03374 (2021).
+[19] Audrey Cheng, Aaron Kabcenell, Jason Chan, Xiao Shi, Peter Bailis, Natacha Crooks, and Ion Stoica. 2024. Towards
+Optimal Transaction Scheduling. Proceedings of the VLDB Endowment 17, 11 (2024), 2694–2707.
+[20] Yun Chi, Hakan Hacígümüş, Wang-Pin Hsiung, and Jeffrey F Naughton. 2013. Distribution-based query scheduling.
+Proceedings of the VLDB Endowment 6, 9 (2013), 673–684.
+[21] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham,
+Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, et al .2023. Palm: Scaling language modeling with pathways.
+Journal of Machine Learning Research 24, 240 (2023), 1–113.
+[22] Arghavan Moradi Dakhel, Vahid Majdinasab, Amin Nikanjam, Foutse Khomh, Michel C Desmarais, and Zhen Ming Jack
+Jiang. 2023. Github copilot ai pair programmer: Asset or liability? Journal of Systems and Software 203 (2023), 111734.
+[23] Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022. Flashattention: Fast and memory-efficient
+exact attention with io-awareness. Advances in Neural Information Processing Systems 35 (2022), 16344–16359.
+[24] Jingzhi Fang, Yanyan Shen, Yue Wang, and Lei Chen. 2020. Optimizing DNN computation graph using graph
+substitutions. Proceedings of the VLDB Endowment 13, 12 (2020), 2734–2746.
+[25] Jingzhi Fang, Yanyan Shen, Yue Wang, and Lei Chen. 2021. ETO: Accelerating optimization of DNN operators by
+high-performance tensor program reuse. Proceedings of the VLDB Endowment 15, 2 (2021), 183–195.
+[26] Jingzhi Fang, Yanyan Shen, Yue Wang, and Lei Chen. 2024. STile: Searching Hybrid Sparse Formats for Sparse Deep
+Learning Operators Automatically. Proceedings of the ACM on Management of Data 2, 1 (2024), 1–26.
+[27] Yichao Fu, Siqi Zhu, Runlong Su, Aurick Qiao, Ion Stoica, and Hao Zhang. 2024. Efficient LLM Scheduling by Learning
+to Rank. In The Thirty-eighth Annual Conference on Neural Information Processing Systems . https://openreview.net/
+forum?id=wlLjYl0Gi6
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:26 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+[28] Shihong Gao, Yiming Li, Yanyan Shen, Yingxia Shao, and Lei Chen. 2024. Etc: Efficient training of temporal graph
+neural networks over large-scale dynamic graphs. Proceedings of the VLDB Endowment 17, 5 (2024), 1060–1072.
+[29] Shihong Gao, Yiming Li, Xin Zhang, Yanyan Shen, Yingxia Shao, and Lei Chen. 2024. Simple: Efficient temporal graph
+neural network training at scale with dynamic data placement. Proceedings of the ACM on Management of Data 2, 3
+(2024), 1–25.
+[30] Xinyi Gao, Wentao Zhang, Junliang Yu, Yingxia Shao, Quoc Viet Hung Nguyen, Bin Cui, and Hongzhi Yin. 2024.
+Accelerating scalable graph neural network inference with node-adaptive propagation. In 2024 IEEE 40th International
+Conference on Data Engineering (ICDE) . IEEE, 3042–3055.
+[31] Chetan Gupta, Abhay Mehta, Song Wang, and Umesh Dayal. 2009. Fair, effective, efficient and differentiated scheduling
+in an enterprise data warehouse. In Proceedings of the 12th International Conference on Extending Database Technology:
+Advances in Database Technology . 696–707.
+[32] Connor Holmes, Masahiro Tanaka, Michael Wyatt, Ammar Ahmad Awan, Jeff Rasley, Samyam Rajbhandari, Reza Yaz-
+dani Aminabadi, Heyang Qin, Arash Bakhtiari, Lev Kurilenko, et al. 2024. Deepspeed-fastgen: High-throughput text
+generation for llms via mii and deepspeed-inference. arXiv preprint arXiv:2401.08671 (2024).
+[33] Alexander Isenko, Ruben Mayer, Jeffrey Jedele, and Hans-Arno Jacobsen. 2022. Where is my training bottleneck?
+hidden trade-offs in deep learning preprocessing pipelines. In Proceedings of the 2022 International Conference on
+Management of Data . 1825–1839.
+[34] Yunho Jin, Chun-Feng Wu, David Brooks, and Gu-Yeon Wei. 2023. 𝑆3: Increasing GPU Utilization during Generative
+Inference for Higher Throughput. Advances in Neural Information Processing Systems 36 (2023), 18015–18027.
+[35] Daniel Kang, Ankit Mathur, Teja Veeramacheneni, Peter Bailis, and Matei Zaharia. 2020. Jointly optimizing preprocess-
+ing and inference for DNN-based visual analytics. Proc. VLDB Endow. 14, 2 (Oct. 2020), 87–100. doi:10.14778/3425879.
+3425881
+[36] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford,
+Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 (2020).
+[37] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang,
+and Ion Stoica. 2023. Efficient memory management for large language model serving with pagedattention. In
+Proceedings of the 29th Symposium on Operating Systems Principles . 611–626.
+[38] Guoliang Li, Xuanhe Zhou, and Lei Cao. 2021. AI meets database: AI4DB and DB4AI. In Proceedings of the 2021
+International Conference on Management of Data . 2859–2866.
+[39] Haoyang Li and Lei Chen. 2023. Early: Efficient and reliable graph neural network for dynamic graphs. Proceedings of
+the ACM on Management of Data 1, 2 (2023), 1–28.
+[40] Yiming Li, Yanyan Shen, Lei Chen, and Mingxuan Yuan. 2023. Orca: Scalable temporal graph neural network training
+with theoretical guarantees. Proceedings of the ACM on Management of Data 1, 1 (2023), 1–27.
+[41] Yiming Li, Yanyan Shen, Lei Chen, and Mingxuan Yuan. 2023. Zebra: When temporal graph neural networks meet
+temporal personalized pagerank. Proceedings of the VLDB Endowment 16, 6 (2023), 1332–1345.
+[42] Zhiyuan Li, Xun Jian, Yue Wang, Yingxia Shao, and Lei Chen. 2024. DAHA: Accelerating GNN Training with Data and
+Hardware Aware Execution Planning. Proceedings of the VLDB Endowment 17, 6 (2024), 1364–1376.
+[43] Qingxiu Liu, Qun Huang, Xiang Chen, Sa Wang, Wenhao Wang, Shujie Han, and Patrick PC Lee. 2024. PP-Stream:
+Toward High-Performance Privacy-Preserving Neural Network Inference via Distributed Stream Processing. In
+Proceedings of the 40th IEEE International Conference on Data Engineering (ICDE 2024) .
+[44] Yuhan Liu, Hanchen Li, Yihua Cheng, Siddhant Ray, Yuyang Huang, Qizheng Zhang, Kuntai Du, Jiayi Yao, Shan Lu,
+Ganesh Ananthanarayanan, et al .2024. CacheGen: KV Cache Compression and Streaming for Fast Large Language
+Model Serving. In Proceedings of the ACM SIGCOMM 2024 Conference . 38–56.
+[45] Zichang Liu, Aditya Desai, Fangshuo Liao, Weitao Wang, Victor Xie, Zhaozhuo Xu, Anastasios Kyrillidis, and Anshumali
+Shrivastava. 2024. Scissorhands: Exploiting the persistence of importance hypothesis for llm kv cache compression at
+test time. Advances in Neural Information Processing Systems 36 (2024).
+[46] Zichang Liu, Jue Wang, Tri Dao, Tianyi Zhou, Binhang Yuan, Zhao Song, Anshumali Shrivastava, Ce Zhang, Yuandong
+Tian, Christopher Re, et al .2023. Deja vu: Contextual sparsity for efficient llms at inference time. In International
+Conference on Machine Learning . PMLR, 22137–22176.
+[47] Yao Lu, Aakanksha Chowdhery, Srikanth Kandula, and Surajit Chaudhuri. 2018. Accelerating machine learning
+inference with probabilistic predicates. In Proceedings of the 2018 International Conference on Management of Data .
+1493–1508.
+[48] Yancan Mao, Jianjun Zhao, Shuhao Zhang, Haikun Liu, and Volker Markl. 2023. Morphstream: Adaptive scheduling
+for scalable transactional stream processing on multicores. Proceedings of the ACM on Management of Data 1, 1 (2023),
+1–26.
+[49] Silvano Martello and Paolo Toth. 1990. Knapsack problems: algorithms and computer implementations . John Wiley &
+Sons, Inc.
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.Apt-Serve: Adaptive Request Scheduling on Hybrid Cache for Scalable LLM Inference Serving 130:27
+[50] Xupeng Miao, Xiaonan Nie, Yingxia Shao, Zhi Yang, Jiawei Jiang, Lingxiao Ma, and Bin Cui. 2021. Heterogeneity-
+aware distributed machine learning training via partial reduce. In Proceedings of the 2021 International Conference on
+Management of Data . 2262–2270.
+[51] Xupeng Miao, Gabriele Oliaro, Zhihao Zhang, Xinhao Cheng, Hongyi Jin, Tianqi Chen, and Zhihao Jia. 2023. Towards
+efficient generative large language model serving: A survey from algorithms to systems. arXiv preprint arXiv:2312.15234
+(2023).
+[52] Xupeng Miao, Chunan Shi, Jiangfei Duan, Xiaoli Xi, Dahua Lin, Bin Cui, and Zhihao Jia. 2024. Spotserve: Serving
+generative large language models on preemptible instances. In Proceedings of the 29th ACM International Conference on
+Architectural Support for Programming Languages and Operating Systems, Volume 2 . 1112–1127.
+[53] Xupeng Miao, Yining Shi, Zhi Yang, Bin Cui, and Zhihao Jia. 2023. SDPipe: A Semi-Decentralized Framework for
+Heterogeneity-aware Pipeline-parallel Training. Proc. VLDB Endow. 16 (2023).
+[54] Xupeng Miao, Yining Shi, Hailin Zhang, Xin Zhang, Xiaonan Nie, Zhi Yang, and Bin Cui. 2022. HET-GMP: A Graph-
+based System Approach to Scaling Large Embedding Model Training. In Proceedings of SIGMOD Conference . ACM,
+470–480. doi:10.1145/3514221.3517902
+[55] Xupeng Miao, Yujie Wang, Youhe Jiang, Chunan Shi, Xiaonan Nie, Hailin Zhang, and Bin Cui. 2023. Galvatron: Efficient
+Transformer Training over Multiple GPUs Using Automatic Parallelism. Proc. VLDB Endow. 16, 3 (2023), 470–479.
+doi:10.14778/3570690.3570697
+[56] Xupeng Miao, Hailin Zhang, Yining Shi, Xiaonan Nie, Zhi Yang, Yangyu Tao, and Bin Cui. 2022. HET: Scaling out
+Huge Embedding Model Training via Cache-enabled Distributed Framework. Proc. VLDB Endow. 15, 2 (2022), 312–320.
+[57] Jayashree Mohan, Amar Phanishayee, Ashish Raniwala, and Vijay Chidambaram. 2021. Analyzing and mitigating data
+stalls in DNN training. Proceedings of the VLDB Endowment 14, 5 (2021), 771–784.
+[58] Hyungjun Oh, Kihong Kim, Jaemin Kim, Sungkyun Kim, Junyeol Lee, Du-seong Chang, and Jiwon Seo. 2024. Exegpt:
+Constraint-aware resource scheduling for llm inference. In Proceedings of the 29th ACM International Conference on
+Architectural Support for Programming Languages and Operating Systems, Volume 2 . 369–384.
+[59] Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka Shah, Íñigo Goiri, Saeed Maleki, and Ricardo Bianchini.
+2024. Splitwise: Efficient generative llm inference using phase splitting. In 2024 ACM/IEEE 51st Annual International
+Symposium on Computer Architecture (ISCA) . IEEE, 118–132.
+[60] Jingshu Peng, Zhao Chen, Yingxia Shao, Yanyan Shen, Lei Chen, and Jiannong Cao. 2022. Sancus: sta le n ess-aware c
+omm u nication-avoiding full-graph decentralized training in large-scale graph neural networks. Proceedings of the
+VLDB Endowment 15, 9 (2022), 1937–1950.
+[61] Reiner Pope, Sholto Douglas, Aakanksha Chowdhery, Jacob Devlin, James Bradbury, Jonathan Heek, Kefan Xiao,
+Shivani Agrawal, and Jeff Dean. 2023. Efficiently scaling transformer inference. Proceedings of Machine Learning and
+Systems 5 (2023), 606–624.
+[62] Ruoyu Qin, Zheming Li, Weiran He, Mingxing Zhang, Yongwei Wu, Weimin Zheng, and Xinran Xu. 2024. Mooncake:
+Kimi’s KVCache-centric Architecture for LLM Serving. arXiv preprint arXiv:2407.00079 (2024).
+[63] Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 2019. Megatron-
+lm: Training multi-billion parameter language models using model parallelism. arXiv preprint arXiv:1909.08053 (2019).
+[64] Utku Sirin and Stratos Idreos. 2024. The Image Calculator: 10x Faster Image-AI Inference by Replacing JPEG with
+Self-designing Storage Format. Proc. ACM Manag. Data 2, 1, Article 52 (March 2024), 31 pages. doi:10.1145/3639307
+[65] Yixin Song, Zeyu Mi, Haotong Xie, and Haibo Chen. 2023. Powerinfer: Fast large language model serving with a
+consumer-grade gpu. arXiv preprint arXiv:2312.12456 (2023).
+[66] Biao Sun, Ziming Huang, Hanyu Zhao, Wencong Xiao, Xinyi Zhang, Yong Li, and Wei Lin. 2024. Llumnix: Dy-
+namic Scheduling for Large Language Model Serving. In 18th USENIX Symposium on Operating Systems Design and
+Implementation (OSDI 24) . 173–191.
+[67] Gemini Team, Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan
+Schalkwyk, Andrew M Dai, Anja Hauth, et al .2023. Gemini: a family of highly capable multimodal models. arXiv
+preprint arXiv:2312.11805 (2023).
+[68] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste
+Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, et al .2023. Llama: Open and efficient foundation language models.
+arXiv preprint arXiv:2302.13971 (2023).
+[69] Taegeon Um, Byungsoo Oh, Byeongchan Seo, Minhyeok Kweun, Goeun Kim, and Woo-Yeon Lee. 2023. Fastflow:
+Accelerating deep learning model training with smart offloading of input data pipeline. Proceedings of the VLDB
+Endowment 16, 5 (2023), 1086–1099.
+[70] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia
+Polosukhin. 2017. Attention is All you Need. In Advances in Neural Information Processing Systems , I. Guyon, U. Von
+Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (Eds.), Vol. 30. Curran Associates, Inc.
+https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.130:28 Shihong Gao, Xin Zhang, Yanyan Shen, & Lei Chen
+[71] Benjamin Wagner, André Kohn, and Thomas Neumann. 2021. Self-tuning query scheduling for analytical workloads.
+InProceedings of the 2021 International Conference on Management of Data . 1879–1891.
+[72] Wei Wang, Meihui Zhang, Gang Chen, HV Jagadish, Beng Chin Ooi, and Kian-Lee Tan. 2016. Database meets deep
+learning: Challenges and opportunities. ACM Sigmod Record 45, 2 (2016), 17–22.
+[73] Yujie Wang, Youhe Jiang, Xupeng Miao, Fangcheng Fu, Shenhan Zhu, Xiaonan Nie, Yaofeng Tu, and Bin Cui. 2024.
+Improving automatic parallel training via balanced memory workload optimization. IEEE Transactions on Knowledge
+and Data Engineering (2024).
+[74] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma,
+Denny Zhou, Donald Metzler, et al .2022. Emergent Abilities of Large Language Models. Transactions on Machine
+Learning Research (2022).
+[75] Bingyang Wu, Yinmin Zhong, Zili Zhang, Gang Huang, Xuanzhe Liu, and Xin Jin. 2023. Fast distributed inference
+serving for large language models. arXiv preprint arXiv:2305.05920 (2023).
+[76] Haojun Xia, Zhen Zheng, Yuchao Li, Donglin Zhuang, Zhongzhu Zhou, Xiafei Qiu, Yong Li, Wei Lin, and Shuai-
+wen Leon Song. 2023. Flash-LLM: Enabling Cost-Effective and Highly-Efficient Large Generative Model Inference
+with Unstructured Sparsity. Proceedings of the VLDB Endowment 17, 2 (2023), 211–224.
+[77] Haojun Xia, Zhen Zheng, Xiaoxia Wu, Shiyang Chen, Zhewei Yao, Stephen Youn, Arash Bakhtiari, Michael Wyatt,
+Donglin Zhuang, Zhongzhu Zhou, et al .2024. Quant-LLM: Accelerating the Serving of Large Language Models via
+FP6-Centric Algorithm-System Co-Design on Modern GPUs. In 2024 USENIX Annual Technical Conference (USENIX
+ATC 24) . 699–713.
+[78] Yongan Xiang, Zezhong Ding, Rui Guo, Shangyou Wang, Xike Xie, and S Kevin Zhou. 2025. Capsule: An Out-of-Core
+Training Mechanism for Colossal GNNs. Proceedings of the ACM on Management of Data 3, 1 (2025), 1–30.
+[79] Zhihui Yang, Yicong Huang, Zuozhi Wang, Feng Gao, Yao Lu, Chen Li, and X Sean Wang. 2022. Demonstration of
+accelerating machine learning inference queries with correlative proxy models. Proceedings of the VLDB Endowment
+15, 12 (2022), 3734–3737.
+[80] Zhihui Yang, Zuozhi Wang, Yicong Huang, Yao Lu, Chen Li, and X. Sean Wang. 2022. Optimizing machine learning
+inference queries with correlative proxy models. Proc. VLDB Endow. 15, 10 (June 2022), 2032–2044. doi:10.14778/
+3547305.3547310
+[81] Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, Soojeong Kim, and Byung-Gon Chun. 2022. Orca: A distributed
+serving system for Transformer-Based generative models. In 16th USENIX Symposium on Operating Systems Design
+and Implementation (OSDI 22) . 521–538.
+[82] Dalong Zhang, Xianzheng Song, Zhiyang Hu, Yang Li, Miao Tao, Binbin Hu, Lin Wang, Zhiqiang Zhang, and Jun Zhou.
+2023. InferTurbo: A scalable system for boosting full-graph inference of graph neural network over huge graphs. In
+2023 IEEE 39th International Conference on Data Engineering (ICDE) . IEEE, 3235–3247.
+[83] Hailin Zhang, Xiaodong Ji, Yilin Chen, Fangcheng Fu, Xupeng Miao, Xiaonan Nie, Weipeng Chen, and Bin Cui. 2024.
+Pqcache: Product quantization-based kvcache for long context llm inference. arXiv preprint arXiv:2407.12820 (2024).
+[84] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab,
+Xian Li, Xi Victoria Lin, et al .2022. Opt: Open pre-trained transformer language models. arXiv preprint arXiv:2205.01068
+(2022).
+[85] Xin Zhang, Yanyan Shen, and Lei Chen. 2022. Feature-oriented sampling for fast and scalable gnn training. In 2022
+IEEE International Conference on Data Mining (ICDM) . IEEE, 723–732.
+[86] Xin Zhang, Yanyan Shen, Yingxia Shao, and Lei Chen. 2023. DUCATI: A dual-cache training system for graph neural
+networks on giant graphs with the GPU. Proceedings of the ACM on Management of Data 1, 2 (2023), 1–24.
+[87] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong Chen, Lianmin Zheng, Ruisi Cai, Zhao Song, Yuandong Tian,
+Christopher Ré, Clark Barrett, et al .2024. H2o: Heavy-hitter oracle for efficient generative inference of large language
+models. Advances in Neural Information Processing Systems 36 (2024).
+[88] Pinxue Zhao, Hailin Zhang, Fangcheng Fu, Xiaonan Nie, Qibin Liu, Fang Yang, Yuanbo Peng, Dian Jiao, Shuaipeng Li,
+Jinbao Xue, et al .2025. MEMO: Fine-grained Tensor Management For Ultra-long Context LLM Training. Proceedings
+of the ACM on Management of Data 3, 1 (2025), 1–28.
+[89] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, and Hao Zhang. 2024. DistServe:
+Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving. In 18th USENIX Symposium
+on Operating Systems Design and Implementation (OSDI 24) . 193–210.
+[90] Hongkuan Zhou, Ajitesh Srivastava, Hanqing Zeng, Rajgopal Kannan, and Viktor Prasanna. 2021. Accelerating large
+scale real-time GNN inference using channel pruning. Proceedings of the VLDB Endowment 14, 9 (2021), 1597–1605.
+[91] Qiqi Zhou, Yanyan Shen, and Lei Chen. 2023. Narrow the Input Mismatch in Deep Graph Neural Network Distillation.
+InProceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining . 3581–3592.
+Received October 2024; revised January 2025; accepted February 2025
+Proc. ACM Manag. Data, Vol. 3, No. 3 (SIGMOD), Article 130. Publication date: June 2025.

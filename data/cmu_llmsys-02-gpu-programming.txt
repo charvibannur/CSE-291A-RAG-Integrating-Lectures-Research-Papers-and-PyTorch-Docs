@@ -1,0 +1,217 @@
+GPU Programming
+Lei Li
+P𝑥1..𝑇=ෑ
+t=1T
+P(xt+1|x1..t)Recap: Language Model
+2bridges
+corn0.6
+0.02 𝑃(𝑥𝑡|𝑥<𝑡)
+Decoder
+[BOS]      Pgh      is          a          city        ofPgh          is       a         city        ofTransformerGPT1GPT2GPT3GopherPALMGPT4
+Nemotron
+LLaMA3 -8BLLaMA3.1
+Qwen2DeepSeek -v3
+001101001,00010,000
+2016 2017 2018 2019 2020 2021 2022 2023 2024 2025size(B)
+3Recap: Scaling of LLMs 
+(the need for system optimization)•Programming model
+orelies on good abstraction
+•Latency/Throughput
+oData movement
+oComputation
+•Reliability
+•Security
+4Recap: Important Topics in LLM systems•Neural Network Layer and low -level operators
+•Components of A GPU Server
+•GPU Architecture
+•Program Execution on GPU
+5Outline
+Classifying the sentiment of online movie reviews. (Positive, 
+negative, neutral)
+6Text Classification
+Spider -Man is an almost -perfect extension of the 
+experience of reading comic -book adventures.
+It was a boring! It was a waste of a movie to even be 
+made. It should have been called a family reunion.•Neural network layers
+oEmbedding (lookup table)
+oLinear 
+oRelu
+oAverage pooling
+oSoftmax
+7A Simple Feedforward Neural Network
+LinearReluLinearSoftmax
+Embedding
+“It is a good movie”Avg•Matrix multiplication
+•Element -wise ops (add, scale, relu)
+•Reduce ops (sum, avg)
+•Efficient computation requires GPUs 
+8Low-level Computing Operators
+LinearReluLinearSoftmax
+Embedding
+“It is a good movie”Avg•Neural Network Layer and low -level operators
+•Components of A GPU Server
+•GPU Architecture
+•Program Execution on GPU
+9Outline
+A Modern Computing Server
+10
+A Sample Config (my lab)
+•CX4860s -EK9 4U server
+•2x AMD EPYC 9354 CPU
+•16x 64GB DDR5 mem
+•4x Intel D7 P5520 
+15.36TB Gen4 NVMe  
+SSD
+•8x Nvidia A6000 48GB
+•4x 2slot NVLinkCommunication
+11
+GPU -to-GPU
+•NVLink  112.5 GB/s
+•PCIe Gen4 32 GB/s 
+(16 lanes x 2 GB/s per 
+lane)Modern Computing Server Architecture
+12
+Why is it relevant? 
+Considering moving gradients from one GPU to anotherComputing Devices
+13CPU
+ GPU
+Intel Xeon 
+8593Q
+64cores
+128threads
+2.2GHz
+320MB L3AMD EPYC 9754
+128cores
+256threads
+2.25GHz
+256MB L3
+FPGA
+Nvidia A6000
+10,752 cores
+48GB
+38.7 TFLOPS
+More powerful than the #1 
+supercomputer in 2001•Neural Network Layer and low -level operators
+•Components of A GPU Server
+•GPU Architecture
+•Program Execution on GPU
+14Outline
+Architecture Blackwell Hopper Ampere
+GPU Name NVIDIA B200 NVIDIA H100 NVIDIA A100
+FP64 40 teraFLOPS 34 teraFLOPS 9.7 teraFLOPS
+FP64 Tensor Core 40 teraFLOPS 67 teraFLOPS 19.5 teraFLOPS
+FP32 80 teraFLOPS 67 teraFLOPS 19.5 teraFLOPS
+FP32 Tensor Core 2.2 petaFLOPS 989 teraFLOPS 312 teraFLOPS
+FP16/BF16 Tensor Core 4.5 petaFLOPS 1979 teraFLOPS 624 teraFLOPS
+INT8 Tensor Core 9 petaOPs 3958 teraOPs 1248 teraOPs
+FP8 Tensor Core 9 petaFLOPS 3958 teraFLOPS -
+FP4 Tensor Core 18 petaFLOPS - -
+GPU Memory 192GB HBM3e 80GB HBM3 80GB HBM2e
+Memory Bandwidth Up to 8TB/s 3.2TB/s 2TB/s 15GPU LineupGPU Architecture
+16
+Nvidia RTX A6000
+(GA102)
+84 SMs 
+(Streaming 
+Multiprocessors)
+12 memory 
+controller (32bit 
+ea.) total 384bit.
+6MB L2 cache. 4 partitions per SM, each with 32 
+cores ➔ 32 threads each
+128 cores per SM
+64KB register per partition (fastest 
+to access)
+128KB shared L1 cache per SM
+128 FP32 operations in one cycle
+17Streaming Multiprocessor
+CPU (AMD EPYC 9754) GPU (A6000)
+num. threads 256 10752
+clock 2.25 GHz 1.8 GHz
+compute 576 GFlops 38.7 TFlops
+Power 360W 300W
+18CPU vs. GPU•Neural Network Layer and low -level operators
+•Components of A GPU Server
+•GPU Architecture
+•Program Execution on GPU
+19Outline
+•CPU – host
+oRun normal program (C++)
+•GPU – device
+oRun cuda  kernel code 
+•CUDA: one part runs on CPU, one part runs on GPU
+•Needs to move data between system memory and GPU 
+memory
+20GPU Programming Model•Single Instruction Multiple 
+Threads
+•Threads are grouped into 
+Thread Blocks
+•Thread Blocks are grouped 
+into Grid
+•Kernel executed as Grid of 
+Blocks of Threads
+21SIMT Execution on GPU
+GPU
+SM SM SM
+84SM SM SMHow instructions are executed on GPU
+22GPU
+SM SM SMSM SM SMGrid
+Thread 
+BlockThread 
+BlockThread 
+Block•SM partition a thread block into warps
+•Warp is the unit of GPU creating, managing, scheduling and 
+executing threads
+•Each warp contains 32 threads (why 32?)
+oStart at same program address
+oHave own program counter and registers
+oExecute one common instruction at a cycle
+oCan branch and execute independently
+23How Kernel Threads are Executed•Execution context stays on SM for lifetime of warp (Program 
+counter, Registers, Shared memory)
+•Warp -to-warp context switch is instant
+•At running time, warp scheduler 
+oChooses warp with active threads
+oIssues instruction to warp’s threads
+•Number of warps on SM depends on mem requested and 
+available
+24Warp Execution on GPUGridExecuting one Thread block on one SM
+25GPU
+Warp1Thread Block
+Warp1 Warp2
+Warp3 Warp4SM4 warps can be executed in parallel at one time on each SM
+partition1CPU -GPU Data Movement
+26GPU
+GPU Memory
+SM SM SM
+84CPU
+System MemoryPCIe
+32 GB/s
+768GB/s64~512GB/s•Each kernel is a function (program) that runs on GPU
+•Program itself is serial
+•Can simultaneously run many (10k) threads at the same 
+time
+•Using thread index to compute on right portion of data
+27CUDA KernelCompiling CUDA Code
+28nvcc  -o output.so  --shared src.cu  -Xcompiler  -fPIC 
+•Neural network
+ois composed of layers, each layer defines input and output 
+vectors/embeddings
+oEach layer’s computation consists of low -level operators, which is 
+executed on a computing device (GPU, CPU, FPGA, etc)
+29Summary•GPU is composed of 
+ostreaming processing units (SMs)
+▪each with four partitions of 32 cores
+▪shared L1 cache 
+omemory
+oL2 cache: share with all SMs
+•Threads organized in
+ogrid of thread blocks
+oeach block is divided into warps running in parallel on one SM.
+30Summary•Write GPU Programs
+31Nexthttps://llmsystem.github.io/llmsystem2025springhw/assignme
+nt_1/
+Starter code: https://github.com/llmsystem/llmsys_s25_hw1.git
+Due Feb 3
+32Assignment 1https://forms.gle/98RDShDfk3sVCCDr6  
+33Quiz/Survey of Prior knowledge

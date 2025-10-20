@@ -1,0 +1,118 @@
+torch.compiler
+Created On: Jul 28, 2023 | Last Updated On: Jun 06, 2025
+torch.compiler  is a namespace through which some of the internal compiler methods are
+surfaced for user consumption. The main function and the feature in this namespace is
+torch.compile.
+torch.compile  is a PyTorch function introduced in PyTorch 2.x that aims to solve the problem of
+accurate graph capturing in PyTorch and ultimately enable software engineers to run their PyTorch
+programs faster. torch.compile  is written in Python and it marks the transition of PyTorch from
+C++ to Python.
+torch.compile  leverages the following underlying technologies:
+TorchDynamo (torch._dynamo) is an internal API that uses a CPython feature called the
+Frame Evaluation API to safely capture PyTorch graphs. Methods that are available externally
+for PyTorch users are surfaced through the torch.compiler  namespace.
+TorchInductor is the default torch.compile  deep learning compiler that generates fast code
+for multiple accelerators and backends. You need to use a backend compiler to make speedups
+through torch.compile  possible. For NVIDIA, AMD and Intel GPUs, it leverages OpenAI Triton
+as the key building block.
+AOT Autograd captures not only the user-level code, but also backpropagation, which results
+in capturing the backwards pass “ahead-of-time”. This enables acceleration of both forwards
+and backwards pass using TorchInductor.
+In some cases, the terms torch.compile, TorchDynamo, torch.compiler  might be
+used interchangeably in this documentation.
+As mentioned above, to run your workflows faster, torch.compile  through TorchDynamo requires
+a backend that converts the captured graphs into a fast machine code. Different backends can
+result in various optimization gains. The default backend is called TorchInductor, also known asNote 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:06 PM torch.compiler — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.compiler.html 1/5inductor, TorchDynamo has a list of supported backends developed by our partners, which can be
+see by running torch.compiler.list_backends()  each of which with its optional dependencies.
+Some of the most commonly used backends include:
+Training & inference backends
+Backend Description
+torch.compile(m,  backend="inductor") Uses the TorchInductor backend. Read more
+torch.compile(m,  backend="cudagraphs") CUDA graphs with AOT Autograd. Read more
+torch.compile(m,  backend="ipex") Uses IPEX on CPU. Read more
+torch.compile(m,  backend="onnxrt") Uses ONNX Runtime for training on CPU/GPU.
+Read more
+Inference-only backends
+Backend Description
+torch.compile(m,  backend="tensorrt") Uses Torch-TensorRT for inference
+optimizations. Requires import
+torch_tensorrt  in the calling script to register
+backend. Read more
+torch.compile(m,  backend="ipex") Uses IPEX for inference on CPU. Read more
+torch.compile(m,  backend="tvm") Uses Apache TVM for inference optimizations.
+Read more
+torch.compile(m,  backend="openvino") Uses OpenVINO for inference optimizations.
+Read more
+Read More
+Getting Started for PyTorch UsersTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:06 PM torch.compiler — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.compiler.html 2/5Getting Started
+torch.compiler API reference
+torch.compiler.config
+TorchDynamo APIs for fine-grained tracing
+AOTInductor: Ahead-Of-Time Compilation for Torch.Export-ed Models
+TorchInductor GPU Profiling
+Profiling to understand torch.compile performance
+Finding graph breaks: “Torch-Compiled Region” and “CompiledFunction”
+Frequently Asked Questions
+torch.compile Troubleshooting
+PyTorch 2.0 Performance Dashboard
+TorchInductor and AOTInductor Provenance Tracking
+Deep Dive for PyTorch Developers
+Dynamo Overview
+Dynamo Deep-Dive
+Dynamic Shapes
+PyTorch 2.0 NNModule Support
+CUDAGraph Trees
+Fake tensor
+HowTo for PyTorch Backend Vendors
+Custom Backends
+Writing Graph Transformations on ATen IR
+IRs
+Previous
+Probability distributions -
+torch.distributionsNext
+Getting StartedRate this Page★★★★★
+© Copyright PyTorch Contributors.Send Feedback
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:06 PM torch.compiler — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.compiler.html 3/5Built with the PyData Sphinx Theme 0.15.4.
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:06 PM torch.compiler — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.compiler.html 4/5© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:06 PM torch.compiler — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.compiler.html 5/5

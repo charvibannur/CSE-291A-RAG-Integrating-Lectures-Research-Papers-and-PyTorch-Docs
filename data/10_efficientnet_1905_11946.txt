@@ -1,0 +1,843 @@
+EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+Mingxing Tan1Quoc V . Le1
+Abstract
+Convolutional Neural Networks (ConvNets) are
+commonly developed at a ﬁxed resource budget,
+and then scaled up for better accuracy if more
+resources are available. In this paper, we sys-
+tematically study model scaling and identify that
+carefully balancing network depth, width, and res-
+olution can lead to better performance. Based
+on this observation, we propose a new scaling
+method that uniformly scales all dimensions of
+depth/width/resolution using a simple yet highly
+effective compound coefﬁcient . We demonstrate
+the effectiveness of this method on scaling up
+MobileNets and ResNet.
+To go even further, we use neural architec-
+ture search to design a new baseline network
+and scale it up to obtain a family of models,
+called EfﬁcientNets , which achieve much
+better accuracy and efﬁciency than previous
+ConvNets. In particular, our EfﬁcientNet-B7
+achieves state-of-the-art 84.3% top-1 accuracy
+on ImageNet, while being 8.4x smaller and
+6.1x faster on inference than the best existing
+ConvNet. Our EfﬁcientNets also transfer well and
+achieve state-of-the-art accuracy on CIFAR-100
+(91.7%), Flowers (98.8%), and 3 other transfer
+learning datasets, with an order of magnitude
+fewer parameters. Source code is at https:
+//github.com/tensorflow/tpu/tree/
+master/models/official/efficientnet .
+1. Introduction
+Scaling up ConvNets is widely used to achieve better accu-
+racy. For example, ResNet (He et al., 2016) can be scaled
+up from ResNet-18 to ResNet-200 by using more layers;
+Recently, GPipe (Huang et al., 2018) achieved 84.3% Ima-
+geNet top-1 accuracy by scaling up a baseline model four
+1Google Research, Brain Team, Mountain View, CA. Corre-
+spondence to: Mingxing Tan <tanmingxing@google.com >.
+Proceedings of the 36thInternational Conference on Machine
+Learning , Long Beach, California, PMLR 97, 2019.
+0 20 40 60 80 100 120 140 160 180
+Number of Parameters (Millions)747678808284Imagenet Top-1 Accuracy (%)
+ResNet-34ResNet-50ResNet-152
+DenseNet-201
+Inception-v2Inception-ResNet-v2
+NASNet-ANASNet-A
+ResNeXt-101
+XceptionAmoebaNet-AAmoebaNet-C
+SENet
+B0B3B4B5B6EfﬁcientNet-B7Top1 Acc. #Params
+ResNet-152 (He et al., 2016) 77.8% 60M
+EfﬁcientNet-B1 79.1% 7.8M
+ResNeXt-101 (Xie et al., 2017) 80.9% 84M
+EfﬁcientNet-B3 81.6% 12M
+SENet (Hu et al., 2018) 82.7% 146M
+NASNet-A (Zoph et al., 2018) 82.7% 89M
+EfﬁcientNet-B4 82.9% 19M
+GPipe (Huang et al., 2018)y84.3% 556M
+EfﬁcientNet-B7 84.3% 66M
+yNot plotted
+Figure 1. Model Size vs. ImageNet Accuracy. All numbers are
+for single-crop, single-model. Our EfﬁcientNets signiﬁcantly out-
+perform other ConvNets. In particular, EfﬁcientNet-B7 achieves
+new state-of-the-art 84.3% top-1 accuracy but being 8.4x smaller
+and 6.1x faster than GPipe. EfﬁcientNet-B1 is 7.6x smaller and
+5.7x faster than ResNet-152. Details are in Table 2 and 4.
+time larger. However, the process of scaling up ConvNets
+has never been well understood and there are currently many
+ways to do it. The most common way is to scale up Con-
+vNets by their depth (He et al., 2016) or width (Zagoruyko &
+Komodakis, 2016). Another less common, but increasingly
+popular, method is to scale up models by image resolution
+(Huang et al., 2018). In previous work, it is common to scale
+only one of the three dimensions – depth, width, and image
+size. Though it is possible to scale two or three dimensions
+arbitrarily, arbitrary scaling requires tedious manual tuning
+and still often yields sub-optimal accuracy and efﬁciency.
+In this paper, we want to study and rethink the process
+of scaling up ConvNets. In particular, we investigate the
+central question: is there a principled method to scale up
+ConvNets that can achieve better accuracy and efﬁciency?
+Our empirical study shows that it is critical to balance all
+dimensions of network width/depth/resolution, and surpris-
+ingly such balance can be achieved by simply scaling each
+of them with constant ratio. Based on this observation, we
+propose a simple yet effective compound scaling method .
+Unlike conventional practice that arbitrary scales these fac-
+tors, our method uniformly scales network width, depth,arXiv:1905.11946v5  [cs.LG]  11 Sep 2020EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+(a) baseline (b) width scaling (c) depth scaling (d) resolution scaling (e) compound scaling #channels 
+layer_i 
+resolution HxW wider 
+deeper 
+higher 
+resolution higher 
+resolution deeper wider 
+Figure 2. Model Scaling. (a) is a baseline network example; (b)-(d) are conventional scaling that only increases one dimension of network
+width, depth, or resolution. (e) is our proposed compound scaling method that uniformly scales all three dimensions with a ﬁxed ratio.
+and resolution with a set of ﬁxed scaling coefﬁcients. For
+example, if we want to use 2Ntimes more computational
+resources, then we can simply increase the network depth by
+N, width byN, and image size by N, where;; are
+constant coefﬁcients determined by a small grid search on
+the original small model. Figure 2 illustrates the difference
+between our scaling method and conventional methods.
+Intuitively, the compound scaling method makes sense be-
+cause if the input image is bigger, then the network needs
+more layers to increase the receptive ﬁeld and more channels
+to capture more ﬁne-grained patterns on the bigger image. In
+fact, previous theoretical (Raghu et al., 2017; Lu et al., 2018)
+and empirical results (Zagoruyko & Komodakis, 2016) both
+show that there exists certain relationship between network
+width and depth, but to our best knowledge, we are the
+ﬁrst to empirically quantify the relationship among all three
+dimensions of network width, depth, and resolution.
+We demonstrate that our scaling method work well on exist-
+ing MobileNets (Howard et al., 2017; Sandler et al., 2018)
+and ResNet (He et al., 2016). Notably, the effectiveness of
+model scaling heavily depends on the baseline network; to
+go even further, we use neural architecture search (Zoph
+& Le, 2017; Tan et al., 2019) to develop a new baseline
+network, and scale it up to obtain a family of models, called
+EfﬁcientNets . Figure 1 summarizes the ImageNet perfor-
+mance, where our EfﬁcientNets signiﬁcantly outperform
+other ConvNets. In particular, our EfﬁcientNet-B7 surpasses
+the best existing GPipe accuracy (Huang et al., 2018), but
+using 8.4x fewer parameters and running 6.1x faster on in-
+ference. Compared to the widely used ResNet-50 (He et al.,
+2016), our EfﬁcientNet-B4 improves the top-1 accuracy
+from 76.3% to 83.0% (+6.7%) with similar FLOPS. Besides
+ImageNet, EfﬁcientNets also transfer well and achieve state-of-the-art accuracy on 5 out of 8 widely used datasets, while
+reducing parameters by up to 21x than existing ConvNets.
+2. Related Work
+ConvNet Accuracy: Since AlexNet (Krizhevsky et al.,
+2012) won the 2012 ImageNet competition, ConvNets have
+become increasingly more accurate by going bigger: while
+the 2014 ImageNet winner GoogleNet (Szegedy et al., 2015)
+achieves 74.8% top-1 accuracy with about 6.8M parameters,
+the 2017 ImageNet winner SENet (Hu et al., 2018) achieves
+82.7% top-1 accuracy with 145M parameters. Recently,
+GPipe (Huang et al., 2018) further pushes the state-of-the-art
+ImageNet top-1 validation accuracy to 84.3% using 557M
+parameters: it is so big that it can only be trained with a
+specialized pipeline parallelism library by partitioning the
+network and spreading each part to a different accelera-
+tor. While these models are mainly designed for ImageNet,
+recent studies have shown better ImageNet models also per-
+form better across a variety of transfer learning datasets
+(Kornblith et al., 2019), and other computer vision tasks
+such as object detection (He et al., 2016; Tan et al., 2019).
+Although higher accuracy is critical for many applications,
+we have already hit the hardware memory limit, and thus
+further accuracy gain needs better efﬁciency.
+ConvNet Efﬁciency: Deep ConvNets are often over-
+parameterized. Model compression (Han et al., 2016; He
+et al., 2018; Yang et al., 2018) is a common way to re-
+duce model size by trading accuracy for efﬁciency. As mo-
+bile phones become ubiquitous, it is also common to hand-
+craft efﬁcient mobile-size ConvNets, such as SqueezeNets
+(Iandola et al., 2016; Gholami et al., 2018), MobileNets
+(Howard et al., 2017; Sandler et al., 2018), and ShufﬂeNetsEfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+(Zhang et al., 2018; Ma et al., 2018). Recently, neural archi-
+tecture search becomes increasingly popular in designing
+efﬁcient mobile-size ConvNets (Tan et al., 2019; Cai et al.,
+2019), and achieves even better efﬁciency than hand-crafted
+mobile ConvNets by extensively tuning the network width,
+depth, convolution kernel types and sizes. However, it is
+unclear how to apply these techniques for larger models that
+have much larger design space and much more expensive
+tuning cost. In this paper, we aim to study model efﬁciency
+for super large ConvNets that surpass state-of-the-art accu-
+racy. To achieve this goal, we resort to model scaling.
+Model Scaling: There are many ways to scale a Con-
+vNet for different resource constraints: ResNet (He et al.,
+2016) can be scaled down (e.g., ResNet-18) or up (e.g.,
+ResNet-200) by adjusting network depth (#layers), while
+WideResNet (Zagoruyko & Komodakis, 2016) and Mo-
+bileNets (Howard et al., 2017) can be scaled by network
+width (#channels). It is also well-recognized that bigger
+input image size will help accuracy with the overhead of
+more FLOPS. Although prior studies (Raghu et al., 2017;
+Lin & Jegelka, 2018; Sharir & Shashua, 2018; Lu et al.,
+2018) have shown that network depth and width are both
+important for ConvNets’ expressive power, it still remains
+an open question of how to effectively scale a ConvNet to
+achieve better efﬁciency and accuracy. Our work systemati-
+cally and empirically studies ConvNet scaling for all three
+dimensions of network width, depth, and resolutions.
+3. Compound Model Scaling
+In this section, we will formulate the scaling problem, study
+different approaches, and propose our new scaling method.
+3.1. Problem Formulation
+A ConvNet Layer ican be deﬁned as a function: Yi=
+Fi(Xi), whereFiis the operator, Yiis output tensor, Xiis
+input tensor, with tensor shape hHi;Wi;Cii1, whereHiand
+Wiare spatial dimension and Ciis the channel dimension.
+A ConvNetNcan be represented by a list of composed lay-
+ers:N=Fk:::F2F1(X1) =J
+j=1:::kFj(X1). In
+practice, ConvNet layers are often partitioned into multiple
+stages and all layers in each stage share the same architec-
+ture: for example, ResNet (He et al., 2016) has ﬁve stages,
+and all layers in each stage has the same convolutional type
+except the ﬁrst layer performs down-sampling. Therefore,
+we can deﬁne a ConvNet as:
+N=K
+i=1:::sFLi
+i 
+XhHi;Wi;Cii
+(1)
+whereFLi
+idenotes layer Fiis repeatedLitimes in stage i,
+hHi;Wi;Ciidenotes the shape of input tensor Xof layer
+1For the sake of simplicity, we omit batch dimension.i. Figure 2(a) illustrate a representative ConvNet, where
+the spatial dimension is gradually shrunk but the channel
+dimension is expanded over layers, for example, from initial
+input shapeh224;224;3ito ﬁnal output shape h7;7;512i.
+Unlike regular ConvNet designs that mostly focus on ﬁnd-
+ing the best layer architecture Fi, model scaling tries to ex-
+pand the network length ( Li), width (Ci), and/or resolution
+(Hi;Wi) without changing Fipredeﬁned in the baseline
+network. By ﬁxing Fi, model scaling simpliﬁes the design
+problem for new resource constraints, but it still remains
+a large design space to explore different Li;Ci;Hi;Wifor
+each layer. In order to further reduce the design space, we
+restrict that all layers must be scaled uniformly with con-
+stant ratio. Our target is to maximize the model accuracy
+for any given resource constraints, which can be formulated
+as an optimization problem:
+max
+d;w;rAccuracy 
+N(d;w;r )
+s:t:N(d;w;r ) =K
+i=1:::s^Fd^Li
+i 
+Xhr^Hi;r^Wi;w^Cii
+Memory (N)target memory
+FLOPS (N)target ﬂops
+(2)
+wherew;d;r are coefﬁcients for scaling network width,
+depth, and resolution; ^Fi;^Li;^Hi;^Wi;^Ciare predeﬁned pa-
+rameters in baseline network (see Table 1 as an example).
+3.2. Scaling Dimensions
+The main difﬁculty of problem 2 is that the optimal d;w;r
+depend on each other and the values change under different
+resource constraints. Due to this difﬁculty, conventional
+methods mostly scale ConvNets in one of these dimensions:
+Depth (ddd):Scaling network depth is the most common way
+used by many ConvNets (He et al., 2016; Huang et al., 2017;
+Szegedy et al., 2015; 2016). The intuition is that deeper
+ConvNet can capture richer and more complex features, and
+generalize well on new tasks. However, deeper networks
+are also more difﬁcult to train due to the vanishing gradient
+problem (Zagoruyko & Komodakis, 2016). Although sev-
+eral techniques, such as skip connections (He et al., 2016)
+and batch normalization (Ioffe & Szegedy, 2015), alleviate
+the training problem, the accuracy gain of very deep network
+diminishes: for example, ResNet-1000 has similar accuracy
+as ResNet-101 even though it has much more layers. Figure
+3 (middle) shows our empirical study on scaling a baseline
+model with different depth coefﬁcient d, further suggesting
+the diminishing accuracy return for very deep ConvNets.
+Width (www):Scaling network width is commonly used for
+small size models (Howard et al., 2017; Sandler et al., 2018;EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+0 2 4 6 8
+FLOPS (Billions)75767778798081ImageNet Top-1 Accuracy(%)
+w=1.0w=1.4w=1.8w=2.6w=3.8w=5.0
+0 1 2 3 4
+FLOPS (Billions)75767778798081
+d=1.0d=2.0d=3.0d=4.0d=6.0d=8.0
+0 1 2 3
+FLOPS (Billions)75767778798081
+r=1.0r=1.3r=1.5r=1.7r=1.9r=2.2r=2.5
+Figure 3. Scaling Up a Baseline Model with Different Network Width ( w), Depth (d), and Resolution ( r) Coefﬁcients. Bigger
+networks with larger width, depth, or resolution tend to achieve higher accuracy, but the accuracy gain quickly saturate after reaching
+80%, demonstrating the limitation of single dimension scaling. Baseline network is described in Table 1.
+Tan et al., 2019)2. As discussed in (Zagoruyko & Ko-
+modakis, 2016), wider networks tend to be able to capture
+more ﬁne-grained features and are easier to train. However,
+extremely wide but shallow networks tend to have difﬁcul-
+ties in capturing higher level features. Our empirical results
+in Figure 3 (left) show that the accuracy quickly saturates
+when networks become much wider with larger w.
+Resolution ( rrr):With higher resolution input images, Con-
+vNets can potentially capture more ﬁne-grained patterns.
+Starting from 224x224 in early ConvNets, modern Con-
+vNets tend to use 299x299 (Szegedy et al., 2016) or 331x331
+(Zoph et al., 2018) for better accuracy. Recently, GPipe
+(Huang et al., 2018) achieves state-of-the-art ImageNet ac-
+curacy with 480x480 resolution. Higher resolutions, such as
+600x600, are also widely used in object detection ConvNets
+(He et al., 2017; Lin et al., 2017). Figure 3 (right) shows the
+results of scaling network resolutions, where indeed higher
+resolutions improve accuracy, but the accuracy gain dimin-
+ishes for very high resolutions ( r= 1:0denotes resolution
+224x224 and r= 2:5denotes resolution 560x560).
+The above analyses lead us to the ﬁrst observation:
+Observation 1 – Scaling up any dimension of network
+width, depth, or resolution improves accuracy, but the accu-
+racy gain diminishes for bigger models.
+3.3. Compound Scaling
+We empirically observe that different scaling dimensions are
+not independent. Intuitively, for higher resolution images,
+we should increase network depth, such that the larger re-
+ceptive ﬁelds can help capture similar features that include
+more pixels in bigger images. Correspondingly, we should
+also increase network width when resolution is higher, in
+2In some literature, scaling number of channels is called “depth
+multiplier”, which means the same as our width coefﬁcient w.
+0 5 10 15 20 25
+FLOPS (billions)76777879808182ImageNet Top1 Accuracy (%)
+d=1.0,r=1.0
+d=1.0,r=1.3
+d=2.0,r=1.0
+d=2.0,r=1.3Figure 4. Scaling Network Width for Different Baseline Net-
+works . Each dot in a line denotes a model with different width
+coefﬁcient (w). All baseline networks are from Table 1. The ﬁrst
+baseline network ( d=1.0,r=1.0) has 18 convolutional layers with
+resolution 224x224, while the last baseline ( d=2.0,r=1.3) has 36
+layers with resolution 299x299.
+order to capture more ﬁne-grained patterns with more pixels
+in high resolution images. These intuitions suggest that we
+need to coordinate and balance different scaling dimensions
+rather than conventional single-dimension scaling.
+To validate our intuitions, we compare width scaling under
+different network depths and resolutions, as shown in Figure
+4. If we only scale network width wwithout changing
+depth (d=1.0) and resolution ( r=1.0), the accuracy saturates
+quickly. With deeper ( d=2.0) and higher resolution ( r=2.0),
+width scaling achieves much better accuracy under the same
+FLOPS cost. These results lead us to the second observation:
+Observation 2 – In order to pursue better accuracy and
+efﬁciency, it is critical to balance all dimensions of network
+width, depth, and resolution during ConvNet scaling.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+In fact, a few prior work (Zoph et al., 2018; Real et al., 2019)
+have already tried to arbitrarily balance network width and
+depth, but they all require tedious manual tuning.
+In this paper, we propose a new compound scaling method ,
+which use a compound coefﬁcient to uniformly scales
+network width, depth, and resolution in a principled way:
+depth:d=
+width:w=
+resolution:r=
+s.t.222
+1;1;1(3)
+where;; are constants that can be determined by a
+small grid search. Intuitively, is a user-speciﬁed coefﬁ-
+cient that controls how many more resources are available
+for model scaling, while ;; specify how to assign these
+extra resources to network width, depth, and resolution re-
+spectively. Notably, the FLOPS of a regular convolution op
+is proportional to d,w2,r2, i.e., doubling network depth
+will double FLOPS, but doubling network width or resolu-
+tion will increase FLOPS by four times. Since convolution
+ops usually dominate the computation cost in ConvNets,
+scaling a ConvNet with equation 3 will approximately in-
+crease total FLOPS by 
+22. In this paper, we
+constraint222such that for any new , the total
+FLOPS will approximately3increase by 2.
+4. EfﬁcientNet Architecture
+Since model scaling does not change layer operators ^Fi
+in baseline network, having a good baseline network is
+also critical. We will evaluate our scaling method using
+existing ConvNets, but in order to better demonstrate the
+effectiveness of our scaling method, we have also developed
+a new mobile-size baseline, called EfﬁcientNet.
+Inspired by (Tan et al., 2019), we develop our baseline net-
+work by leveraging a multi-objective neural architecture
+search that optimizes both accuracy and FLOPS. Speciﬁ-
+cally, we use the same search space as (Tan et al., 2019),
+and useACC (m)[FLOPS (m)=T]was the optimization
+goal, where ACC (m)andFLOPS (m)denote the accu-
+racy and FLOPS of model m,Tis the target FLOPS and
+w=-0.07 is a hyperparameter for controlling the trade-off
+between accuracy and FLOPS. Unlike (Tan et al., 2019;
+Cai et al., 2019), here we optimize FLOPS rather than la-
+tency since we are not targeting any speciﬁc hardware de-
+vice. Our search produces an efﬁcient network, which we
+name EfﬁcientNet-B0. Since we use the same search space
+as (Tan et al., 2019), the architecture is similar to Mnas-
+3FLOPS may differ from theoretical value due to rounding.Table 1. EfﬁcientNet-B0 baseline network – Each row describes
+a stageiwith ^Lilayers, with input resolution h^Hi;^Wiiand output
+channels ^Ci. Notations are adopted from equation 2.
+Stage Operator Resolution #Channels #Layers
+i ^Fi^Hi^Wi^Ci^Li
+1 Conv3x3 224224 32 1
+2 MBConv1, k3x3 112112 16 1
+3 MBConv6, k3x3 112112 24 2
+4 MBConv6, k5x5 5656 40 2
+5 MBConv6, k3x3 2828 80 3
+6 MBConv6, k5x5 1414 112 3
+7 MBConv6, k5x5 1414 192 4
+8 MBConv6, k3x3 77 320 1
+9 Conv1x1 & Pooling & FC 77 1280 1
+Net, except our EfﬁcientNet-B0 is slightly bigger due to
+the larger FLOPS target (our FLOPS target is 400M). Ta-
+ble 1 shows the architecture of EfﬁcientNet-B0. Its main
+building block is mobile inverted bottleneck MBConv (San-
+dler et al., 2018; Tan et al., 2019), to which we also add
+squeeze-and-excitation optimization (Hu et al., 2018).
+Starting from the baseline EfﬁcientNet-B0, we apply our
+compound scaling method to scale it up with two steps:
+STEP 1: we ﬁrst ﬁx = 1, assuming twice more re-
+sources available, and do a small grid search of ;;
+based on Equation 2 and 3. In particular, we ﬁnd
+the best values for EfﬁcientNet-B0 are = 1:2;=
+1:1;= 1:15, under constraint of 222.
+STEP 2: we then ﬁx ;; as constants and scale up
+baseline network with different using Equation 3, to
+obtain EfﬁcientNet-B1 to B7 (Details in Table 2).
+Notably, it is possible to achieve even better performance by
+searching for ;; directly around a large model, but the
+search cost becomes prohibitively more expensive on larger
+models. Our method solves this issue by only doing search
+once on the small baseline network (step 1), and then use
+the same scaling coefﬁcients for all other models (step 2).
+5. Experiments
+In this section, we will ﬁrst evaluate our scaling method on
+existing ConvNets and the new proposed EfﬁcientNets.
+5.1. Scaling Up MobileNets and ResNets
+As a proof of concept, we ﬁrst apply our scaling method
+to the widely-used MobileNets (Howard et al., 2017; San-
+dler et al., 2018) and ResNet (He et al., 2016). Table 3
+shows the ImageNet results of scaling them in different
+ways. Compared to other single-dimension scaling methods,
+our compound scaling method improves the accuracy on all
+these models, suggesting the effectiveness of our proposed
+scaling method for general existing ConvNets.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+Table 2. EfﬁcientNet Performance Results on ImageNet (Russakovsky et al., 2015). All EfﬁcientNet models are scaled from our
+baseline EfﬁcientNet-B0 using different compound coefﬁcient in Equation 3. ConvNets with similar top-1/top-5 accuracy are grouped
+together for efﬁciency comparison. Our scaled EfﬁcientNet models consistently reduce parameters and FLOPS by an order of magnitude
+(up to 8.4x parameter reduction and up to 16x FLOPS reduction) than existing ConvNets.
+Model Top-1 Acc. Top-5 Acc. #Params Ratio-to-EfﬁcientNet #FLOPs Ratio-to-EfﬁcientNet
+EfﬁcientNet-B0 77.1% 93.3% 5.3M 1x 0.39B 1x
+ResNet-50 (He et al., 2016) 76.0% 93.0% 26M 4.9x 4.1B 11x
+DenseNet-169 (Huang et al., 2017) 76.2% 93.2% 14M 2.6x 3.5B 8.9x
+EfﬁcientNet-B1 79.1% 94.4% 7.8M 1x 0.70B 1x
+ResNet-152 (He et al., 2016) 77.8% 93.8% 60M 7.6x 11B 16x
+DenseNet-264 (Huang et al., 2017) 77.9% 93.9% 34M 4.3x 6.0B 8.6x
+Inception-v3 (Szegedy et al., 2016) 78.8% 94.4% 24M 3.0x 5.7B 8.1x
+Xception (Chollet, 2017) 79.0% 94.5% 23M 3.0x 8.4B 12x
+EfﬁcientNet-B2 80.1% 94.9% 9.2M 1x 1.0B 1x
+Inception-v4 (Szegedy et al., 2017) 80.0% 95.0% 48M 5.2x 13B 13x
+Inception-resnet-v2 (Szegedy et al., 2017) 80.1% 95.1% 56M 6.1x 13B 13x
+EfﬁcientNet-B3 81.6% 95.7% 12M 1x 1.8B 1x
+ResNeXt-101 (Xie et al., 2017) 80.9% 95.6% 84M 7.0x 32B 18x
+PolyNet (Zhang et al., 2017) 81.3% 95.8% 92M 7.7x 35B 19x
+EfﬁcientNet-B4 82.9% 96.4% 19M 1x 4.2B 1x
+SENet (Hu et al., 2018) 82.7% 96.2% 146M 7.7x 42B 10x
+NASNet-A (Zoph et al., 2018) 82.7% 96.2% 89M 4.7x 24B 5.7x
+AmoebaNet-A (Real et al., 2019) 82.8% 96.1% 87M 4.6x 23B 5.5x
+PNASNet (Liu et al., 2018) 82.9% 96.2% 86M 4.5x 23B 6.0x
+EfﬁcientNet-B5 83.6% 96.7% 30M 1x 9.9B 1x
+AmoebaNet-C (Cubuk et al., 2019) 83.5% 96.5% 155M 5.2x 41B 4.1x
+EfﬁcientNet-B6 84.0% 96.8% 43M 1x 19B 1x
+EfﬁcientNet-B7 84.3% 97.0% 66M 1x 37B 1x
+GPipe (Huang et al., 2018) 84.3% 97.0% 557M 8.4x - -
+We omit ensemble and multi-crop models (Hu et al., 2018), or models pretrained on 3.5B Instagram images (Mahajan et al., 2018).
+Table 3. Scaling Up MobileNets and ResNet.
+Model FLOPS Top-1 Acc.
+Baseline MobileNetV1 (Howard et al., 2017) 0.6B 70.6%
+Scale MobileNetV1 by width ( w=2) 2.2B 74.2%
+Scale MobileNetV1 by resolution ( r=2) 2.2B 72.7%
+compound scale ( ddd=1.4,www=1.2,rrr=1.3) 2.3B 75.6%
+Baseline MobileNetV2 (Sandler et al., 2018) 0.3B 72.0%
+Scale MobileNetV2 by depth ( d=4) 1.2B 76.8%
+Scale MobileNetV2 by width ( w=2) 1.1B 76.4%
+Scale MobileNetV2 by resolution ( r=2) 1.2B 74.8%
+MobileNetV2 compound scale 1.3B 77.4%
+Baseline ResNet-50 (He et al., 2016) 4.1B 76.0%
+Scale ResNet-50 by depth ( d=4) 16.2B 78.1%
+Scale ResNet-50 by width ( w=2) 14.7B 77.7%
+Scale ResNet-50 by resolution ( r=2) 16.4B 77.5%
+ResNet-50 compound scale 16.7B 78.8%
+Table 4. Inference Latency Comparison – Latency is measured
+with batch size 1 on a single core of Intel Xeon CPU E5-2690.
+Acc. @ Latency Acc. @ Latency
+ResNet-152 77.8% @ 0.554s GPipe 84.3% @ 19.0s
+EfﬁcientNet-B1 78.8% @ 0.098s EfﬁcientNet-B7 84.4% @ 3.1s
+Speedup 5.7x Speedup 6.1x
+0 5 10 15 20 25 30 35 40 45
+FLOPS (Billions)747678808284Imagenet Top-1 Accuracy (%)
+ResNet-34ResNet-50ResNet-152
+DenseNet-201
+Inception-v2Inception-ResNet-v2
+NASNet-ANASNet-A
+ResNeXt-101
+XceptionAmeobaNet-AAmoebaNet-C
+SENet
+B0B3B4B5EfﬁcientNet-B6Top1 Acc. FLOPS
+ResNet-152 (Xie et al., 2017) 77.8% 11B
+EfﬁcientNet-B1 79.1% 0.7B
+ResNeXt-101 (Xie et al., 2017) 80.9% 32B
+EfﬁcientNet-B3 81.6% 1.8B
+SENet (Hu et al., 2018) 82.7% 42B
+NASNet-A (Zoph et al., 2018) 80.7% 24B
+EfﬁcientNet-B4 82.9% 4.2B
+AmeobaNet-C (Cubuk et al., 2019) 83.5% 41B
+EfﬁcientNet-B5 83.6% 9.9B
+Figure 5. FLOPS vs. ImageNet Accuracy – Similar to Figure 1
+except it compares FLOPS rather than model size.
+5.2. ImageNet Results for EfﬁcientNet
+We train our EfﬁcientNet models on ImageNet using simi-
+lar settings as (Tan et al., 2019): RMSProp optimizer with
+decay 0.9 and momentum 0.9; batch norm momentum 0.99;EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+Table 5. EfﬁcientNet Performance Results on Transfer Learning Datasets . Our scaled EfﬁcientNet models achieve new state-of-the-
+art accuracy for 5 out of 8 datasets, with 9.6x fewer parameters on average.
+Comparison to best public-available results Comparison to best reported results
+Model Acc. #Param Our Model Acc. #Param(ratio) Model Acc. #Param Our Model Acc. #Param(ratio)
+CIFAR-10 NASNet-A 98.0% 85M EfﬁcientNet-B0 98.1% 4M (21x)yGpipe 99.0% 556M EfﬁcientNet-B7 98.9% 64M (8.7x)
+CIFAR-100 NASNet-A 87.5% 85M EfﬁcientNet-B0 88.1% 4M (21x) Gpipe 91.3% 556M EfﬁcientNet-B7 91.7% 64M (8.7x)
+Birdsnap Inception-v4 81.8% 41M EfﬁcientNet-B5 82.0% 28M (1.5x) GPipe 83.6% 556M EfﬁcientNet-B7 84.3% 64M (8.7x)
+Stanford Cars Inception-v4 93.4% 41M EfﬁcientNet-B3 93.6% 10M (4.1x)zDAT 94.8% - EfﬁcientNet-B7 94.7% -
+Flowers Inception-v4 98.5% 41M EfﬁcientNet-B5 98.5% 28M (1.5x) DAT 97.7% - EfﬁcientNet-B7 98.8% -
+FGVC Aircraft Inception-v4 90.9% 41M EfﬁcientNet-B3 90.7% 10M (4.1x) DAT 92.9% - EfﬁcientNet-B7 92.9% -
+Oxford-IIIT Pets ResNet-152 94.5% 58M EfﬁcientNet-B4 94.8% 17M (5.6x) GPipe 95.9% 556M EfﬁcientNet-B6 95.4% 41M (14x)
+Food-101 Inception-v4 90.8% 41M EfﬁcientNet-B4 91.5% 17M (2.4x) GPipe 93.0% 556M EfﬁcientNet-B7 93.0% 64M (8.7x)
+Geo-Mean (4.7x) (9.6x)
+yGPipe (Huang et al., 2018) trains giant models with specialized pipeline parallelism library.
+zDAT denotes domain adaptive transfer learning (Ngiam et al., 2018). Here we only compare ImageNet-based transfer learning results.
+Transfer accuracy and #params for NASNet (Zoph et al., 2018), Inception-v4 (Szegedy et al., 2017), ResNet-152 (He et al., 2016) are from (Kornblith et al., 2019).
+0.0 0.2 0.4 0.6 0.8 1.0
+Number of Parameters (Millions, log-scale)0.00.20.40.60.81.0
+10110210396979899Accuracy(%)CIFAR10
+1011021038486889092CIFAR100
+10110210370758085Birdsnap
+10110210391929394Stanford Cars
+10110210397.097.598.098.5Accuracy(%)Flowers
+10110210382.585.087.590.092.5FGVC Aircraft
+101102103929496Oxford-IIIT Pets
+10110210386889092Food-101
+DenseNet-201
+GPIPE
+Inception-ResNet-v2ResNet-50
+ResNet-101
+DenseNet-169Inception-v1
+Inception-v3
+Inception-v4ResNet-152
+DenseNet-121NASNet-A
+EfﬁcientNet
+Figure 6. Model Parameters vs. Transfer Learning Accuracy – All models are pretrained on ImageNet and ﬁnetuned on new datasets.
+weight decay 1e-5; initial learning rate 0.256 that decays
+by 0.97 every 2.4 epochs. We also use SiLU (Swish-1) ac-
+tivation (Ramachandran et al., 2018; Elfwing et al., 2018;
+Hendrycks & Gimpel, 2016), AutoAugment (Cubuk et al.,
+2019), and stochastic depth (Huang et al., 2016) with sur-
+vival probability 0.8. As commonly known that bigger mod-
+els need more regularization, we linearly increase dropout
+(Srivastava et al., 2014) ratio from 0.2 for EfﬁcientNet-B0 to
+0.5 for B7. We reserve 25K randomly picked images from
+thetraining set as a minival set, and perform early
+stopping on this minival ; we then evaluate the early-
+stopped checkpoint on the original validation set to
+report the ﬁnal validation accuracy.
+Table 2 shows the performance of all EfﬁcientNet models
+that are scaled from the same baseline EfﬁcientNet-B0. Our
+EfﬁcientNet models generally use an order of magnitude
+fewer parameters and FLOPS than other ConvNets with
+similar accuracy. In particular, our EfﬁcientNet-B7 achieves
+84.3% top1 accuracy with 66M parameters and 37B FLOPS,being more accurate but 8.4x smaller than the previous
+best GPipe (Huang et al., 2018). These gains come from
+both better architectures, better scaling, and better training
+settings that are customized for EfﬁcientNet.
+Figure 1 and Figure 5 illustrates the parameters-accuracy
+and FLOPS-accuracy curve for representative ConvNets,
+where our scaled EfﬁcientNet models achieve better accu-
+racy with much fewer parameters and FLOPS than other
+ConvNets. Notably, our EfﬁcientNet models are not only
+small, but also computational cheaper. For example, our
+EfﬁcientNet-B3 achieves higher accuracy than ResNeXt-
+101 (Xie et al., 2017) using 18x fewer FLOPS .
+To validate the latency, we have also measured the inference
+latency for a few representative CovNets on a real CPU as
+shown in Table 4, where we report average latency over
+20 runs. Our EfﬁcientNet-B1 runs 5.7x faster than the
+widely used ResNet-152, while EfﬁcientNet-B7 runs about
+6.1x faster than GPipe (Huang et al., 2018), suggesting our
+EfﬁcientNets are indeed fast on real hardware.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+bakeshoporiginal image
+ baseline model
+ deeper (d=4)
+ wider (w=2)
+ higher resolution ( r=2)
+ compound scaling
+maze
+Figure 7. Class Activation Map (CAM) (Zhou et al., 2016) for Models with different scaling methods- Our compound scaling method
+allows the scaled model (last column) to focus on more relevant regions with more object details. Model details are in Table 7.
+Table 6. Transfer Learning Datasets .
+Dataset Train Size Test Size #Classes
+CIFAR-10 (Krizhevsky & Hinton, 2009) 50,000 10,000 10
+CIFAR-100 (Krizhevsky & Hinton, 2009) 50,000 10,000 100
+Birdsnap (Berg et al., 2014) 47,386 2,443 500
+Stanford Cars (Krause et al., 2013) 8,144 8,041 196
+Flowers (Nilsback & Zisserman, 2008) 2,040 6,149 102
+FGVC Aircraft (Maji et al., 2013) 6,667 3,333 100
+Oxford-IIIT Pets (Parkhi et al., 2012) 3,680 3,369 37
+Food-101 (Bossard et al., 2014) 75,750 25,250 101
+5.3. Transfer Learning Results for EfﬁcientNet
+We have also evaluated our EfﬁcientNet on a list of com-
+monly used transfer learning datasets, as shown in Table
+6. We borrow the same training settings from (Kornblith
+et al., 2019) and (Huang et al., 2018), which take ImageNet
+pretrained checkpoints and ﬁnetune on new datasets.
+Table 5 shows the transfer learning performance: (1) Com-
+pared to public available models, such as NASNet-A (Zoph
+et al., 2018) and Inception-v4 (Szegedy et al., 2017), our Ef-
+ﬁcientNet models achieve better accuracy with 4.7x average
+(up to 21x) parameter reduction. (2) Compared to state-
+of-the-art models, including DAT (Ngiam et al., 2018) that
+dynamically synthesizes training data and GPipe (Huang
+et al., 2018) that is trained with specialized pipeline paral-
+lelism, our EfﬁcientNet models still surpass their accuracy
+in 5 out of 8 datasets, but using 9.6x fewer parameters
+Figure 6 compares the accuracy-parameters curve for a va-
+riety of models. In general, our EfﬁcientNets consistently
+achieve better accuracy with an order of magnitude fewer pa-
+rameters than existing models, including ResNet (He et al.,
+2016), DenseNet (Huang et al., 2017), Inception (Szegedy
+et al., 2017), and NASNet (Zoph et al., 2018).
+6. Discussion
+To disentangle the contribution of our proposed scaling
+method from the EfﬁcientNet architecture, Figure 8 com-
+pares the ImageNet performance of different scaling meth-
+0 1 2 3 4 5
+FLOPS (Billions)757677787980818283ImageNet Top-1 Accuracy(%)
+scale by width
+scale by depth
+scale by resolution
+compound scalingFigure 8. Scaling Up EfﬁcientNet-B0 with Different Methods.
+Table 7. Scaled Models Used in Figure 7.
+Model FLOPS Top-1 Acc.
+Baseline model (EfﬁcientNet-B0) 0.4B 77.3%
+Scale model by depth ( d=4) 1.8B 79.0%
+Scale model by width ( w=2) 1.8B 78.9%
+Scale model by resolution ( r=2) 1.9B 79.1%
+Compound Scale ( ddd=1.4,www=1.2,rrr=1.3) 1.8B 81.1%
+ods for the same EfﬁcientNet-B0 baseline network. In gen-
+eral, all scaling methods improve accuracy with the cost
+of more FLOPS, but our compound scaling method can
+further improve accuracy, by up to 2.5%, than other single-
+dimension scaling methods, suggesting the importance of
+our proposed compound scaling.
+In order to further understand why our compound scaling
+method is better than others, Figure 7 compares the class
+activation map (Zhou et al., 2016) for a few representative
+models with different scaling methods. All these models are
+scaled from the same baseline, and their statistics are shown
+in Table 7. Images are randomly picked from ImageNet
+validation set. As shown in the ﬁgure, the model with com-
+pound scaling tends to focus on more relevant regions with
+more object details, while other models are either lack of
+object details or unable to capture all objects in the images.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+7. Conclusion
+In this paper, we systematically study ConvNet scaling and
+identify that carefully balancing network width, depth, and
+resolution is an important but missing piece, preventing us
+from better accuracy and efﬁciency. To address this issue,
+we propose a simple and highly effective compound scaling
+method, which enables us to easily scale up a baseline Con-
+vNet to any target resource constraints in a more principled
+way, while maintaining model efﬁciency. Powered by this
+compound scaling method, we demonstrate that a mobile-
+size EfﬁcientNet model can be scaled up very effectively,
+surpassing state-of-the-art accuracy with an order of magni-
+tude fewer parameters and FLOPS, on both ImageNet and
+ﬁve commonly used transfer learning datasets.
+Acknowledgements
+We thank Ruoming Pang, Vijay Vasudevan, Alok Aggarwal,
+Barret Zoph, Hongkun Yu, Jonathon Shlens, Raphael Gon-
+tijo Lopes, Yifeng Lu, Daiyi Peng, Xiaodan Song, Samy
+Bengio, Jeff Dean, and the Google Brain team for their help.
+Appendix
+Since 2017, most research papers only report and compare
+ImageNet validation accuracy; this paper also follows this
+convention for better comparison. In addition, we have
+also veriﬁed the test accuracy by submitting our predictions
+on the 100k test set images to http://image-net.org ;
+results are in Table 8. As expected, the test accuracy is very
+close to the validation accuracy.
+Table 8. ImageNet Validation vs. Test Top-1/5 Accuracy .
+B0 B1 B2 B3 B4 B5 B6 B7
+Val top1 77.11 79.13 80.07 81.59 82.89 83.60 83.95 84.26
+Test top1 77.23 79.17 80.16 81.72 82.94 83.69 84.04 84.33
+Val top5 93.35 94.47 94.90 95.67 96.37 96.71 96.76 96.97
+Test top5 93.45 94.43 94.98 95.70 96.27 96.64 96.86 96.94
+References
+Berg, T., Liu, J., Woo Lee, S., Alexander, M. L., Jacobs,
+D. W., and Belhumeur, P. N. Birdsnap: Large-scale
+ﬁne-grained visual categorization of birds. CVPR , pp.
+2011–2018, 2014.
+Bossard, L., Guillaumin, M., and Van Gool, L. Food-101–
+mining discriminative components with random forests.
+ECCV , pp. 446–461, 2014.
+Cai, H., Zhu, L., and Han, S. Proxylessnas: Direct neural
+architecture search on target task and hardware. ICLR ,
+2019.
+Chollet, F. Xception: Deep learning with depthwise separa-
+ble convolutions. CVPR , pp. 1610–02357, 2017.Cubuk, E. D., Zoph, B., Mane, D., Vasudevan, V ., and Le,
+Q. V . Autoaugment: Learning augmentation policies
+from data. CVPR , 2019.
+Elfwing, S., Uchibe, E., and Doya, K. Sigmoid-weighted
+linear units for neural network function approximation
+in reinforcement learning. Neural Networks , 107:3–11,
+2018.
+Gholami, A., Kwon, K., Wu, B., Tai, Z., Yue, X., Jin, P.,
+Zhao, S., and Keutzer, K. Squeezenext: Hardware-aware
+neural network design. ECV Workshop at CVPR’18 ,
+2018.
+Han, S., Mao, H., and Dally, W. J. Deep compression:
+Compressing deep neural networks with pruning, trained
+quantization and huffman coding. ICLR , 2016.
+He, K., Zhang, X., Ren, S., and Sun, J. Deep residual
+learning for image recognition. CVPR , pp. 770–778,
+2016.
+He, K., Gkioxari, G., Doll ´ar, P., and Girshick, R. Mask
+r-cnn. ICCV , pp. 2980–2988, 2017.
+He, Y ., Lin, J., Liu, Z., Wang, H., Li, L.-J., and Han, S.
+Amc: Automl for model compression and acceleration
+on mobile devices. ECCV , 2018.
+Hendrycks, D. and Gimpel, K. Gaussian error linear units
+(gelus). arXiv preprint arXiv:1606.08415 , 2016.
+Howard, A. G., Zhu, M., Chen, B., Kalenichenko, D., Wang,
+W., Weyand, T., Andreetto, M., and Adam, H. Mobilenets:
+Efﬁcient convolutional neural networks for mobile vision
+applications. arXiv preprint arXiv:1704.04861 , 2017.
+Hu, J., Shen, L., and Sun, G. Squeeze-and-excitation net-
+works. CVPR , 2018.
+Huang, G., Sun, Y ., Liu, Z., Sedra, D., and Weinberger,
+K. Q. Deep networks with stochastic depth. ECCV , pp.
+646–661, 2016.
+Huang, G., Liu, Z., Van Der Maaten, L., and Weinberger,
+K. Q. Densely connected convolutional networks. CVPR ,
+2017.
+Huang, Y ., Cheng, Y ., Chen, D., Lee, H., Ngiam, J., Le,
+Q. V ., and Chen, Z. Gpipe: Efﬁcient training of giant
+neural networks using pipeline parallelism. arXiv preprint
+arXiv:1808.07233 , 2018.
+Iandola, F. N., Han, S., Moskewicz, M. W., Ashraf, K.,
+Dally, W. J., and Keutzer, K. Squeezenet: Alexnet-level
+accuracy with 50x fewer parameters and <0.5 mb model
+size. arXiv preprint arXiv:1602.07360 , 2016.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+Ioffe, S. and Szegedy, C. Batch normalization: Accelerating
+deep network training by reducing internal covariate shift.
+ICML , pp. 448–456, 2015.
+Kornblith, S., Shlens, J., and Le, Q. V . Do better imagenet
+models transfer better? CVPR , 2019.
+Krause, J., Deng, J., Stark, M., and Fei-Fei, L. Collecting a
+large-scale dataset of ﬁne-grained cars. Second Workshop
+on Fine-Grained Visual Categorizatio , 2013.
+Krizhevsky, A. and Hinton, G. Learning multiple layers of
+features from tiny images. Technical Report , 2009.
+Krizhevsky, A., Sutskever, I., and Hinton, G. E. Imagenet
+classiﬁcation with deep convolutional neural networks.
+InNIPS , pp. 1097–1105, 2012.
+Lin, H. and Jegelka, S. Resnet with one-neuron hidden
+layers is a universal approximator. NeurIPS , pp. 6172–
+6181, 2018.
+Lin, T.-Y ., Doll ´ar, P., Girshick, R., He, K., Hariharan, B.,
+and Belongie, S. Feature pyramid networks for object
+detection. CVPR , 2017.
+Liu, C., Zoph, B., Shlens, J., Hua, W., Li, L.-J., Fei-Fei, L.,
+Yuille, A., Huang, J., and Murphy, K. Progressive neural
+architecture search. ECCV , 2018.
+Lu, Z., Pu, H., Wang, F., Hu, Z., and Wang, L. The expres-
+sive power of neural networks: A view from the width.
+NeurIPS , 2018.
+Ma, N., Zhang, X., Zheng, H.-T., and Sun, J. Shufﬂenet v2:
+Practical guidelines for efﬁcient cnn architecture design.
+ECCV , 2018.
+Mahajan, D., Girshick, R., Ramanathan, V ., He, K., Paluri,
+M., Li, Y ., Bharambe, A., and van der Maaten, L. Explor-
+ing the limits of weakly supervised pretraining. arXiv
+preprint arXiv:1805.00932 , 2018.
+Maji, S., Rahtu, E., Kannala, J., Blaschko, M., and Vedaldi,
+A. Fine-grained visual classiﬁcation of aircraft. arXiv
+preprint arXiv:1306.5151 , 2013.
+Ngiam, J., Peng, D., Vasudevan, V ., Kornblith, S., Le, Q. V .,
+and Pang, R. Domain adaptive transfer learning with spe-
+cialist models. arXiv preprint arXiv:1811.07056 , 2018.
+Nilsback, M.-E. and Zisserman, A. Automated ﬂower clas-
+siﬁcation over a large number of classes. ICVGIP , pp.
+722–729, 2008.
+Parkhi, O. M., Vedaldi, A., Zisserman, A., and Jawahar, C.
+Cats and dogs. CVPR , pp. 3498–3505, 2012.Raghu, M., Poole, B., Kleinberg, J., Ganguli, S., and Sohl-
+Dickstein, J. On the expressive power of deep neural
+networks. ICML , 2017.
+Ramachandran, P., Zoph, B., and Le, Q. V . Searching for
+activation functions. arXiv preprint arXiv:1710.05941 ,
+2018.
+Real, E., Aggarwal, A., Huang, Y ., and Le, Q. V . Regu-
+larized evolution for image classiﬁer architecture search.
+AAAI , 2019.
+Russakovsky, O., Deng, J., Su, H., Krause, J., Satheesh, S.,
+Ma, S., Huang, Z., Karpathy, A., Khosla, A., Bernstein,
+M., et al. Imagenet large scale visual recognition chal-
+lenge. International Journal of Computer Vision , 115(3):
+211–252, 2015.
+Sandler, M., Howard, A., Zhu, M., Zhmoginov, A., and
+Chen, L.-C. Mobilenetv2: Inverted residuals and linear
+bottlenecks. CVPR , 2018.
+Sharir, O. and Shashua, A. On the expressive power of
+overlapping architectures of deep learning. ICLR , 2018.
+Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I.,
+and Salakhutdinov, R. Dropout: a simple way to prevent
+neural networks from overﬁtting. The Journal of Machine
+Learning Research , 15(1):1929–1958, 2014.
+Szegedy, C., Liu, W., Jia, Y ., Sermanet, P., Reed, S.,
+Anguelov, D., Erhan, D., Vanhoucke, V ., and Rabinovich,
+A. Going deeper with convolutions. CVPR , pp. 1–9,
+2015.
+Szegedy, C., Vanhoucke, V ., Ioffe, S., Shlens, J., and Wojna,
+Z. Rethinking the inception architecture for computer
+vision. CVPR , pp. 2818–2826, 2016.
+Szegedy, C., Ioffe, S., Vanhoucke, V ., and Alemi, A. A.
+Inception-v4, inception-resnet and the impact of residual
+connections on learning. AAAI , 4:12, 2017.
+Tan, M., Chen, B., Pang, R., Vasudevan, V ., Sandler, M.,
+Howard, A., and Le, Q. V . MnasNet: Platform-aware
+neural architecture search for mobile. CVPR , 2019.
+Xie, S., Girshick, R., Doll ´ar, P., Tu, Z., and He, K. Aggre-
+gated residual transformations for deep neural networks.
+CVPR , pp. 5987–5995, 2017.
+Yang, T.-J., Howard, A., Chen, B., Zhang, X., Go, A., Sze,
+V ., and Adam, H. Netadapt: Platform-aware neural net-
+work adaptation for mobile applications. ECCV , 2018.
+Zagoruyko, S. and Komodakis, N. Wide residual networks.
+BMVC , 2016.EfﬁcientNet: Rethinking Model Scaling for Convolutional Neural Networks
+Zhang, X., Li, Z., Loy, C. C., and Lin, D. Polynet: A pursuit
+of structural diversity in very deep networks. CVPR , pp.
+3900–3908, 2017.
+Zhang, X., Zhou, X., Lin, M., and Sun, J. Shufﬂenet: An ex-
+tremely efﬁcient convolutional neural network for mobile
+devices. CVPR , 2018.
+Zhou, B., Khosla, A., Lapedriza, A., Oliva, A., and Torralba,
+A. Learning deep features for discriminative localization.
+CVPR , pp. 2921–2929, 2016.
+Zoph, B. and Le, Q. V . Neural architecture search with
+reinforcement learning. ICLR , 2017.
+Zoph, B., Vasudevan, V ., Shlens, J., and Le, Q. V . Learning
+transferable architectures for scalable image recognition.
+CVPR , 2018.

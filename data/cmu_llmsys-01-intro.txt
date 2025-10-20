@@ -1,0 +1,375 @@
+11868/11968
+Large Language Model Systems
+Lei Li
+1
+220202023
+2024
+2000NN LM
+2018BERT
+20223Scale of LLMs
+TransformerGPT1GPT2GPT3GopherPALMGPT4
+LLaMA3.1DeepSeek -v3
+Qwen3
+001101001,00010,000
+2016 2017 2018 2019 2020 2021 2022 2023 2024 2025size(B)•Understand key techniques for modern LLM systems
+oHow much resources do you need to train a 100B model?
+•Engineering skills to implement key components for LLM 
+systems
+oFast CUDA kernel for LLM
+oScalable training system
+oEfficient inference
+•Innovation: discover opportunities and solve new critical 
+challenges in LLM system researchLearning Objective of This Course•Capabilities of LLMs
+•Mathematical Foundations 
+•Challenges in LLM Systems
+•Logistics
+5Outline
+6
+create a viral tweet about my Large language model systems 
+course at Carnegie Mellon University (CMU, in Pittsburgh). Please 
+refer to the course description at 
+https:// llmsystem.github.io /llmsystem2025fall/
+ Ready to build the future of AI? 
+This Fall at CMU: "Large Language Model Systems" 
+ Dive into LLM design, implementation & scaling.
+ Tackle cutting -edge topics like agents, fine -tuning & efficiency.
+ Learn in the AI innovation hub: Pittsburgh.
+ Details Here
+#AI #LLM #CMU # TechInnovation
+LLM
+Translate
+Polish Email
+Summarize
+Answe r daily life questions
+Math Calculation
+Write Code
+7Translation
+8
+Google MT
+ ChatGPT /GPT4•https://github.com/Ads -cmu/WhatsApp -Llama
+•Train on your WhatsApp chat data (about 10 chat histories 
+are adequate), about a couple hours
+•Generate responses to mimic user style
+9ChatBot  to Mimic a UserRewrite Text with Style
+Please write the following sentence in Yoda's style. Here are a few 
+examples. 
+You have much to learn. -> Much to learn, you still have. 
+I would say you have found someone, hmmm? -> Found someone, you 
+have, I would say, hmmm? 
+You should not drive that fast. ->
+Drive that fast, you should not.
+Commonsense Reasoning
+Fill in the blank: Steven was disgusted that Robert chose to cook pork 
+for dinner, because _ was a vegetarian.
+"option1": "Steven",                           "option2": "Robert"
+The correct answer is "Steven" 
+Math Reasoning
+12Roger has 4 tennis balls. He buys 2 more cans of tennis balls. Each 
+can has 3 tennis balls. How many tennis balls does he have now?
+Roger initially has 4 tennis balls. When he buys 2 more cans of tennis 
+balls, and each can has 3 tennis balls, he adds 2 cans * 3 tennis balls 
+per can = 6 tennis balls to his collection.
+So, Roger now has a total of 4 initial tennis balls + 6 newly purchased 
+tennis balls = 10 tennis balls.
+13
+ChatGPT  scored between a B - and B on the MBA exam.The Circored  process produces direct reduced iron in Latin America. The production 
+process starts with a pile of iron ore fines. The ore is moved through seven process steps 
+before it emerges as finished direct -reduced -iron briquettes. The steps and their capacities 
+are as follows:
+• Pre -Heater: 60 tons per hour 
+• Lock Hoppers: 55 tons per hour 
+• First reactor: this reactor holds up to 14 tons of iron and iron needs to spend 15 minutes in 
+the reactor 
+• Second reactor: this reactor holds up to 200 tons of iron and iron needs to spend 4 hours 
+in the reactor 
+• Flash heater: 62.5 tons per hour 
+• Discharge: 59 tons per hour 
+• Briquetting: three machines of 27.5 tons per hour each 
+Where in the process is the bottleneck and what is the overall process capacity? Justify 
+your answer.
+Christian Terwiesch . Would Chat GPT3 Get a Wharton MBA? 2023.To identify the bottleneck in the Circored  process and the overall process capacity, we need to 
+look at the capacities of each step. The bottleneck in any production process is the step with 
+the lowest throughput rate, as it limits the rate at which the entire system can operate.
+Here are the capacities given:
+1.Pre-Heater : 60 tons per hour
+2.Lock Hoppers : 55 tons per hour
+3.First Reactor : Holds 14 tons total; each batch takes 15 minutes, so its rate is 
+14tons0.25 hours=56 tons perhour0.25 hours14 tons​=56 tons perhour
+4.Second Reactor : Holds 200 tons total; each batch takes 4 hours, so its rate is 
+200 tons4 hours=50 tons perhour4 hours200 tons​=50 tons perhour
+5.Flash Heater : 62.5 tons per hour
+6.Discharge : 59 tons per hour
+7.Briquetting : Three machines at 27.5 tons per hour each, so 
+3×27.5 tons perhour=82.5 tons perhour3 ×27.5 tons perhour=82.5 tons perhour
+Now, let's calculate and compare the capacities of each step to identify the bottleneck.
+The bottleneck in the Circored  process is the Second Reactor , with a capacity of 50 tons per 
+hour . …# Capacities of each step in tons per hour  
+pre_heater  = 60 
+lock_hoppers  = 55 
+first_reactor  = 14 / 0.25  
+second_reactor  = 200 / 4 
+flash_heater  = 62.5  
+discharge = 59 
+briquetting = 3 * 27.5  
+# Identifying the bottleneck (the smallest capacity) and overall process capacity 
+capacities = { 
+  "Pre -Heater" : pre_heater , 
+  "Lock Hoppers" : lock_hoppers , 
+  "First Reactor" : first_reactor , 
+  "Second Reactor" : second_reactor , 
+  "Flash Heater" : flash_heater , 
+  "Discharge" : discharge, 
+  "Briquetting" : briquetting } 
+bottleneck_step  = min(capacities, key= capacities.get ) 
+bottleneck_capacity  = capacities[ bottleneck_step ] 
+(bottleneck_step , bottleneck_capacity )ChatGPT  even 
+generates code to verify
+It connects to a 
+python engine, 
+and executes the 
+program to obtain 
+result17def find_peaks (mountain):
+    peaks = []
+    for i in range(1, len(mountain) - 1):
+        if mountain[ i] > mountain[ i - 1] and 
+mountain[ i] > mountain[ i + 1]:
+            peaks.append (i)
+    return peaksYou are given a 0 -indexed array mountain. Your task is to find all 
+the peaks in the mountain array. please write a python program. 
+18
+please draw a llama climbing along the "walking 
+into the sky" on the campus of CMU
+please draw an image for my slides about ”The 
+power of Large Language Models"•Capabilities of LLMs
+•Mathematical Foundations 
+•Challenges in LLM Systems
+•Logistics
+20Outline
+Probability Model for Next Token
+21Santa Barbara has very nice ____beach
+weather
+snow  
+bridges
+cornPittsburgh is a city of ____0.5
+0.4
+0.01 
+0.6
+0.02 P(next word 𝑦𝑡 | Prompt 𝑥,previous words 𝑦1:𝑡−1)Mathematics of Language Model
+22Prob ability “Pittsburgh  is a city of bridges”
+=𝑃(“𝑃𝑖𝑡𝑡𝑠𝑏𝑢𝑟𝑔ℎ” )∙𝑃(“𝑖𝑠”|“𝑃𝑖𝑡𝑡𝑠𝑏𝑢𝑟𝑔ℎ” )
+∙𝑃(“𝑎”|”𝑃𝑖𝑡𝑡𝑠𝑏𝑢𝑟𝑔ℎ  𝑖𝑠”)∙𝑃(“𝑐𝑖𝑡𝑦 ”|…)∙𝑃(“𝑜𝑓”|…)
+∙𝑃(“𝑏𝑟𝑖𝑑𝑔𝑒𝑠 ”|…)
+Prob .𝑥1..𝑇=ෑ
+t=1T
+P(xt+1|x1..t)
+Predicting using Neural Nets
+(Transformer network, CNN, RNN)•Pre-training on very large raw data (300B tokens) + small 
+human feedback
+•Instruction following  – easy to use through natural 
+instruction
+•In-context learning  – Generalize well to versatile tasks, by 
+showing a few examples at use time.Why is ChatGPT changing AI landscapeType of Language Models
+24
+Decoder
+EncoderEncoder -only
+Masked LM
+Non-autoregressiveEncoder -decoder Decoder -only
+Autoregressive
+Encoder
+ Decoder•Masked Prediction: BERT 𝑃(𝑥𝑚𝑎𝑠𝑘 |𝑥)
+•Can also be used to generate language
+oe.g. NAT, REDER (reversible duplex model)
+25Encoder -only Language Model
+Transformer layer
+[CLS] John        visited      [MASK]     yesterday    and     really    [MASK]   all  it    [SEP]  I like 
+Madonna.NotNext                              Pittsburgh                                                 like•Model the probability 𝑃𝑌𝑋
+•Encoder may choose Bi -LSTM, Transformer, CNN
+•Decoder may choose LSTM, Transformer or Non -auto 
+Transformer, CNN
+26Encoder -Decoder Language Model
+Decoder
+Encoder
+Zh: 我喜欢唱歌和跳舞 。En: I like singing and dancing.
+En: I like singing and dancing.•Causal Language Model: 𝑃𝑋=ς𝑛=1𝑁𝑃𝑥𝑛𝑥1..𝑛−1
+•Model choice: Transformer or ( uni-directional) LSTM
+•Most popular choice of LLM architecture
+27Decoder -only Language Model
+Decoder
+[BOS]   Pgh   is       a       city      ofPgh       is  a       city      of   bridgesQuestion: Why is the sky blue?
+The sky appears blue because …
+The sky is not always blue  …LLM Learning Framework
+Pre-training
+Supervised Fine -
+tuning (SFT)
+ RLRaw text 
+corpus (wiki, 
+books, 
+reddits )
+ Preference data
+•Data: raw text corpus 
+othe larger the better, often crawled from the web
+oquality is important: Wikipedia, books, filtered Reddit posts
+•Design of Model Architecture
+oSparse Attention, Mixture of Expert, etc.
+•Training loss: 
+ocross -entropy loss for next token prediction. 
+29Pre-training of Language Models•Cross entropy loss
+𝐶𝐸=−1
+𝑁෍
+𝑛=1𝑁
+log𝑃𝜃(𝑥𝑛|𝑥<𝑛)
+30Training Objective
+Decoder
+[BOS]   Pgh   is       a       city      ofPgh       is  a       city      of   bridges•Perplexity: for open -end generation
+𝑃𝑃𝐿 =exp −1
+𝑁෍
+𝑛=1𝑁
+log𝑃𝐿𝑀(𝑥𝑛|𝑥<𝑛)
+•Reference -based metric:  
+oSEScore2/COMET/BLEURT: model -based score
+oBLEU (or ROUGE): based on n -gram matching, old but classic
+oInstructScore : explainable score [Xu et al 2023]
+31Measuring Performance of Language Model•Using downstream task performance metrics 
+oNamed entity recognition: F1
+oQuestion Answering: accuracy, matching rate
+oCode generation: pass -rate @k
+oRetrieval: ndcg
+oSummarization: ROUGE
+oTranslation: COMET/SEScore2/BLEU
+32Measuring Performance of Language Model•GPT3 trained on 300B tokens
+•Both model scale and data are important
+33Performance of LLM
+Perplexity•Capabilities of LLMs
+•Mathematical Foundations 
+•Challenges in LLM Systems
+•Logistics
+34Outline
+•Generalist
+oFormulate any AI tasks as token -based sequence generation
+•Instructibility
+oInteractive system that is able to take natural or infinite commands
+•Agentic
+oCall external tools, execute actions, take feedback
+35Modern LLMs•Key system problem: compute (train/inference) larger  LLMs on 
+bigger  datasets with fewer  resources (GPU/memory/power) 
+faster
+•Right Abstraction
+oDesigning useful building blocks that hide complexity from application 
+developers – computation at different levels
+•Tradeoffs
+oWhat are the fundamental constraints and main success metrics?System Design for LLM•Common network layer 
+oMulti -head Attention
+oLayer norm
+oDropout
+oLinear layer
+oNonlinear activation: Tanh, 
+RELU, GELU
+oSoftmax•Low level operators:
+oMatrix/Tensor multiplication
+oReduction: summation, avg
+oMap: element -wise applying
+oMemory movement
+37Computation in Language Models38System Challenges at Different Abstraction 
+Levels
+Operators on 
+block of datafast CUDA/TPU kernel
+data/model compression
+DL 
+Frameworkseasy dev/modify model
+easy dev ML algorithm
+distributed / 
+parallel systemscaling to gigantic model
+gigantic dataset
+very long sequence/context
+partitioning/scheduling/comm•Scaling is all you need! – scale up and scale down
+•Joint design of
+oModel architecture
+oTraining/inference Algorithms
+oSoftware optimization (partitioning, scheduling, data movement, 
+latency hiding)
+oHardware Acceleration (device -specific instructions)LLM needs Model -Algorithm -System Co -design•Making computation fast is not enough
+•Data Transfer needs time
+oLarge model has a lot of parameters
+▪Transferring parameters/gradients across devices/nodes can take more 
+time
+oData sample in batch versus single single sequence
+•needs large working memory for long context LLM
+40Computation versus Data Transfer•What are good abstractions to build AI applications?
+oUpper level: integrating models into a product system, tracking and 
+improving product quality over time 
+oMiddle level: building model training and inference software, streaming 
+dataflow
+oLower level: building GPU kernels, compilers, etc
+•A good abstraction successfully frees the programmer of one or 
+more concerns (e.g., performance or failures) while supporting 
+a wide range of apps on topProgramming Models•Capabilities of LLMs
+•Mathematical Foundations 
+•Challenges in LLM Systems
+•Logistics
+42Outline
+Instructor Prof. Lei Li
+CMU
+PhD
+SCS, CSD
+2011
+UC Berkeley
+PostDoc
+EECS
+2014
+ 2016
+Principal Scientist
+Institute of Deep Learning
+2021
+Founding Director
+AI Lab
+2023
+Assist. Prof. 
+CS
+Research Area: 
+Large language models
+ (Safety, Agents, Alignment)
+Machine Translation
+AI drug discovery•led and developed ByteDance’s  machine translation system VolcTrans  
+and AI writing system Xiaomingbot , which have been deployed in 
+products ( Toutiao , Douyin , Tiktok , Lark), serving over a billion users. 
+•Deep learning system research
+oLightSeq : An acceleration library for Transformer models
+•Machine translation: LegoMT , VOLT(ACL21 best paper), mRASP , 
+GLAT, WACO, InstructScore
+•Large Language Models: SALAM, ToolDec , ALGO, Ginsew
+•AI for Science: drug discovery (MARS), protein design ( EnzyGen )
+44Highlight of Past Work45TA
+Siqi 
+OuyangYingyi  
+HuangAndrea 
+Vigano
+office hour: see canvas page
+•If you want to learn how to create DL models and 
+use TensorFlow, PyTorch
+oTake 11685/11785
+•If you want learn how to use LLM but not interested in the 
+underlying system
+oTake 11667
+•You are unable to attend lecture, complete homework/project
+oWarning: requires system implementationReasons not to take this class … 
+  
+If you plan to drop this 
+class, please drop it 
+soon so others can 
+enroll!In order to take this course, you need to be proficient with:
+•Python and C++ development
+•Systems programming (e.g., 15 -213)
+•Basic ML/DL/NLP (e.g. 10701, 11785, 11711, or similar)
+47Prerequisites •The course will consist of programming -based homework 
+assignments
+•Homeworks  are done individually
+•Through the assignments you will develop the main 
+components for miniTorch  and train a Transformer -based 
+LLM
+•Expected to write Python and C++/CUDA code
+oprior knowledge of CUDA is helpful but not required. 
+48Assignments•GPU: We already requested PSC bridge2 credits
+•Additionally, you may use google colab  on your own.
+50Computing Resources•Inside a GPU
+•GPU Programming
+51Next

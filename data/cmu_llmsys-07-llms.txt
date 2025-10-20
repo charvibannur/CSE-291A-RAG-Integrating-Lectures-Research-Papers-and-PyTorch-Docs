@@ -1,0 +1,112 @@
+Pre-trained LLMs
+Lei Li
+•Sequence -to-sequence encoder -decoder framework for 
+conditional generation, including Machine Translation
+•Key components in Transformer
+oPositional Embedding (to distinguish tokens at different pos)
+oMultihead attention
+oResidual connection
+oLayer norm
+2Recap•T5
+•LLaMA
+•GPT3
+3Today’s Topic•Model Architecture
+oStandard encoder -decoder Transformer
+oDecoding: beam search
+▪Beam width=4, length penalty=0.6
+•Model Size
+o T5-base: 220 million parameters
+▪12 blocks, dff = 3072, dkv = 64, 12 -headed attention, dmodel = 768
+o T5-3B
+▪24 blocks, dmodel = 1024 , dkv = 128, dff = 16384, 32 -headed attention
+oT5-11B
+▪24 blocks, dmodel = 1024 , dkv = 128,  dff = 65536, 128 -headed attention
+4T5
+Raffel , Colin, et al. "Exploring the limits of transfer learning with a unified text -to-text transformer." The Journal of Machine Learning Research 21.1 (2020): 5485 -5551.  •Pretraining: C4: filtered English corpus from Common Crawl
+o750GB, still used often today
+•Supervised fine -tuning
+oLanguage understanding/Text classification: GLUE/ SuperGLUE
+oSummarization: CNN/Daily mail corpus
+oQuestion answering: SQuAD
+oTranslation: WMT English to German, French, Romanian
+5Training
+Pre-training Multitask Finetuning6T5 Pre -training: Recover randomly 
+corrupted spans
+Cloze -style QA Standard next token cross entropy loss, plus …
+15% of text are corrupted
+Pre-train for 0.5 million steps on a batch size of 128 sequences of length 512. 
+packing multiple seqs 65k tokens per batch, result in 34B trained tokens. 7T5 Multitask SFT with Task Instruction 
+Unified format to put task instructions as natural language in the input, 
+ enables transfer to new tasks. with more instruction tuning ➔ T0, Flan -T5 •Model Architecture: 
+oBased on Transformer decoder -only, with a few improvements.
+oPre-normalization [GPT3]
+oSwiGLU  activation function [ PaLM ]: Swish -Gated Linear Unit
+oRotary Embeddings [ RoFormer ]
+8LLaMA
+Touvron , Hugo, et al. "Llama: Open and efficient foundation language models." arXiv  preprint arXiv:2302.13971 (2023).pre Layer Normalization
+9
+10FFN with SwiGLU
+Swish activation
+𝑠𝑤𝑖𝑠ℎ 𝑥=𝑥𝜎𝛽𝑥
+𝜎𝑥=1
+1+𝑒−𝑥FFN (𝑥)=𝑚𝑎𝑥 (0,𝑥⋅𝑊1+𝑏1)⋅𝑊2+𝑏2FFN with ReLU
+FFN 𝑆𝑤𝑖𝐺𝐿𝑈 𝑥
+=𝑆𝑤𝑖𝑠 ℎ𝑥⋅𝑊1+𝑏1⨀𝑥∙𝑊2+𝑏2
+⋅𝑊3+𝑏2FFN with SwiGLU
+dim=2/3 * 4ddim=4d11Rotary Embedding ( RoPE )
+𝑓𝑥𝑚,𝑚=cos𝑚𝜃 −sin 𝑚𝜃
+sin 𝑚𝜃 cos𝑚𝜃𝑥𝑚,1
+𝑥𝑚,2
+𝑓𝑥𝑚,𝑚∙𝑓𝑥𝑛,𝑛=𝑥𝑚𝑇𝑅𝑛−𝑚𝑥𝑛 make the attention weight depending (only) on position distance
+Su et al. RoFormer : Enhanced Transformer 
+with Rotary Position Embedding 2021.12Rotary Embedding ( RoPE )
+𝑓𝑥𝑚,𝑚
+=cos𝑚𝜃1 −sin 𝑚𝜃1
+sin 𝑚𝜃1 cos𝑚𝜃1
+cos𝑚𝜃2 −sin 𝑚𝜃2
+sin 𝑚𝜃2 cos𝑚𝜃2𝑥𝑚,1
+𝑥𝑚,2
+𝑥𝑚,3
+𝑥𝑚,4
+𝑓𝑥𝑚,𝑚𝑇∙𝑓𝑥𝑛,𝑛=𝑥𝑚𝑇𝑅𝑛−𝑚𝑥𝑛 
+Su et al. RoFormer : Enhanced Transformer 
+with Rotary Position Embedding 2021.•Model Size
+13LLaMA
+Touvron , Hugo, et al. "Llama: Open and efficient foundation language models." arXiv  preprint arXiv:2302.13971 (2023).14LLaMA
+•Training Strategy
+oTrained with the standard language modeling loss function: the 
+average log probability of all tokens without label smoothing
+oAuxiliary loss to encourage the softmax  normalizer to be close to 0
+•Pre-training Details
+o Using only open -source data
+Touvron , Hugo, et al. "Llama: Open and efficient foundation language models." arXiv  preprint arXiv:2302.13971 (2023).15GPT3
+•Model Architecture
+o Based on the standard Transformer architecture
+o With modified initialization, pre -normalization, and reversible tokenization
+o Alternating dense and locally banded sparse attention patterns 
+Brown, Tom, et al. "Language models are few -shot learners." Advances in neural information processing systems 33 (2020): 1877 -1901.
+•Model Size
+16GPT3
+Brown, Tom, et al. "Language models are few -shot learners." Advances in neural information processing systems 33 (2020): 1877 -1901.17GPT3
+•Training Strategy
+o Unsupervised Pre -training
+•Training Details
+Brown, Tom, et al. "Language models are few -shot learners." Advances in neural information processing systems 33 (2020): 1877 -1901.Computation
+18
+Brown, Tom, et al. "Language models are few -shot learners." Advances in neural information processing systems 33 (2020): 1877 -1901.•https:// canvas.cmu.edu /courses/44373/quizzes/140384
+19Quiz 4•Pretraining: Mask -labeled recovery of random spans + next 
+token prediction
+•Multitask supervised fine -tuning with instruction templates
+oT5, InsturctGPT
+•Relative position: Rotary positional embedding
+•Smooth activation: SwishGLU
+•Sparse attention
+20Summary – Key Ideas in Modern Pre -
+trained LLMshttps://github.com/llmsystem/llmsys_code_examples/tree/main
+/minitorch_notebook
+21Minitorch  Code walkthrough•Neural Machine Translation of Rare Words with Subword  
+Units. Sennrich  et al. 2016.
+•SentencePiece : A simple and language independent 
+subword  tokenizer and detokenizer  for Neural Text 
+Processing. Kudo and Richardson. 2018
+23Reading for Next Class

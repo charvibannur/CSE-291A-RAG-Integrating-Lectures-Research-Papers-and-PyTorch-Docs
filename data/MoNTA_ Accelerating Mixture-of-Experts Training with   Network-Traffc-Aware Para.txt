@@ -1,0 +1,1067 @@
+MoNTA: Accelerating Mixture-of-Experts Training with Network-Traffic-Aware
+Parallel Optimization
+Jingming Guo, Yan Liu, Yu Meng, Zhiwei Tao, Banglan Liu, Gang Chen, Xiang Li
+Shanghai Enflame Technology Co. Ltd, Shanghai, China
+Abstract
+The Mixture of Experts (MoE) is an advanced model ar-
+chitecture in the industry that combines multiple special-
+ized expert models from various domains into a single su-
+permodel. This approach enables the model to scale with-
+out significantly increasing the computational costs of train-
+ing and inference, while maximizing model performance.
+However, current distributed training frameworks do not
+consider the ultimate optimization of communication, es-
+pecially for large base models. This paper proposes a
+network-traffic-aware parallel optimization method that se-
+lects the optimal parallel strategy based on the commu-
+nication volume, and the training cluster’s inter-node and
+intra-node network topologies. Compared to the Deep-
+Speed, MoNTA achieves an 8x increase in AllToAll com-
+munication performance under 8-card tensor parallelism.
+Compared to the baseline, training a 2x70B model us-
+ing 16 A800 cards, with an 8K sequence, results in a
+13% overall latency performance improvement. Project Page:
+https://github.com/EnflameTechnology/DeepSpeed.
+Introduction
+The Mixture of Experts (MoE) model is an ensemble learn-
+ing approach that combines multiple specialized sub-models
+or ”experts” to enhance the capabilities of large language
+models without significantly increasing computational cost.
+Through gating mechanisms, dynamic expert selection is
+employed to facilitate efficient multitask learning. Due to
+the substantial communication requirements among the ex-
+perts in the MoE architecture, overall computational effi-
+ciency can be affected. A common 6D parallel method for
+MoE models within a Transformer structure (excluding DP
+and PP) is illustrated in Fig. 1, where experts are typically
+selected by gating layers, activating only the chosen subset
+of experts during each forward pass. There is a complex in-
+teraction between computational efficiency, communication
+load, and memory usage. The choice of distributed paral-
+lelization strategies will affect these factors and will also be
+influenced by different hardware configurations.
+Currently, distributed training frameworks do not consider
+the intricate relationship between MoE communication effi-
+ciency, communication load, and memory usage, especially
+Copyright © 2025, All rights reserved.for large base models. Existing methods do not address All-
+ToAll communication optimizations for experts under tensor
+parallelism or leverage inter-node and intra-node commu-
+nication for parallelism. This paper introduces a network-
+traffic-aware parallel optimization method that selects the
+optimal parallel strategy based on the size of the communi-
+cation volume and the network topology of the training clus-
+ter’s intra-node and inter-node communications. To the best
+of our knowledge, this is the first proposal that integrates
+communication volume, communication efficiency, and net-
+work topology in parallel optimization. By exploiting data
+redundancy in AllToAll communication under tensor paral-
+lelism, the AllToAll communication is equivalently trans-
+formed into a combination of inter-node AllToAll and intra-
+node communication. Based on the correspondence between
+communication volume and communication efficiency, the
+communication data is divided into different slices to en-
+sure communication efficiency and achieve greater commu-
+nication overlap. This approach effectively utilizes high-
+bandwidth intra-node connections to enhance communica-
+tion efficiency, thereby improving chip compute utilization.
+The main contributions of this paper are as follows:
+• We Propose a communication-aware parallel optimiza-
+tion method MoNTA: utilize inter-node and intra-node
+communication resources, implement inter-node All-
+ToAll and intra-node communication pipelining, estab-
+lish a performance model for communication volume,
+communication efficiency, and parallel schemes, achieve
+MoE AllToAll communication overlap, and improve
+compute utilization efficiency;
+• We introduce pipelining of intra-node communication
+and D2D copying to further reduce AllToAll overhead;
+• We analyze communication conflict issues during the
+training process of the MoE model and provide a com-
+munication priority scheme;
+• We propose an expansion method for distributed parallel
+training cluster of the long context Mixture of Experts
+model, which generates a distributed parallel expansion
+strategy for MoE based on cluster resource parameters,
+model parameters, and context length.
+Experimental results show that compared to DeepSpeed
+baseline, MoNTA achieves a maximum performance im-
+provement of approximately 8x in AllToAll communicationarXiv:2411.00662v1  [cs.LG]  1 Nov 2024Figure 1: Typical distributed parallelism for MoE models.A common 6D parallel method for MoE models includes Expert
+Parallel,Context Parallel,Tensor Parallel and Sequence Parallel, where Data Parallel and Pipeline Parallel are not shown.
+under 8-card tensor parallelism. Furthermore, compared to
+the baseline, training a 2x70B model using 16 A800 cards
+with an 8K sequence results in a 13% improvement in over-
+all latency performance.
+Background and Motivation
+This section introduces the background of MoE structure,
+expert parallelism, tensor parallelism, and AllToAll commu-
+nication.
+MoE The concept of MoE (Mixture of Experts) first
+emerged in a paper in 1991. With the emergence and de-
+velopment of sparse-gated MoE, especially when combined
+with large-scale language models based on Transformers,
+the continuous expansion of language model capabilities
+like LLM can be achieved without significantly increasing
+computational requirements. This year, research related to
+MoE has shown strong growth, with the successive release
+of large models such as Mixtral-8x7B (Albert Q. et al. 2024),
+Grok-1, DeepSeek-V2 (Damai et al. 2024), and etc. Ad-
+ditionally, there has been a trend of creating large models
+that combine MoE with other models, such as Jamba (Opher
+et al. 2024), Samba (Liliang et al. 2024), and more. A typi-
+cal MoE model consists of two parts: a gating network and
+a sparse expert layer. The gating layer determines which
+expert processes a token and is typically composed of lin-
+ear layers, softmax layers, gating functions (such as TopK),
+and so on. The sparse expert layer replaces the FFN (Feed-
+Forward Network) layer in Transformers and is usually com-
+posed of multiple FFNs, each representing an independent
+expert. In Fig. 2, there are 8 experts, each with potentially
+similar or different structures.
+Expert Parallel Expert Parallel routes tokens to different
+experts within Transformer blocks for computation. Each to-
+ken is routed to a set of different experts, significantly reduc-
+ing the number of parameters that each token must interact
+with by skipping certain experts. After communication via
+GPU-to-GPU AllToAll connections, the experts process the
+tokens, which must then be sent back to their original GPUs.
+In expert parallelism, different experts can be distributed
+across different compute nodes, enabling data to be pro-
+cessed in parallel, thus improving computational efficiency.
+Figure 2: MoE expert parallelism execution process.
+Fig. 2 illustrates the execution flow of expert parallelism in
+MoE models, typically consisting of several components:
+• Routing: The gating network computes a weight for each
+expert based on the characteristics of each token, reflect-
+ing the importance of that expert in processing the token.
+On each card, the TopK expert indices and probabilities
+are selected for each batch data, where K is 2 as shown
+in Fig. 2.
+• Permutation: Reorder the token sequences on each card,
+grouping data that selects the same expert together to
+form dispatch encoded data.
+• Dispatch:Using AllToAll communication, distribute the
+input tokens to the respective experts for processing, so
+each expert on each card obtains tokens to be processed.
+• Computation:Perform expert computations in parallel on
+each card.
+• Combine:Utilize AllToAll communication to reconstruct
+the data, and obtain the original tokens processed by ex-
+perts.
+• Unpermutation:On each card, restore the original batch
+order based on the indices from routing. Each token un-
+dergoes a scale-add operation using the Top 2 probabili-
+ties and the hidden states corresponding to its processing
+experts, resulting in the final output. At this point, each
+token completes the expert computations and proceeds to
+the next transformer block.
+Expert parallelism can be combined with other forms of
+parallelism such as tensor parallelism, sequence parallelism,
+data parallelism, etc., to achieve efficient model training in
+large-scale cluster systems. In Fig. 3, Non-MOE employs
+data parallelism, while MOE utilizes expert parallelism, cor-
+responding to the execution flow shown in Fig. 3, typicallyFigure 3: Combination of expert parallelism and data paral-
+lelism.
+applicable in cases where the number of expert parameters
+is relatively small. In the Non-MoE phase, specifically dur-
+ing the MultiHead Attention stage, dpworld size = 8 ,
+indicating 8-card data parallelism.During the MoE phase,
+epworld size= 8 anddpworld size= 1, indicating 8-
+card expert parallelism, with one expert placed on each card,
+while each card also has the full weights for Attention and
+Gate. Each card runs different batch data, and the Gate out-
+puts the probabilities of the experts selected for each batch.
+Subsequently, AlltoAll communication is performed within
+theepgroup to send tokens to the corresponding TopK ex-
+perts for computation. After each expert completes its calcu-
+lations, the results for the respective tokens are returned to
+the GPUs within the epgroup using AlltoAll communica-
+tion.
+AllToAll Communication AllToAll communication
+plays a crucial role in the training MoE models, and its
+optimization is essential for improving training efficiency
+and scaling model size. As the parameters of expert models
+increase, the time consumed by AllToAll communication
+may account for over 30% (Siddharth et al. 2023) (Changho
+et al. 2021) of the total time. Researchers have proposed
+various optimization strategies, including load balancing,
+computation/communication overlap, and memory usage
+limits. PipeMoE (Shaohuai et al. 2023) utilizes parallelism
+between expert computation and AllToAll communication,
+employing a micro chunk approach for hiding latency, and
+presents the optimal parallel degree for pipelining modeling.
+DeepSpeed is a framework developed by Microsoft specifi-
+cally designed for large-scale distributed training to improve
+training efficiency and reduce resource consumption. It
+supports training large models through various optimiza-
+tion strategies like the ZeRO optimizer, mixed-precision
+training, and pipeline parallelism. DeepSpeed-TED (Sid-
+dharth et al. 2023) addresses the issue of redundant data
+transmission in AllToAll communication under tensor par-
+allelism by transforming the first AllToAll after the Router
+into Drop+AllToAll+AllGather. This approach leverages
+high-bandwidth intra-node communication to enhance the
+efficiency of AllToAll communication but has not been
+merged into the official DeepSpeed release. The official
+DeepSpeed only supports the two MoE parallelization
+schemes listed in Table 1. For the cases of Non-MoE TP
+and MoE EP+TP, we have submitted patch1optimizing
+AllToAll using DTD. Building upon this, we further pro-
+1https://github.com/microsoft/DeepSpeed/pull/5626index parallelism support schemes
+1 Non-MoE TP →MoE EP Drop→AllToAll →Expert→AllToAll →AllGather
+2 Non-MoE TP →MoE EP+TP AllToAll →Expert→AllToAll
+Table 1: DeepSpeed support parallel schemes.
+Name Description
+b microbatch size
+s sequence length
+h hidden size
+a head number
+l transformer layer number
+P1 Non-MoE parameters
+P2 MoE Parametes
+k numbers of expert selected by each token
+d degree of data parallelism
+p degree of pipeline parallelism
+t degree of tensor parallelism
+e degree of expert parallelism
+Table 2: Notations.
+pose the network-traffic-aware parallel optimization method
+named MoNTA.
+MoNTA
+MoE Memory consumption
+Distributed parallel training strategies are constrained by
+GPU memory storage, and different parallel methods have
+varying memory resource usage. We analyze the memory
+consumption for MoE structured models. For ease of refer-
+ence, we summarize commonly used symbols in Table 2.
+The storage of MoE model weights can be divided into
+two parts: storage for the Non-MoE module ψ1and stor-
+age for the MoE module ψ2. Taking the Adam optimizer
+as an example, weights and gradients use fp16/bf16, while
+the optimizer’s momentum is stored in fp32, along with the
+fp32 master weight. A combination of data parallelism, ten-
+sor parallelism, expert parallelism, and pipeline parallelism
+is utilized, as shown in Table 3.
+The storage occupancy on a single card consists of model
+weight storage and activation storage:
+Mem total=ψ1+ψ2+Mem act, (1)
+where ψ1andψ2are storage for the Non-MoE module and
+MoE module, respectively. Mem actis activation storage.
+Megatron-LM (Mohammad Shoeybi 2020) (Vijay et al.
+2022) estimated the memory usage of activations in the
+Transformer architecture. Without parallelism, the storage
+of activations in MoE structures can be calculated as:
+Mem act=bshl(13 + 21 k+5as
+h), (2)
+Activation recomputation can reduce storage pressure and
+is a commonly used memory optimization technique during
+the training of large models. As shown in Table 4, the mem-
+ory usage of activation storage varies under different opti-
+mization techniques.Configurations Non-MoE Memory(Bytes) MoE Memory(Bytes)
+Baseline16·P1
+p·t16·P2
+p·t·e
+Zero O1(4+12
+d)·P1
+p·t(4+12
+d)·P2
+p·t·e
+Zero O2(2+14
+d)·P1
+p·t(2+14
+d)·P2
+p·t·e
+Zero O3(16
+d)·P1
+p·t(16
+d)·P2
+p·t·e
+Table 3: Memory Footprint of MoE model weights.
+Configurations Single GPU activation memory(Bytes)
+Without parallelism bshl(13 + 21 k+5as
+h)
+PP+TP+EP bshl(5 +5k
+e+(8+16k
+e)
+t+5as
+h)
+PP+TP+EP+SP bshl(13+21k
+e
+t+5as
+h)
+PP+TP+EP+SP+selective activation recomputation bshl(13+21k
+e)
+t
+PP+TP+EP+SP+full activation recomputation2bshl
+t
+Table 4: Memory Footprint of MoE model activation.
+Pipelining
+AllToAll and AllGather Pipelining In the existing train-
+ing process of large MoE models, due to the large size
+of each expert model and the distribution of different ex-
+perts across nodes, AllToAll communication usually utilizes
+inter-node bandwidth.Since inter-node bandwidth is smaller
+than intra-node bandwidth, communication becomes a sig-
+nificant portion of the overall overhead. TABLE 5 provides
+the NVLink bandwidth of different Nvidia chips. The uni-
+directional bandwidth of InfiniBand is 25GB/s or 50GB/s,
+with an intra-node to inter-node bandwidth ratio ranging
+from 8:1 to 18:1. Fully utilizing intra-node bandwidth has
+become one of the effective approaches to optimize AllToAll
+communication.
+Fig. 4 illustrates the computation/communication flow
+of the MoE module under tensor parallelism without opti-
+mization, as shown in Fig. 1. The first AlltoAll communi-
+cation occurs between GPU1 on Node 1 and GPU3 on Node
+2 (A1 and A2), as well as between GPU2 on Node 1 and
+GPU4 on Node 2 (B1 and B2). AllGather/AllReduce op-
+erations occurs between GPU1 and GPU2 within Node 1,
+and between GPU3 and GPU4 within Node 2. The second
+AllToAll follows a similar pattern. DeepSpeed-TED (Sid-
+dharth et al. 2023) leverages the characteristic of identical
+activations within the tensor parallelism group to reduce re-
+dundant data communication during the AllToAll communi-
+cation. It transforms the first AllToAll after the Router into
+Drop+AllToAll+AllGather, as shown in Fig. 5 (with Gather
+and subsequent AllGather omitted in the figure). By utiliz-
+ing high-bandwidth intra-node communication to enhance
+the overall efficiency of AllToAll communication.
+”Drop” refers to splitting the activations within the ten-
+sor parallelism group to ensure that there is no redundant
+AllToAll data communication within the group. AllToAll
+communication occurs within the inter-node expert paral-
+lel group, with only 1/t of the original communication vol-
+ume, where each chunk within the tensor parallelism group
+performs its own AllToAll. AllGather communication takes
+place within the intra-node tensor parallelism group, gath-
+ering the results after AllToAll to achieve equivalence with
+the original AllToAll. The same method can be applied to
+the second AllToAll. This paper provides a specific im-
+plementation1. However, existing frameworks do not lever-Chips Interconnect bandwidth GB/s(Unidirectional)
+B100/B200 900
+H100/H20 450
+H800/A800 200
+A100 300
+Table 5: The interconnect bandwidth of different Nvidia
+chips.
+Figure 4: Computation/communication flow of the MoE
+module under tensor parallelism.
+age the parallelism of intra-node and inter-node communi-
+cation, as shown in the sequential method in Fig. 6. To
+fully utilize the separated hardware architecture resources
+for inter-node and intra-node communication, this paper
+proposes a method that parallelizes AllToAll and AllGather,
+implementing pipelining between inter-node AllToAll and
+intra-node communication. This approach achieves overlap-
+ping of AllToAll communication, avoiding communication
+resource waiting, and enhances model training efficiency,
+as illustrated in the parallel method in Fig. 6. The input
+data for AllToAll communication can be divided into mul-
+tiple independent chunks, with each chunk executing All-
+ToAll and AllGather operations separately. The AllGather
+of the current chunk overlaps with the AllToAll of the next
+chunk. Since AllToAll utilizes inter-node communication
+resources, typically connected by InfiniBand, while All-
+Gather utilizes intra-node communication resources, usu-
+ally connected by high-speed NVLink, both are executed
+on different communication resources in parallel. How-
+ever,different chunks’ AllToAll or AllGather occupy the
+same resources, leading to their sequential execution. The
+AllGather of the second chunk needs to wait for the comple-
+tion of the AllGather of the first chunk, even if the AllToAll
+of the second chunk has finished.
+Corresponding to Fig. 4 and Fig. 5, Fig. 7 illustrates the
+computation/communication flow of the MoE module un-
+der pipelining, where the communication data is divided into
+two chunks (Gather operator and subsequent AllGather are
+omitted in the figure). Step1(AllToAll):The first data chunk
+performs in inter-node pairwise AllToAll communication,
+where A1 in Node 1 communicates with A2 in Node 2, and
+B1 in Node 1 communicates with B2 in Node 2.
+Step2(AllGather pipeline with AllToAll): The first
+data chunk performs intra-node AllGather communication,
+where G1 in Node 1 communicates with G2, and G5 in Node
+2 communicates with G6. At the same time, the second data
+chunk performs inter-node pairwise AllToAll communica-Figure 5: Sequential execution of AllToAll and AllGather.
+Figure 6: Sequential/Parallel AllToAll and AllGather.
+tion, where A3 in Node 1 communicates with A4 in Node
+2, and B3 in Node 1 communicates with B4 in Node 2. This
+achieves the parallel execution of AllToAll and AllGather as
+shown in Fig. .
+Step3(AllGather): The second data chunk performs intra-
+node AllGather communication, where G3 in Node 1 com-
+municates with G4, and G7 in Node 2 communicates with
+G8.
+At this point, the AllToAll communication is complete,
+and each card proceeds with the Expert computation. The
+parallel execution of the second AllToAll follows a similar
+pattern.
+AllGather and D2D copy Pipelining We analyze the data
+flow of parallel execution for AllToAll and AllGather, as
+shown in Fig. 8. For the AllToAll and AllGather in the
+Sequential mode shown in Fig. 6, the data arrangement re-
+mains the same as in the original unoptimized AllToAll 1⃝.
+In contrast, for the Parallel mode in Fig. 7 2⃝, the in-
+put data is split into chunk1 and chunk2. After pipelining,
+the final results differ, with data from different chunks ar-
+ranged in an interleaved manner. To ensure complete data
+equivalence, Device-to-Device copies are necessary. Once
+chunk1/chunk2 complete their AllGather operations, they
+are copied to the corresponding positions based on index off-
+sets 3⃝, resulting in the final output that is entirely equivalent
+to the original data. The D2D copy operation performed af-
+ter the AllGather for each chunk can be further optimized
+to achieve pipelining with AllGather, as shown in Fig. 9.
+The D2D copy of the current chunk and the AllGather of the
+next chunk are executed in parallel, further overlapping the
+overall communication time.
+Network-traffic-aware
+The size of the communication data and the distribution of
+data between nodes can influence the communication load
+Figure 7: AllToAll and AllGather Pipeling.
+Figure 8: Analysis of data flow for AllToAll and AllGather
+pipeling.
+and efficiency. In theory, the more chunks are split in Fig. 6,
+the higher the parallelism of AllToAll and AllGather, and
+the longer the communication time that can be overlapped.
+However, the actual execution of communication operators
+has a fixed overhead (Shriram, Rudolf, and Richard 2001),
+that is independent of the amount of communication data.
+Splitting the data into two chunks and executing them se-
+quentially may take longer than completing the operation in
+a single run.
+This paper proposes a network-traffic-aware parallel opti-
+mization method called MoNTA, which selects the optimal
+parallel strategy based on the size of the communication vol-
+ume and the network topology for intra-node and inter-node
+connections in the training cluster. Fig. 10 is a schematic di-
+agram of the MoNTA overview. MoNTA Inputs consist of
+AllToAll traffic inputs and Cluster network topology inputs
+1⃝. Based on the input information, the optimal chunk size
+for AllToAll pipelining is searched and selected, and a per-
+formance model for various optimization strategies is estab-
+lished to determine the final strategy 2⃝. MoNTA outputs the
+optimal execution strategy while estimating overall latency,
+throughput, and other performance metrics such as MFU 3⃝.
+The accuracy of the performance model is cross-validated
+through software frameworks, communication operator ker-
+nels, and hardware experiments 4⃝.
+AllToAll traffic inputs: The total communication volume
+Ifor a single AllToAll operation is given by b∗s∗h∗BPE ,
+which is related to the model parameters, training parame-
+ters, and context length. Here, brepresents the microbatch
+size,sdenotes the sequence length, hstands for the hidden
+size, and BPE signifies the number of bytes per data ele-
+ment.
+I=bsh∗BPE, (3)Figure 9: AllGather and D2D copy pipeling.
+Figure 10: Overview of MoNTA Architecture.
+Cluster network topology inputs: The cluster network
+topology parameters include theoretical intra-node commu-
+nication bandwidth, theoretical inter-node communication
+bandwidth, and the network topology.
+Optimal chunk select: When optimizing AllToAll using
+pipelining, the goal is to select an appropriate chunk size to
+minimize the overall AllToAll communication time T. We
+assume that the input data for AllToAll communication is
+divided into Nchunks along the sequence dimension, with
+each chunk containing s/N tokens.
+I= [I1, I2,···, IN] (4)
+HereIj=I[:,(j−1)s
+N:js
+N,: ],where each chunk communi-
+cates independently of the other chunks. We denote the time
+for AllToAll, AllGather, and D2D copy operations as AA,
+AG, and D2D, respectively.
+AA= [AA 1, AA 2,···, AA N] (5)
+AG= [AG 1, AG 2,···, AG N] (6)
+D2D= [D2D1, D2D2,···, D2DN] (7)
+Neglecting effects such as communication network jitter,
+the theoretical execution time for a single chunk is the same.
+AAj=I
+N∗t∗e−1
+e∗1
+B1∗r1(8)
+AGj=I
+N∗t−1
+t∗1
+B2∗r2(9)
+D2Dj=I
+N∗1
+B3∗r3(10)Algorithm 1: Find Optimal Chunk Size O2
+Input :b, s, h, BPE, t, e ,B1,r1,B2,r2,B3,r3,Iminimal
+Output :N, T
+1:j= 0
+2:Tmin= +∞
+3:I=bsh∗BPE
+4:forN= 1to+∞do
+5:IAA=I
+N∗t,IAG=I
+N
+6: ifIAA< Iminimal orIAG< Iminimal then
+7: Break;
+8: end if
+9: lookup r1according to I/(N∗t),lookup r2according
+toI/N
+10: AAj=I
+N∗t∗e−1
+e∗1
+B1∗r1
+11: AGj=I
+N∗t−1
+t∗1
+B2∗r2
+12: D2Dj=I
+N∗1
+B3∗r3
+13: ifAAj< AG j+D2Djthen
+14: T=AAj+ (AGj+D2Dj)∗N
+15: else
+16: T=AAj∗N+AGj+D2Dj
+17: end if
+18: ifT < T minthen
+19: T=Tmin
+20: end if
+21:end for
+22:Return N, T
+Here,B1represents the theoretical bandwidth for All-
+ToAll, r1corresponds to the AllToAll communication ef-
+ficiency for I/(N∗t), which is obtained by referencing the
+curve that relates communication volume to inter-node com-
+munication efficiency based on the value of I/(N∗t).B2
+stands for the theoretical bandwidth for AllGather, and r2
+denotes the AllGather communication efficiency for I/N ,
+derived from the curve relating communication volume to
+intra-node communication efficiency based on the value of
+I/N . The curves relating communication volume to inter-
+node and intra-node communication efficiency can be pre-
+tested and plotted. B3is the theoretical memory bandwidth,
+andr3is the memory bandwidth utilization rate correspond-
+ing to I/N.r1,r2,r3are variables that change with the vari-
+ation of data volume.
+Algorithm 1 is designed to select the optimal chunk size.
+The input parameters b, s, h, BPE are related to the All-
+ToAll communication volume, and are associated with for-
+mula (3).Input parameters t and e are distributed parallelism
+parameters related to the selection of parallel strategies.The
+input parameters B1, r1, B2, r2are communication-related
+parameters that can be obtained through pre-testing. The in-
+put parameter Iminimal represents the minimum commu-
+nication volume, determining the maximum chunk split N.
+When the size of a single chunk is less than Iminimal , com-
+munication is primarily composed of fixed communication
+overhead.
+Performance model: As shown in Table 6, the AllToAll
+optimization methods are categorized into 3 levels. A perfor-Name Method
+Baseline Original AllToAll
+O1 AllToAll transform into Drop+AllToAll+AllGather
+O2 AllToAll and AllGather pipelining
+O3 AllToAll and AllGather pipeling,AllGather and D2D copy pipeling
+Table 6: AllToAll optimization methods.
+Algorithm 2: Find Optimal Chunk Size O3
+Input :b, s, h, BPE, t, e ,B1,r1,B2,r2,B3,r3,Iminimal
+Output :N, T
+1:j= 0
+2:Tmin= +∞
+3:I=bsh∗BPE
+4:forN= 1to+∞do
+5:IAA=I
+N∗t,IAG=I
+N
+6: ifIAA< Iminimal orIAG< Iminimal then
+7: Break;
+8: end if
+9: lookup r1according to I/(N∗t),lookup r2according
+toI/N
+10: AAj=I
+N∗t∗e−1
+e∗1
+B1∗r1
+11: AGj=I
+N∗t−1
+t∗1
+B2∗r2
+12: D2Dj=I
+N∗1
+B3∗r3
+13: ifAAj< AG jthen
+14: T=AAj+ (AGj)∗N+D2Dj
+15: else
+16: T=AAj∗N+AGj+D2Dj
+17: end if
+18: ifT < T minthen
+19: T=Tmin
+20: end if
+21:end for
+22:Return N, T
+mance model is established to achieve network-traffic-aware
+parallel optimization.
+Using the O1strategy, the cost model is represented as
+in Equation (11), where r1is the AllToAll communication
+efficiency corresponding to I/tandr2is the AllGather com-
+munication efficiency corresponding to I.
+TO1=I
+t∗e−1
+e∗1
+B1∗r1+I∗t−1
+t∗1
+B2∗r2(11)
+Using the O2strategy, the cost model is obtained by the
+Optimal Chunk Selection module, which searches for the
+optimal split Nand TO2.
+Using the O3strategy, by adding pipelining for AllGather
+and D2D, the cost model also utilizes the Optimal Chunk Se-
+lection module to search for the optimal split N and TO3(Al-
+gorithm 2). Since both AllGather and D2D copy use load/-
+store instructions and are influenced by kernel scheduling,
+the execution efficiencies r2andr3differ from those of the
+O2strategy.
+Strategy Select: According to the performance model,
+obtain TO1,TO2, and TO3,then select the minimum to de-
+termine the optimal strategy S.
+Performance outputs: Based on the output from Strat-
+egy Select, determine the optimal execution strategy and es-Algorithm 3: Strategy Select
+Input :TO1,TO2,TO3
+Output :S
+1:Get cost TO1,TO2,TO3
+2:Tmin=Min( TO1,TO2,TO3)
+3:GetTminStrategy
+4:Return S
+timate the latency, throughput, and Model FLOPs Utilization
+(MFU) for the training process using this strategy S.
+Implementations: Through the framework of optimiza-
+tion strategy implementation and operator kernel implemen-
+tation, we carry out experiments on hardware clusters, cross-
+validation and calibrate the performance model. The com-
+munication kernel addresses communication conflicts. The
+implementation also includes cluster expansion strategies
+for long context MoE training.
+Communication Conflict
+This section analyzes the communication conflict handling
+methods in the communication kernel of MoNTA imple-
+mentations. Fig. 11 illustrates the forward and backward
+computation and communication timing diagram of the
+MoE model training process. TP/SP utilize intra-node band-
+width for communication, while EP/PP/CP/DP utilize inter-
+node bandwidth, which includes southbound scale-out and
+northbound NIC, among others. EP communication oc-
+curs within expert parallel groups, which can be optimized
+as a combination of inter-node AllToAll communication
+and intra-node AllGather communication. PP communi-
+cation involves sending and receiving activations at each
+pipeline corresponding to the cards. CP communication oc-
+curs within context parallel groups, where Attention calcu-
+lations use RingAttention (Hao, Matei, and Pieter 2023) or
+AllGather (Abhimanyu et al. 2024) operations to pass KV-
+Cache, reducing the memory requirement on a single card,
+typically used for long context training. DP communication
+involves performing AllReduce on gradients between data
+parallel group nodes after each batch processing to ensure
+consistency of model parameters across all nodes.
+In Fig. 11(a), the vertical axis represents computation,
+TP/SP, EP, PP, CP, DP, while the horizontal axis repre-
+sents the timing of execution for the Attention module
+and MoE module, with each row corresponding to its re-
+spective computational/communication operation. If PP uses
+synchronous communication, during forward computation,
+there will be no communication conflicts among EP/P-
+P/CP/DP. However, if PP uses asynchronous communica-
+tion, PP communication during backward may conflict with
+the forward CP communication’s AllGather operation.
+In Fig. 11(b), when DP uses asynchronous communica-
+tion, there may be three potential conflicts: (1) Conflict be-
+tween MoE All2All EP communication and synchronization
+of W1/W3 gradients; (2) Conflict between CP communi-
+cation and Postlinear gradient synchronization; (3) Conflict
+between PP communication and QKV gradient synchroniza-
+tion. If the expert parallelism involves northbound NIC com-(a)Forward Computation.
+(b)Backward Computation.
+Figure 11: Communication Conflict
+munication, conflicts caused by asynchronous communica-
+tion between EP and DP/PP can be reduced by setting priori-
+ties for different communication primitives: EP¿PP¿CP¿DP,
+ensuring the efficiency of EP AllToAll communication.
+Cluster Expansion
+This section analyzes the cluster expansion handling meth-
+ods for long context MoE training in MoNTA implemen-
+tations. In the training of the MoE model, it typically in-
+volves multiple training steps with Context lengths ranging
+from 4K to 128K, and even up to 1M tokens. This paper
+proposes a distributed parallel training extension method for
+Long Context mixture of expert models. Based on cluster re-
+source parameters, model parameters, and Context length, a
+strategy for expanding expert model distributed parallelism
+is generated by combining Expert Parallelism and Context
+Parallelism.
+In Fig. 12, each node in the current model training cluster
+consists of 8 GPUs, arranged in the order of [TP/SP, EP, CP,
+PP, DP]. The tensor parallelism is set to 8, where each of the
+8 training cards operates in tensor parallelism. Each training
+card stores 1/8 of the weights of the Non-MoE modules, as
+well as 1/8 of the weights of the MoE module. The expert
+parallelism is set to 8, where the weights of each expert net-
+work are split into 8 parts distributed within a node, allow-
+ing 8 nodes to store the weights of 8 expert networks. The 8
+cards corresponding to the TP positions of 8 nodes form EP
+Groups. Both expert parallel and context parallel commu-
+nications utilize internode communication resources, typi-
+cally through northbound NIC or southbound scale−out.
+In vertical expansion, the tensor parallel groups and expert
+parallel groups follow the same strategy as horizontal ex-
+pansion, with CP parallel groups being the point of differ-
+ence. In the vertical expansion strategy, the CPGroup and
+EPGroup are aligned in the same direction. In vertical CP
+expansion, the minibatch size of EP Group is 1. In horizontal
+CP expansion, the network topology between EP and CP is
+orthogonal, requiring a larger switch network to satisfy the
+communication needs for both EP and CP, with a scale of
+(a)CP and EP orthogonal.
+(b)CP and EP in the same dimension.
+Figure 12: Communication Conflict
+cpworld size *epworld size. In vertical CP expansion,
+CP and EP are aligned in the same dimension, with the net-
+work scale being max(epworld size, cp world size).
+When the input sequence length is less than what
+anEPGroup can handle, i.e. cpworld size <
+epworld size, and the cluster network switch meets the
+requirement of epworld size *cpworld size, horizontal
+scaling can be employed to enhance single node utilization.
+As shown in the figure, this can be used to process sequences
+larger than 32K but smaller than 256K in length.
+When the input sequence is greater than or equal to
+the length that an EPGroup can handle, i.e., when
+cpworld size > =epworld size, use vertical expansion.
+This allows for flexible cluster configuration based on the
+minimum expansion granularity to meet the GlobalBatch
+training requirement.
+Evaluation
+In this section, we use a 16-GPU A800 cluster with IB
+200Gb/s connections between nodes. First, we tested the
+IB utilization during AllToAll communication with 16 cards
+under different communication volumes. Then, we establish
+performance models under different optimization strategies
+and compare the performance of the AllToAll under these
+strategies against the DeepSpeed baseline. After that, we
+evaluate the loss convergence of a 2x70B model under dif-Parameter Value
+Sequence Length(s) 4K 256K
+DPSize 2
+TPSize 8
+EPSize 2
+Hidden Dim(h) 8192
+Table 7: Configurations of MoE.
+ferent optimization strategies and test the end-to-end model
+performance. Finally, we discuss the experimental results.
+Experiment Settings
+Hardware platform: We utilize a 2-node, 16-GPU cluster
+with nodes interconnected via IB 200Gb/s. Each node con-
+sists of 8 A800 SXM4 GPUs with 80GB HBM2, intercon-
+nected using NVLink at 400GB/s.
+Software platform: The experiments are conducted un-
+der a software environment of PyTorch 2.2, CUDA Toolkit
+12.3, NCCL 2.19.3, and Ubuntu 22.04, along with Trans-
+formers 4.38.1 and DeepSpeed 0.14.2.
+MoE configurations: We use a 2x70B MoE (Mixture of
+Experts) model, with each expert occupying one node. Spe-
+cific experimental parameters are listed in Table 7. To mea-
+sure the performance of parallelization schemes under dif-
+ferent communication volumes, the sequence length ranges
+from 4K to 256K.
+AllToAll performance
+Communication Efficiency: We test the communication
+efficiency of 8-card intra-node AllGather, as shown in
+Fig. 13(a). The communication efficiency of the 16-card
+AllToAll with pxn enabled under varying communication
+volumes is presented in Fig. 13(b). For the 2-node 16-card
+setup, NVLink + IB network cards are used, with the bot-
+tleneck being the IB network card. The equivalent band-
+width of the IB network card is calculated using the formula
+(S∗(N−8))/(N∗t), where S is the original communi-
+cation volume bsh, N is the number of cards, and t is the
+communication time. It can be observed that when the data
+volume is very small, latency dominates, resulting in nearly
+0 bandwidth utilization.
+We establish a performance model under different op-
+timization strategies based on communication efficiency.
+Based on this, in Fig. 14, we test the performance of the All-
+ToAll single operator under different communication vol-
+umes. It can be observed that as the volume of communica-
+tion increases, the performance improves more significantly
+withO1/O2/O3optimizations. When the communication
+volume decreases, the performance of O1may surpass that
+ofO2/O3. In Fig. 14, all sequences are split into 4 chunks
+for both O2andO3. When the sequence is 256K, MoNTA
+selects O3. When the sequence is between 32K and 128K,
+MoNTA chooses O2. When the sequence is less than 16K,
+MoNTA selects O1.
+(a)Efficiency of 8-card AllGather Communication.
+(b)Efficiency of 16-card AllToAll Communication.
+Figure 13: Communication Efficiency
+Implementation: Establish multiple streams to run dif-
+ferent kernels, as shown in Fig. 15. Stream 1 runs the All-
+ToAll inter-node communication kernel, Stream 2 runs the
+AllGather intra-node communication kernel, Stream 3 runs
+the D2D copy kernel, and Stream 4 runs the exert computa-
+tion kernel.
+Assuming the input sequence is divided into two data
+chunks, within Stream 1, the first two AllToAll operations
+represent the communication data chunks processed before
+the expert computation, while the last two AllToAll oper-
+ations represent the communication data chunks processed
+after the expert computation. Each stream executes in par-
+allel, while execution within a stream is serial. The arrows
+between different streams in Fig. ??represent event depen-
+dency. For example, the AllGather process of the commu-
+nication data chunks in Stream 2 depends on the AllToAll
+process before the expert computation in Stream 1. The ex-
+pert computation process depends on the completion of the
+D2D copy processes for all data chunks. The last two All-
+ToAll processes in Stream 1 depend on the results of the
+expert computation.
+End-to-End time on Model
+In large model training, the initial context length is typically
+set to 4K or 8K, as in Llama3 (Abhimanyu et al. 2024) whichFigure 14: AllToAll performance.
+Figure 15: Execute streams.
+selects 8K. Here, an 8K sequence is chosen as input. With
+2 nodes and 16 GPUs, TPSize= 8,EPSize= 2, and the
+MoE model selects 2x70B.
+We test the Baseline against the O1/O2/O3optimiza-
+tions, and the convergence curves are completely consis-
+tent, not affecting the numerical results. It can be seen that
+MoNTA selected the O1strategy.It can be observed that the
+performance of O1andO2is comparable and better than the
+Baseline, with the proportion of AllToAll communication
+reduced from 22% to 10%. The normalized end-to-end la-
+tency of the model is shown in Fig. 17. O1andO2have sim-
+ilar performance, with an overall latency reduction of about
+13%. In contrast, the performance of O3declined compared
+toO1andO2.
+Dissussions
+According to equations (8) and (9), we obtain the following
+latency for the parallel execution of AllToAll and AllGather:
+AAj
+AGj=(e−1)∗B2∗r2
+e∗(t−1)∗B1∗r1(12)
+Where the communication bandwidth and efficiency for All-
+ToAll are B1andr1, respectively, and the communication
+bandwidth and efficiency for AllGather are B2andr2. For
+the 2x70B model with 2 nodes and 16 cards, B2/B1=
+200
+25= 8, e= 2, t= 8 . From Fig. 13, we can obtain
+r1= 0.741, r2= 0.803, r1≈r2,AAj
+AGj=4
+7. According
+to the performance model, the theoretical upper limit of the
+speedup ratio is:
+TO3
+Tbase=7
+32= 0.21 (13)
+From Fig. 14, it can be seen that when the input sequence
+length is 256K, the latency of O3compared to the Baseline
+is 0.253, approaching the theoretical limit, and the actual
+results are consistent with the theoretical analysis. The com-
+munication volume is related to microbatch size, sequence
+Figure 16: AllToAll Forward and MoE Forward.
+Figure 17: End-to-End model latency.
+length, and hidden dimension; as the communication vol-
+ume continues to increase, the optimization performance can
+be further enhanced. When the input sequence length is 8K,
+we present a comparative analysis of the communication
+volume before and after optimization in Table 8:
+In the case of an 8K input sequence, r1= 0.632, r2=
+0.776, under the O1strategy:
+TO1
+Tbase= 0.31 (14)
+Fig. 14 shows that O1/Baseline = 0.30, which is con-
+sistent with the theoretical estimate. After splitting into 4
+chunks for pipelining, the communication volume is re-
+duced, and the AllToAll communication efficiency is around
+40%,r1= 0.427, r2= 0.726, AA j/AG j= 0.979.The the-
+oretical upper limit of speedup can be obtaine:
+TO2
+Tbase= 0.176 (15)
+TO3
+Tbase= 0.164 (16)
+The theoretical time for AllToAll and AllGather for a
+single chunk is similar, allowing for better overlapping, as
+shown in (14) and (15). However, from Fig. 14, it can be
+seen that when the input sequence length is 8K, the perfor-
+mance of O2/O3is worse than that of O1. This is because
+the AllGather communication kernel requires memory oper-
+ations from NVLink to L3, leading to memory conflicts with
+the D2D copy kernel. At small data volumes, in addition to
+communication time, fixed latency dominates, lowering ac-
+tual performance. Furthermore, inconsistencies in progress
+between processes result in misaligned dispatch times across
+different node hosts, affecting the execution time of the first
+chunk. When the data volume is large, the AllGather com-
+munication time is long, but the memory copy efficiency isOptimization strategy Communication primitives Communication volume (M) Communication efficiency Theoretical Latency(ms)
+Baseline AllToAll 256 74.1% 6.909
+O1AllToAll 32 63.2% 1.012
+AllGather 256 77.6% 1.443
+O2/O3(4chunks )AllToAll(per chunk) 8 42.7% 0.374
+AllGather(per chunk) 64 72.6% 0.385
+D2D copy(per chunk) 64 80% 0.05
+Table 8: Comparison of communication volume before and
+after optimization.
+high, allowing for good hiding of the D2D copy. When the
+data volume is small, the scheduling of the AllGather and
+D2D copy kernels causes stalls, necessitating further opti-
+mization of kernel scheduling to reduce L3 memory access
+latency caused by scheduling for small data volumes, while
+also updating the performance model.
+Related Work
+Mixture-of-Experts (MoE):
+MoE has gradually gained popularity as an effective way to
+enhance the performance of large language models (LLMs),
+with its structure varying (Dmitry et al. 2020) (Albert Q.
+et al. 2024) (Damai et al. 2024). Gshard (Dmitry et al. 2020)
+was the first to introduce MoE into the Transformer model,
+demonstrating the significant potential of the MoE architec-
+ture in scaling model capacity. The Mixtral-8x7B (Albert Q.
+et al. 2024) model provides an approach to alleviate the is-
+sue of load imbalance, utilizing the dropless MoE algorithm
+proposed by Megablocks (Trevor et al. 2022). Megablocks
+addresses the problem of variable-length inputs with multi-
+ple experts using Grouped GEMM. DeepSeek MoE (Damai
+et al. 2024) offers a more fine-grained expert partitioning,
+allowing different experts to learn more specialized knowl-
+edge. Additionally, it introduces shared experts that activate
+for all input tokens.
+Optimization of all-to-all:
+The PKU-DAIR laboratory proposed a high-performance
+distributed MoE training system, HetuMoE (Xiaonan et al.
+2022), which supports various gate operator optimizations,
+such as Top1 and K Top1. It developed a hierarchical com-
+munication operator, Hierarchical AllToAll, for single NIC
+network nodes. Tutel (Changho et al. 2021) implements
+adaptive parallelism switching, dynamically adjusting the
+combination of data parallelism (DP), model parallelism
+(MP), and expert parallelism (EP) based on the character-
+istics of the input data. It segments input tokens to form a
+pipeline, allowing expert computation and All-to-All com-
+munication to be pipelined. Flux (Li-Wen et al. 2024) pro-
+posed overlapping tensor parallel computation and com-
+munication through kernel fusion methods. FastMoE (Jiaao
+et al. 2022) employs a dynamic routing algorithm that se-
+lects experts for computation based on their load and the
+characteristics of the input data. PipeMoE (Shaohuai et al.
+2023) introduced dispatch, expert computation, and com-
+bine pipelining, showing improved performance compared
+to FasterMoE and Tutel. MPMoE (Zheng et al. 2024) pro-
+posed profile-based algorithm optimizations for pipelining
+and memory reuse. DeepSpeed-TED (Siddharth et al. 2023)
+integrates Zero data parallelism, Megatron-LM’s (Moham-
+mad Shoeybi 2020) (Deepak et al. 2021) (Vijay et al.2022) tensor parallelism, and DeepSpeed-MOE’s expert
+parallelism, now incorporated into DeepSpeed. It reduces
+All-to-All communication volume through Duplicate Token
+Dropping. However, optimizations for the MoE module un-
+der tensor parallelism have not been merged into the of-
+ficial DeepSpeed, and we submitted patch1. Additionally,
+leveraging cluster communication across different hardware
+resources, we achieved pipelining for AllToAll and All-
+Gather, realizing a network-traffic-aware parallel optimiza-
+tion scheme.
+Conclusion and Future Works
+This paper proposes a network-traffic-aware parallel opti-
+mization method called MoNTA, which utilizes inter-node
+and intra-node communication resources to achieve pipelin-
+ing for inter-node AllToAll and intra-node communication.
+It establishes a performance model for communication vol-
+ume, communication efficiency, and parallel schemes, effec-
+tively overlapping MoE AllToAll communication. Addition-
+ally, it analyzes communication conflict issues during the
+training process of MoE models and presents a communica-
+tion priority scheme. Finally, it proposes a distributed paral-
+lel training extension method for the long context MoE mod-
+els. Experimental results show that MoNTA can achieve a
+performance improvement of approximately 8x in AllToAll
+communication under 8-card tensor parallelism compared to
+the baseline. When using 16 A800 cards to train a 2x70B
+model with an 8K sequence, the overall latency performance
+is improved by 13% compared to the baseline.
+The next step will be analyzing the impact of kernel
+scheduling on MoE parallel optimization performance, re-
+fining the performance model for training and inference, and
+integrating it into the framework and operator implementa-
+tions. Similar to Flux (Li-Wen et al. 2024), achieving over-
+lapping of AllToAll and expert computation through soft-
+ware kernel fusion is also a direction for future exploration.
+References
+Abhimanyu, D.; Abhinav, J.; Abhinav, P.; Abhishek, K.; Ah-
+mad, A.-D.; and Aiesha, L. 2024. The Llama 3 Herd of
+Models. arXiv preprint arXiv:2407.21783 .
+Albert Q., J.; Alexandre, S.; Antoine, R.; Arthur, M.; and
+Blanche, S. 2024. Mixtral of Experts. arXiv preprint
+arXiv:2401.04088 .
+Changho, H.; Wei, C.; Yifan, X.; Ziyue, Y .; Ze, L.; Han,
+H.; Zilong, W.; Rafael, S.; Jithin, J.; Prabhat, R.; Joe, C.;
+Peng, C.; Fan, Y .; Mao, Y .; and Yongqiang, X. 2021. Tu-
+tel: Adaptive mixture-of-experts at scale. arXiv preprint
+arXiv:2206.03382 .
+Damai, D.; Chengqi, D.; Chenggang, Z.; R.X., X.; Huazuo,
+G.; Deli, C.; Jiashi, L.; Wangding, Z.; Xingkai, Y .; Y ., W.;
+Zhenda, X.; Y .K., L.; Panpan, H.; Fuli, L.; Chong, R.; Zhi-
+fang, S.; and Wenfeng, L. 2024. DeepSeekMoE: Towards
+Ultimate Expert Specialization in Mixture-of-Experts Lan-
+guage Models. arXiv preprint arXiv:2401.06066 .Deepak, N.; Mohammad, S.; Jared, C.; Patrick, L.; and
+Mostofa, P. 2021. Efficient Large-Scale Language Model
+Training on GPU Clusters Using Megatron-LM. arXiv
+preprint arXiv:2104.04473 .
+Dmitry, L.; HyoukJoong, L.; Yuanzhong, X.; Dehao, C.;
+Orhan, F.; Yanping, H.; Maxim, K.; Noam, S.; and Zhifeng,
+C. 2020. GShard: Scaling giant models with condi-
+tional computation and automatic sharding. arXiv preprint
+arXiv:2006.16668 .
+Hao, L.; Matei, Z.; and Pieter, A. 2023. Ring Attention with
+Blockwise Transformers for Near-Infinite Context. arXiv
+preprint arXiv:2310.01889 .
+Jiaao, H.; Jidong, Z.; Tiago, A.; Haojie, W.; Fuwen, L.;
+Shangfeng, S.; and Qin, L. 2022. FasterMoE: Modeling and
+optimizing training of large-scale dynamic pre-trained mod-
+els. In Proceedings of the 27th ACM SIGPLAN Symposium
+on Principles and Practice of Parallel Programming , 120–
+134.
+Li-Wen, C.; Wenlei, B.; Qi, H.; Chengquan, J.; Ningxin, Z.;
+Yinmin, Z.; Xuanrun, Z.; Zuquan, S.; Chengji, Y .; Ziheng, J.;
+Haibin, L.; Xin, J.; and Xin, L. 2024. FLUX: Fast Software-
+based Communication Overlap On GPUs Through Kernel
+Fusion. arXiv preprint arXiv:2406.06858 .
+Liliang, R.; Yang, L.; Yadong, L.; Yelong, S.; Chen, L.; and
+Weizhu, C. 2024. Samba: Simple Hybrid State Space Mod-
+els for Efficient Unlimited Context Language Modelingt.
+arXiv preprint arXiv:2406.07522 .
+Mohammad Shoeybi, R. P. P. L. J. C. B. C., Mostofa Pat-
+wary. 2020. Megatron-LM: Training Multi-Billion Param-
+eter Language Models Using Model Parallelism. arXiv
+preprint arXiv:1909.08053 .
+Opher, L.; Barak, L.; Hofit, B.; Gal, C.; Jhonathan, O.; Itay,
+D.; Erez, S.; Shaked, M.; Yonatan, B.; Shai, S.-S.; Omri,
+A.; Raz, A.; Tomer, A.; Amir, B.; Roman, G.; Michael, G.;
+Avashalom, M.; Nir, R.; Noam, R.; Erez, S.; Mor, Z.; and
+Yoav, S. 2024. Jamba: A Hybrid Transformer-Mamba Lan-
+guage Model. arXiv preprint arXiv:2403.19887 .
+Shaohuai, S.; Xinglin, P.; Xiaowen, C.; and Bo, L. 2023.
+PipeMoE: Accelerating Mixture-of-Experts through Adap-
+tive Pipelining. In IEEE Conference on Computer Commu-
+nications .
+Shriram, S.; Rudolf, R.; and Richard, B. 2001. Connection-
+level analysis and modeling of network traffc. In Proceed-
+ings of the 1st ACM SIGCOMM Workshop on Internet mea-
+surement , 99–103.
+Siddharth, S.; Olatunji, R.; Ammar, A. A.; Samyam, R.;
+Yuxiong, H.; and Abhinav, B. 2023. A Hybrid Tensor-
+Expert-Data Parallelism Approach to Optimize Mixture-of-
+Experts Training. arXiv preprint arXiv:2303.06318 .
+Trevor, G.; Deepak, N.; Cliff, Y .; and Matei, Z. 2022.
+Megablocks: Efficient Sparse Training With Mixture-of-
+Experts. arXiv preprint arXiv:2211.15841 .
+Vijay, K.; Jared, C.; Sangkug, L.; Lawrence, M.; Michael,
+A.; Mohammad, S.; and Bryan, C. 2022. Reducing Acti-
+vation Recomputation in Large Transformer Models. arXiv
+preprint arXiv:2205.05198 .Xiaonan, N.; Pinxue, Z.; Xupeng, M.; Tong, Z.; and Bin,
+C. 2022. HetuMoE: An Efficient Trillion-scale Mixture-
+of-Expert Distributed Training System. arXiv preprint
+arXiv:2203.14685 .
+Zheng, Z.; Yaqi, X.; Hulin, W.; Donglin, Y .; Chuang, H.;
+Xiaobo, Z.; and Dazhao, C. 2024. MPMoE: Memory Effi-
+cient MoE for Pre-Trained Models With Adaptive Pipeline
+Parallelism. IEEE Transactions on Parallel and Distributes
+Systems. , 35(6): 998–1011.

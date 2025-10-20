@@ -1,0 +1,89 @@
+torch.func
+Created On: Jun 11, 2025 | Last Updated On: Jun 11, 2025
+torch.func, previously known as “functorch”, is JAX-like composable function transforms for
+PyTorch.
+This library is currently in beta. What this means is that the features generally work (unless
+otherwise documented) and we (the PyTorch team) are committed to bringing this library
+forward. However, the APIs may change under user feedback and we donʼt have full
+coverage over PyTorch operations.
+If you have suggestions on the API or use-cases youʼd like to be covered, please open a
+GitHub issue or reach out. Weʼd love to hear about how youʼre using the library.
+What are composable function transforms?
+A “function transform” is a higher-order function that accepts a numerical function and returns
+a new function that computes a different quantity.
+torch.func  has auto-differentiation transforms (grad(f) returns a function that computes
+the gradient of f), a vectorization/batching transform (vmap(f) returns a function that
+computes f over batches of inputs), and others.
+These function transforms can compose with each other arbitrarily. For example, composing
+vmap(grad(f))  computes a quantity called per-sample-gradients that stock PyTorch cannot
+efficiently compute today.
+Why composable function transforms?
+There are a number of use cases that are tricky to do in PyTorch today:Note 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.func — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/func.html 1/4computing per-sample-gradients (or other per-sample quantities)
+running ensembles of models on a single machine
+efficiently batching together tasks in the inner-loop of MAML
+efficiently computing Jacobians and Hessians
+efficiently computing batched Jacobians and Hessians
+Composing vmap() , grad() , and vjp() transforms allows us to express the above without
+designing a separate subsystem for each. This idea of composable function transforms comes from
+the JAX framework.
+Read More
+torch.func Whirlwind Tour
+What is torch.func?
+Why composable function transforms?
+What are the transforms?
+torch.func API Reference
+Function Transforms
+Utilities for working with torch.nn.Modules
+Debug utilities
+UX Limitations
+General limitations
+torch.autograd APIs
+vmap limitations
+Randomness
+Migrating from functorch to torch.func
+function transforms
+NN module utilities
+functorch.compile
+Rate this Page★★★★★
+Send FeedbackTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.func — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/func.html 2/4Previous
+torch.fft.ifftshiftNext
+torch.func Whirlwind Tour
+© Copyright PyTorch Contributors.
+Built with the PyData Sphinx Theme 0.15.4.
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.func — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/func.html 3/4© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.func — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/func.html 4/4

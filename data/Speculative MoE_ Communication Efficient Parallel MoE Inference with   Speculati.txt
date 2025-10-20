@@ -1,0 +1,1550 @@
+Speculative MoE: Communication Efficient Parallel MoE Inference with
+Speculative Token and Expert Pre-scheduling
+Yan Li* 1Pengfei Zheng* 1Shuang Chen1Zewei Xu1Yuanhao Lai1Yunfei Du1Zhengang Wang1
+Abstract
+MoE (Mixture of Experts) prevails as a neural
+architecture that can scale modern transformer-
+based LLMs (Large Language Models) to un-
+precedented scales. Nevertheless, large MoEs’
+great demands of computing power, memory ca-
+pacity and memory bandwidth make scalable serv-
+ing a fundamental challenge and efficient par-
+allel inference has become a requisite to attain
+adequate throughput under latency constraints.
+DeepSpeed-MoE, one state-of-the-art MoE infer-
+ence framework, adopts a 3D-parallel paradigm
+including EP (Expert Parallelism), TP (Tensor
+Parallel) and DP (Data Parallelism). However,
+our analysis shows DeepSpeed-MoE’s inference
+efficiency is largely bottlenecked by EP, which is
+implemented with costly all-to-all collectives to
+route token activation. Our work aims to boost
+DeepSpeed-MoE by strategically reducing EP’s
+communication overhead with a technique named
+Speculative MoE. Speculative MoE has two spec-
+ulative parallelization schemes, speculative token
+shuffling and speculative expert grouping, which
+predict outstanding tokens’ expert routing paths
+and pre-schedule tokens and experts across de-
+vices to losslessly trim EP’s communication vol-
+ume. Besides DeepSpeed-MoE, We also build
+Speculative MoE into a prevailing MoE inference
+engine SGLang. Experiments show Speculative
+MoE can significantly boost state-of-the-art MoE
+inference frameworks on fast homogeneous and
+slow heterogeneous interconnects.
+1. Introduction
+The democratization of LLM (Large Language Model) has
+constantly been driven by the growing of model sizes. Dur-
+ing the past five years, the largest trained LLM has increased
+its number of parameters by three orders of magnitude, and
+the scalability and economicity of training and inferring
+*Equal contribution1Huawei Technology, China. Correspon-
+dence to: Pengfei Zheng <zhengpengfei18@huawei.com >.massive LLMs now significantly challenge modern AI super-
+computing hardware.To address the problem, the Mixture of
+Experts (MoE) (Fedus et al., 2022; Artetxe et al., 2022; Jiang
+et al., 2024b) models that sparsely activates one or more
+expert sub-networks for each input, is developed. Com-
+pared with their dense counterparts, MoE models parsimo-
+niously train tens of trillions of parameters with uncompro-
+mised model accuracy, while keeping a sub-linear increase
+in computational costs as model size scales. MoE has pre-
+vailed and dominated in recent announcements and releases
+of industrial-strength LLMs including Gemini 1.5 (Team,
+2024), Mixtral-8x7B/Mixtral-8x22B (Jiang et al., 2024a),
+DBRX (Mosaic-Research), Arctic (arc) DeepSeek-MoE-
+16B (Dai et al., 2024), DeepSeek V2 (DeepSeek-AI, 2024a),
+V3 (DeepSeek-AI, 2024b), R1 (DeepSeek-AI, 2025), Grok-
+1 (X-AI), QWen-MoE (Qwen-Team, 2024), etc.
+Nevertheless, at inference time, massive MoEs models’
+voluminous expert and attention blocks still require huge
+amounts of GPU/NPU1cores, memory and bandwidth to
+compute, stash and load expert parameters for the forward
+pass. Existing MoE frameworks achieve inference scala-
+bility and performance with distributed parallel inference
+that spans interconnected GPU devices. To achieve ade-
+quate throughput under stringent latency requirements, an
+efficient multi-dimensional parallelization scheme that well
+partitions input tokens and expert and attention parameters,
+maximally utilizes and collates the computing and memory
+resources, and minimally imposes network communication
+overhead, is of pivotal importance.
+To advance parallel MoE inference, DeepSpeed-MoE (Rajb-
+handari et al., 2022; Singh et al., 2023; Hwang et al., 2022),
+a state-of-the-art framework, adopts classic TP (Tensor Par-
+allelism) and DP (Data Parallelism) and to parallelize the
+dense MHA (Multi Head Attention) layers and adopts a
+new model-parallel scheme named EP (Expert Parallelism)
+to parallelize the sparse expert layers. EP partitions and
+computes experts in parallel across GPUs, while notorious
+for incurring heavy communication overheads; the interme-
+diate activation for individual tokens needs to be dispatched
+from the gating (e.g., Top-K gating) module on an arbitrary
+GPU srcto its routed experts on GPU dst1,. . .,dstK; af-
+1We use GPU and NPU in this paper.
+1arXiv:2503.04398v3  [cs.LG]  19 Mar 2025Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+2K 4K 8K 16K
+Batch size * sequence length0102030MoE Layer Breakdown 
+ (ms)Comm. (all2all)
+Comp. (grouped_gemm)
+Others
+Figure 1: Latency breakdown for Deepspeed-MoE inference
+over a single MoE layer. Hardware: 8-GPU (96GB) server
+with fast inter-GPU network (900GB/s); Model: DeepSeek-
+V2 236B; Dataset: LongBench; batch size * sequence
+length: 2K-16K.
+ter expert FFN computation, token activation needs to be
+re-dispatched back to the source GPU srcto merge different
+experts’ outputs, and to collocate with the residing KV cache
+for subsequent MHA computation. Collectively, dispatching
+and re-dispatching all outstanding tokens within and across
+devices can induce cluster-wide any-to-any shuffles, and
+DeepSpeed-MoE adopts two high-performance all2all
+collectives (e.g., NCCL PXN AllToAll) to accelerate such
+heavy communication processes.
+Notwithstanding, our analysis indicates DeepSpeed-MoE’s
+inference performance remains severely bottlenecked EP’s
+costly all2all collectives; a preliminary experiment of
+DeepSpeed-MoE on serving DeepSeekV2-236B on 8 GPUs
+shows EP’s communication overhead accounts for ∼59.2%
+and∼47.1% of the forward-pass latency of expert layers
+and entire model, though on fastest high-speed intercon-
+nects (cf., Figure 1). Such bottleneck can be severer when
+EP’s global shuffle goes through slower interconnects such
+as PCI-e and Ethernet. Thus, systematically reducing the
+communication cost of EP has become a top priority task to
+boost the efficiency and scalability of MoE inference.
+In this study, we show the communication overhead of
+DeepSpeed-MoE’s parallel inference paradigm (EP+TP)
+can be losslessly reduced by recomposing its static deter-
+ministic parallelization scheme into a new, dynamic specu-
+lative scheme, which probes and forecasts the expert routing
+(or activation) paths for individual outstanding tokens and
+proactively co-shuffle tokens and experts to trim the excess
+communication of EP and TP. We name our speculative
+inference framework Speculative MoE (s-MoE); s-MoE has
+two speculative mechanisms, Speculative Token Reshuffling
+(s-TS) and Speculative Expert Pre-grouping(s-EG).
+First, online, s-TS pre-shuffles outstanding tokens’ partial
+activation across GPU devices early amid TP and tries to col-
+locate tokens’ activation with their predicted experts to route
+later in EP. Specifically, s-TS reformulates the allreduce
+collective of DeepSpeed-MoE’s TP into a new commu-
+nication kernel named shuffled-reduce-scatter ,
+which seamlessly merges the speculative token shufflingoperation with a reduce-scatter collective, and in ad-
+dition, can eliminate one costly excess allgather . How-
+ever, s-TS’s opportunistic trimming fails to save communica-
+tion when expert activation paths are erroneously predicted,
+and when the routed experts (for individual tokens) are
+dispersed across many different GPU devices and servers,
+which can be true for MoE models with a large number
+of small experts. s-TS trains accurate probabilistic mod-
+els with extensive preparatory tests to address the former
+problem, while relying on expert pre-grouping to tackle the
+latter problem. Second, offline, to reduce the likelihood of
+expert dispersion, s-EG pre-clusters experts that are likely
+to be activated by the same token or a clique of semantically
+related tokens onto the same device or server, with the pre-
+dicted token-expert routes. We execute expert pre-grouping
+periodically offline since clustering and dispatching experts
+require solving sophisticated optimization and can incur
+overwhelming amounts of parameter exchange over the net-
+work, both of which are untimely for real-time inference.
+We list Speculative MoE’s contributions as below.
+1.The inference throughput of s-MoE’s speculative to-
+ken shuffling outperforms that of DeepSpeed-MoE by
+1.58x-2.34x, 1.04x-2.34x, and 1.37x-5.98x, for TTFT,
+TPOT, and p90-TBT latency constraints, on different
+datasets, models and hardware.
+2.Speculative expert pre-grouping (s-EG) on average can
+further boost s-TS by 27% in inference throughput. s-
+MoE (s-TS and s-EG together) achieves an end-to-end
+throughput that is 1.69x-2.37x, 1.14x-2.93x and 1.48x-
+6.54x higher than that of DeepSpeed-MoE, for TTFT,
+TPOT and p90-TBT constraints.
+3.s-MoE’s implementation in another prevailing LLM
+serving engine SGLang (Zheng et al., 2024) boosts
+its inference throughput by 1.68x, 1.96x, and 1.97x,
+for TTFT, TPOT and p90-TBT constraints. SGLang
+features different MoE optimizations compared to
+DeepSPeed-MoE (EP+TP) concerning fused kernels
+and parallelization (TP). and the results show s-MoE
+as a generic optimization technique.
+4.S-MoE features engineering optimizations that include
+high-performance kernel implementation, communi-
+cation coalescing, dispatching deduplication, cached
+lookup table, etc. These optimizations together trans-
+late into an extra ∼7% performance improvement.
+5.We show that most tokens’ routed experts can be ac-
+curately predicted from the token itself and its few
+preceding tokens. s-MoE’s probabilistic models on
+average achieve 89% accuracy in speculating token-
+expert routes. Moreover, s-MoE features a balanced co-
+clustering algorithm to solve scheduling hints, which
+2Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+: tokens involved in all2all transmission
+AG
+RS
+A2A
+SRS: allgather
+: reduce- scatter
+: all2all
+: shuffled -reduce- scatterAR: allreduce1
+2
+3
+4
+5
+6
+7
+8Token- expert
+Routing information
+SAG : shuffled -allgatherIllustrating example
+• Attention TP Degree = 2
+• MoE EP Degree = 2
+• topk=2
+• Number of experts=4
+• Number of tokens=8
+A
+TP-0
+A
+TP-1ARGate
+GateA2AGPU 0
+GPU 11
+2
+3
+4
+1
+2
+3
+4E1
+E2
+A2A5
+6
+7
+8
+5
+6
+7
+81
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+81
+2
+3
+4
+5
+6
+7
+8E3
+E41
+2
+3
+4
+5
+6
+7
+8local
+reduce1 34 12 24 3
+A
+TP-0
+A
+TP-1SRSGate
+GateA2A1
+2
+3
+4
+1
+2
+3
+4E1
+E2
+A2A5
+6
+7
+8
+5
+6
+7
+81
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+81
+5
+3
+4
+2
+6
+7
+8E3
+E4GPU 0GPU 1DS-MoE
+s-MoE
+(s-TS)1
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+8local
+dropAG
+SAG1
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+8
+1
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+85 57 68 67 8E1 E2 E3 E4
+#remote=5
+#remote=5
+s-MoE
+(s-TS+s-EG)1 34
+12 24 35 57 68
+67 81 34
+12 24 35 57 68
+67 81 34 12 24 3
+5 57 68 67 8
+1 54 35 41 3
+7 86 27 62 8#remote=3
+#remote=31 54 35
+41 37 86
+27 62 81 54 35
+41 37 86
+27 62 8
+A
+TP-0
+A
+TP-1SRSGate
+GateA2A1
+2
+3
+4
+1
+2
+3
+4E1
+E3
+A2A5
+6
+7
+8
+5
+6
+7
+81
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+81
+4
+5
+7
+2
+3
+6
+8E2
+E4SAG1
+2
+3
+4
+1
+2
+3
+45
+6
+7
+8
+5
+6
+7
+81 54 71 74 5
+3 86 23 86 2#remote=1
+GPU 0GPU 1
+#remote=11 54 71 74
+53 86 23 862 1 54 71 74
+53 86 23 8621
+5
+3
+4
+2
+6
+7
+8local
+reduce
+1
+4
+5
+7
+2
+3
+6
+8local
+reduce1 54 35 41 3
+7 86 27 62 8
+1 54 71 74 5
+3 86 23 86 2①
+①
+①②: Speculative Token 
+  Shuffling (s -TS)
+②: Speculative Expert  Grouping (s-EG)
+Figure 2: Example of s-MoE. Compared with DS-MoE (5 tokens in EP shuffling), speculative token shuffling (s-TS)
+replaces DS-MoE’s allreduce with a customized shuffled-reduce-scatter , which reduces EP’ shuffling into 3
+tokens by pre-collocating tokens with their speculated experts to be route. Furthermore, speculative expert shuffling (s-EG)
+co-groups semantically similar experts and avoids tokens’ dispersed activation, further reducing EP shuffling into 1 token.
+outperforms baselines using 2D Balanced K-Means
+and METIS (Karypis & Kumar, 1997).
+2. Background
+MoE Training. There has been extensive research on op-
+timizing systems of MoE training systems, including Fast-
+MoE (He et al., 2021), FasterMoE (He et al., 2022), TA-
+MoE (Chen et al., 2022), SmartMoE (Zhai et al., 2023), and
+FlexMoE (Nie et al., 2023). However such optimizations
+can not directly translate to inference scenarios as inference
+strongly emphasizes latency over throughput.
+MoE Inference. Integrated serving engines such
+as DeepSpeed-MII (Holmes et al., 2024), TensorRT-
+LLM (NVIDIA)/vLLM (Kwon et al., 2023) have holistic op-
+timization for LLM inference that spans serving schedulers
+(e.g., continuous baching), dedicated high-performance ker-
+nels, efficient parallelization, quantization, and elaborate
+compiler passes for graph-level optimizations. Built upon
+these general holistic optimizations for LLM inference,
+DeepSpeed-MoE (Rajbhandari et al., 2022) and its vari-
+ants DeepSpeed-TED (Singh et al., 2023) and Tutel (Hwang
+et al., 2022) specifically optimize MoE models’ compu-
+tation and communication. Another serving engine that
+explicitly declares optimization for MoE models is SGLang
+(Zheng et al., 2024). s-MoE specializes in optimizing MoE
+parallelization (particularly EP) and inherits wholistic opti-
+mizations from prior work.
+Dynamic Mechanisms for MoE Inference - dynamic load
+balancing, dynamic backend switching. Lina (Li et al.,
+2023) probes the variation of expert hotness and allots non-uniform expert replicas to achieve load-balanced expert
+computation. Similar studies (Huang et al., 2023) exist to
+pursue expert load balancing and mitigate other sources of
+MoE computing inefficiencies. EPS-MoE (Qian et al., 2025)
+optimizes the computation of MoE FeedForward Network
+(FFN) modules by dynamically selecting the best backend
+implementation of GroupGemm and DenseGemm.
+Speculative MoE Inference - offloading and prefetch-
+ing.Existing work on speculative MoE inference primarily
+focuses on prefetching offloaded experts and strategically
+saving GPU memories (Yi et al., 2023; Xue et al., 2024;
+Zhong et al., 2024), though offloading can extend infer-
+ence latency and is rarely used in latency-critical serving
+scenarios. In contrast, s-MoE focuses on the speculative
+reduction of communication overheads and exposes no risks
+to compromise latency. The work also constructs proba-
+bilistic models to predict the token-expert routing paths,
+while s-MoE’s features modeling more comprehensive MoE
+information, i.e., intra-layer and inter-layer expert affinity
+and token-expert affinity, compared to prior work. Pre-gated
+MoE (Hwang et al., 2024) modifies the MoE model architec-
+ture to predict the experts to route at the next layer. s-MoE
+requires no modification to MoE architecture.
+Speculative MoE Inference - communication reduction.
+ExFlow (Yao et al., 2024) is one MoE optimization most
+similar to s-MoE, which exploits the affinity between experts
+across adjacent layers to reduce remote routing and collo-
+cate closely related experts. ExFlow resembles s-MoE’s
+speculative expert pre-grouping but only incorporates inter-
+layer affinity between experts and lacks intra-layer affinity
+3Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+between experts and the conjugate affinity between tokens
+and experts, while s-MoE leverages all three to co-schedule
+tokens and experts. Also, ExFLow can not handle the dis-
+persed expert issue as it only considers Top-1 MoE gating.
+① Offline Token -Expert Activation Modeling
+② Speculative Expert 
+Groupingℰ∈ℕ𝐿𝐿×𝑁𝑁×𝐸𝐸Co-clustering -based offline Solver
+Offline Collected 
+Profile:
+Token IDs & 
+Token 
+Activation Map…
+𝒯𝒯∈ℕ𝐿𝐿×𝑡𝑡×𝐸𝐸
+𝒮𝒮∈ℕ𝐸𝐸𝑙𝑙: Online
+: Offline③ Speculative Token Shuffling
+Dev #n- 1 Dev #0
+Transformer Block ×L
+shuffled- reduce -scatter
+all2allv
+all2allvAttn Attn …
+Gate Gate …
+Exper
+tsExper
+ts…
+shuffled- allgather
+Figure 3: s-MoE workflow
+3. Methodology
+3.1. Speculative MoE (s-MoE): Overview
+Figure 3 shows s-MoE’s workflow, in which the bold lines
+and dashed lines indicate online and offline operations. First,
+s-MoE collects token activation profiles, including token
+IDs and token-expert activation frequencies ( 1⃝in Fig-
+ure 3). s-MoE probabilistically models the token-expert
+routing likelihood and solves a balanced token-expert co-
+clustering problem to make the co-scheduling hints, which
+includes lightweight lookup tables (token-to-expert-cluster
+tableT, and expert-cluster-sequence-to-expert-cluster ta-
+bleS) and experts grouping tables E. Tables TandS
+are used by the shuffled-reduce-scatter (SRS)
+andshuffled-allgather (SAG) kernel (i.e., specu-
+lative token shuffling, s-TS, 2⃝in Figure 3). Eis used for
+speculative expert shuffling, s-EG ( 3⃝in Figure 3).
+Figure 2 depicts an illustrating example of how s-MoE
+works. In the baseline DS-MoE (the first row), tokens
+are synchronized by an allreduce operator and partially
+dropped before the gate module. After being decided which
+expert to activate, the tokens are sent to their correspond-
+ing devices for expert computation. Then the tokens are
+sent back, reduced locally, and gathered. After applying
+s-TS (the second row), the experts each token is routed to
+are predicted in advance before the gate module. Then the
+tokens are shuffled and scattered to their affiliative expert
+groups via the SRS operator ( 1⃝in Figure 2), reducing
+theall2all communication volume via increasing local
+activation rate. Furthermore, when applying s-EG (the third
+row), experts are co-shuffled with tokens offline ( 2⃝in Fig-
+ure 2), enabling s-TS to achieve even higher local activation
+rate. In the example, the number of remote-activated tokens
+are trimmed from 5 to 3 to 1 after adopting s-TS and s-EG.
+We detail the performance analysis and algorithms of s-TS
+and s-EG in the following subsections.
+3.2. Performance Analysis - s-TS and s-EG
+We derive the theoretical communication-saving volume
+from switching to the dynamic speculative schemes s-TS
+and s-EG as follows. We use the symbol ν[...]to representthe communication volume under hyper-parameters [...].
+Preliminary1: communication volume of reduction col-
+lectives. Suppose there are Gdevices, the global batch size
+and the sequence are BandS. The communication vol-
+ume of allreduce ,allgather ,reduce-scatter
+is given by νG,B,S (AR) =2(G−1)BS
+G,νG,B,S (AG) =
+(G−1)BS
+G,νG,B,S (RS) =(G−1)BS
+G.
+Preliminary2: communication volume of the p2p collec-
+tive. We define the percentage of tokens processed by local
+experts as the local activation rate (α), and the number of
+experts each token is routed to is k. The communication vol-
+ume of all2all is given by νG,B,S,k,α (A2A) =αkBS
+G.
+Figure 2 compares the s-MOE with DS-MoE. As we focus
+on the communication volume of attention TP and MoE
+EP. We implicitly suppose the DP degree of attention and
+the TP degree of MoE is 1. The communication pipeline
+of DS-MoE is AR→A2A→A2A→AG. We suppose the
+averaged local activation rate of the A2A in DS-MoE is1
+G.
+Then the communication volume of DS-MoE-EP is given
+by:νG,B,S (AR) + 2 νG,B,S,k,1
+G(A2A) +νG,B,S (AG) =
+3BS(G−1)
+G+2BSk(G−1)
+G2 =BS(3−1
+G−2
+G2).
+For s-MoE, the communication pipeline is SRS→
+A2A→A2A, and the communication volume is given
+by: νG,B,S (RS) + 2 νG,B,S,k,α (A2A) =BS(G−1)
+G+
+2BSk(1−α)
+G=BS(1 +2k(1−α)−1
+G).
+It can be derived that, the communication-saving volume
+of s-MoE compared with DS-MoE-EP and SGLang-EP are
+BS(2−2k(1−α)+2
+G
+G)andBS(3−2k(1−α)+3
+G). With local
+activation rate, α, ranging from 0 to 1, the communication-
+saving volume ratio ranges from 32% ∼75% and 16% ∼69%.
+Therefore, a high local activation rate αcan trim the com-
+munication overhead greatly, which can be achieved via
+properly co-clustering tokens and experts to the same de-
+vice. Our proposed s-MOE implements such an idea by
+speculatively shuffling of tokens on the fly by s-TS, together
+with the offline pre-grouping of experts from s-EG, to realize
+a higher local activation rate, as detailed next.
+3.3. Predicting Expert Routing Path
+In general, the routing of token xjtokexperts in the Lth
+MOE layer is governed by a gating network, expressed as
+GL(hL,j) =top-k (softmax (WL,ghL,j+bL,g)),
+where hL,jis the semantic representation of token xjpro-
+cessed by earlier layers along with its preceding tokens
+(context), WL,gandbL,gare learnable parameters, and the
+top-k operation selects the Kmost relevant experts. This
+formulation indicates that the selection of experts at layer L
+is determined by both the token xjand its context, leading to
+4Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+an inherent intra-layer token-expert affinity . Furthermore,
+the expert choices for xjin earlier layers are also determined
+byxjand its context, which subsequently influences the
+input to deeper layers. Consequently, the expert choices at
+theLthlayer exhibit an association with those in preceding
+layers, namely, inter-layer expert-expert affinity .
+Simplified tabularized conditional probabilistic model
+for the gating network to forecast expert routing paths.
+We argue that a simple conditional probability model may
+suffice to predict the expert activation path of tokens im-
+plied by the above intra-layer/inter-layer affinity. We in-
+vestigate both affinity phenomena empirically by conduct-
+ing intermediate expert activation profiling experiments in
+the DeepSeek-MoE-16B and Mixtral-8x7B using the Long-
+Bench dataset, as shown by Figure 8 of Appendix. We
+find that semantically similar tokens are likely to activate
+a certain sub-group of experts, regardless of the context.
+Moreover, when tokens choose some concrete experts at cer-
+tain layers, they tend to choose a rather fixed set of experts
+at the next layer with high probability.
+Therefore, we simplify the modeling of intra-layer token-
+expert affinity , using only the token xjto predict the prob-
+ability of routing to k-th expert E(L)
+kat the L-th MOE
+layer, Pr(E(L)
+k|xj) =T(L)
+j,k/PN(L)
+k=1T(L)
+j,k,where T(L)
+j,kde-
+notes the number of times the token xjis routed to the
+k-th expert E(L)
+kwithin L-th MOE layer in the dataset col-
+lected during the offline profiling stage, for j= 1, . . . , t and
+k= 1, . . . , N(L). For fast lookup of the matched expert for
+a given token, we tabularize the above token-expert relation-
+ship by the token-2-expert confidence table Cp∈Nt×N,
+where Cp,jk= Pr( Ek|xj)and we omit the layer index for
+representing the case in an arbitrary layer. For an out-of-
+vocabulary (OOV) token ˜xnot covered by the profile, we
+use the expert activation probabilities of the nearest known
+token x′in the embedding space, measured by the cosine
+distance, as the prediction, which ensures robust predictions
+even for OOV tokens.
+To simplify modeling inter-layer expert-expert affinity ,
+because we only care about the device-level token shuf-
+fling, we model the coarser activation expert cluster se-
+quence rather than the activation expert sequence with a n-
+gram model Pr(D(L)
+k|D(L−1), . . . , D (L−n))where D(l)∈
+{1, . . . , Q }denote the device index where the chosen ex-
+pert locates at the l-th layer for an arbitrary token. We also
+tabularize the above expert-expert relationship via a expert-
+cluster-sequence-2-expert-cluster confidence table Ap∈
+NQn×Qand the corresponding expert-cluster-sequence-2-
+expert-cluster table A=argmax (Ap,axis= 1)∈NQn×1.
+We use 2-gram in practice. Together, the expert routing
+paths can be predicted accurately by either the intra-layer
+token-expert model or inter-layer expert-expert model.3.4. Balanced Token-Expert Co-clustering
+We illustrate how such expert-routing forecasting models
+can guide the co-dispatching of tokens and experts. Dif-
+ferent from existing solvers such as Metis and two-stage
+Kmeans, s-MoE models the token-expert co-clustering prob-
+lem as a 0 - 1 integer programming (ILP) problem.
+From the offline profiling, we obtain the number of dedu-
+plicated (un-deduplicated) tokens t(S), the number of ex-
+perts per layer N, the number of clusters E(also EP de-
+gree), the token jfrequency aj, and the predicted proba-
+bility Cp,jkthat token jactivates expert k. The decision
+integer variables are set as the placement Rij∈ {0,1}
+of token jto cluster iand the placement Cij∈ {0,1}
+of expert jto cluster i. We aim to minimize an objec-
+tive function L=θPE
+i=1Pt
+j=1(Rijaj)−S
+E+ (1−
+θ)P
+i1̸=i2Pt
+j=1PN
+k=1(Ri1jCi2kCp,jkaj)
+, where the
+left part is to ensure that the token frequencies of differ-
+ent clusters as even as possible to promote load balanc-
+ing among EP ranks, and the right part is to minimize the
+all2all communication overhead caused by remote ac-
+tivation (i.e., the summation of all the activations of to-
+kens and experts belonging to different clusters), a factor
+θ∈(0,1)controlling the percentage of two sub-objectives.
+We further require that each token belongs to only one class,
+each expert belongs to only one class, and the number of
+experts in each class is equal by adding hard constraintsPE
+i=1Rij= 1,forj= 1. . . t,PE
+i=1Cij= 1,forj=
+1. . . N , andPN
+j=1Cij=N
+E, i= 1. . . t.
+The above ILP problem is difficult to solve directly using
+LP solvers, given a large number of intermediate variables
+introduced in the linearization process. s-MoE provides
+a two-phase cross-entropy optimization algorithm. It can
+quickly obtain a feasible solution while ensuring load bal-
+ancing. The detailed co-clustering algorithm can be referred
+to in §B in the Appendix. The solution can then be applied
+to online speculative token shuffling and offline speculative
+expert grouping, which can be referred to in § B as well.
+4. Implementation and System Optimization
+s-MoE is implemented in ∼5000 LOC Python code
+with Triton (OpenAI)-implemented kernels. The cur-
+rent implementation of s-MoEis a featured plugin for
+community-leading open-sourced MoE inference frame-
+works DeepSpeed-MoE (Rajbhandari et al., 2022) and
+SGLang (Zheng et al., 2024), and future support for
+other prevailing frameworks including but not limited to
+vLLM (Kwon et al., 2023) and TensorRT-LLM (NVIDIA)
+is planned. Note that besides the methodological innovation
+made by s-TS and s-EG, s-MoE also features the following
+system-level optimizations. (a) Optimized Triton shuf-
+5Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+Server Configuration
+GPU-Server-ACPU: Two Intel Xeon CPUs
+CPU RAM: 2TB DDR5
+GPU: 8 cards, GPU RAM: 96GB HBM per card
+Inter-GPU: 900GBps high-speed link
+GPU-Server-BCPU: Two Intel Xeon CPUs
+CPU RAM: 1TB DDR5
+GPU: 8 cards, GPU RAM: 48GB GDDR6 per card
+Inter-GPU: 2*PCIe switch (64GBps), UPI (20GBps)
+Table 1: Experiment hardware configuration
+fling kernel. To enable efficient s-TS, we implement fused
+Triton kernels shuffled-reduce-scatter (SRS)
+andshuffled-allgather (SAG) , which are fused
+with conventional reduce-scatter andallgather
+collectives, respectively. SRS and SAG compute shuf-
+fles’ source and destination information with an optimized
+argsort kernel (outperforming Pytorch-native version
+by25%) and seamlessly embed the information into the
+ring-based implementation of native reduce-scatter
+andallgather with negligible ( 1%) overheads. (b) Ef-
+ficient EP with one-shot all2allv .EP can be imple-
+mented with regular all2all or irregular all2allv .
+The existing EP implementations with regular all2all
+send fixed-shaped padded tensors to experts with no need to
+send additional metadata (e.g., indices of selected experts)
+but add additional communication costs due to padding.
+Other EP implementations improve all2all with irregu-
+larall2allv , but need to launch two separate collectives,
+one for metatdata (e.g., expert indices and gating scores)
+and one for MHA activation. s-MoE further improves this
+by consolidating MHA activation and metadata into a com-
+pact communication packet and initiates only a one-shot
+all2allv to avoid additional kernel-launch overheads. (c)
+De-duplication for EP. When multiple experts activated
+by the same token are located on the same GPU, there is
+no need to send two copies of the token’s MHA activation
+to that device. But existing studies such as DeepSpeed-
+MoE and Tutel (Hwang et al., 2022) ignore this and send
+redundant data that further burdens EP. s-MoE implements
+a de-duplication kernel into EP to detect such compaction
+opportunities, and further reduces EP’s communication.
+5. Experiment
+5.1. Experimental Environments
+We evaluate Speculative MoE on two 8-GPU servers
+with different interconnect speeds and topologies (cf., Ta-
+ble 1). (a) GPU-Server-A: fast homogeneous intercon-
+nects. GPU-Server-A represents commodity GPU servers
+unified for both training and inference, which are configured
+with 96GB-HBM per GPU and fast homogeneous intercon-
+nects. GPUs inside a server can communicate with each
+other at a premium bandwidth (900GBps). (b) GPU-Server-
+B: slow heterogeneous interconnects. GPU-Server-A rep-
+resents commodity GPU servers dedicated to economic in-ference, which have no HBM and no high-speed intercon-
+nects. Each server has eight GPUs (48GB GDDR6); the
+left group of four GPUs is interconnected via a PCIe-5.0
+switch (63.01GBps) and the right group of four GPUs holds
+the same symmetric configuration. Any GPU in one group
+communicating with another GPU in the other group needs
+to pass through a slow indirect link, i.e., CPUs’ UPI (Ultra
+Path Interconnect) interface (20.8GBps).
+5.2. Models, Datasets and Workload Traces
+Model. We choose two types of typical MoE models for
+evaluation, i.e., MoE models with a large number of small
+experts , represented by DeepSeek-V2, and MoE models
+with a small number of large experts , represented by Mixtral-
+8x7B. Both DeepSeek-V2 and Mixtural-8x7B are prevailing
+open-sourced MoE models.
+Dataset. We use the following three representative datasets
+LongBench (Bai et al., 2024), GSM8K (Grade School Math
+8K) (Cobbe et al., 2021) and HumanEval (Chen et al., 2021).
+Workload. It is important that workload characteristics,
+especially the length of input (i.e., prefilling) and output
+(i.e., decoding) per user request, should reflect the charac-
+teristics of real requests in production settings. We draw
+real requests’ input and output length from the Mooncake
+production trace (Qin et al., 2024) and the Azure LLM Infer-
+ence Trace (Stojkovic et al., 2024).To synthesize a request,
+we first randomly sample a pair of input and out length from
+the MoonCake or the Azure trace with equal probability,
+and secondly, sample an entry from LongBench, GSM8K,
+or HumanEval with equal probability to realize the entry’s
+prefilling and decoding (up to the sampled length).
+5.3. Baselines and Performance Metrics
+We build s-MoE into two state-of-the-art MoE serving
+frameworks, each with differently implemented infer-
+ence optimizations spanning parallelization schemes, high-
+performance fused kernels, quantization, etc.
+TP-EP Baseline - DeepSpeed-MoE, DeepSpeed-TED,
+and Tutel: DeepSpeed-MoE (Rajbhandari et al., 2022) is
+a strong inference framework known for efficient scalable
+MoE computation and communication. DeepSpeed-TED
+(Singh et al., 2023) is an optimized version of DeepSpeed-
+MoE that further reduces communication overhead in
+DeepSpeed-MoE. Tutel (Hwang et al., 2022) is a customized
+version of DeepSpeed-MoE that optimizes both MoE train-
+ing and inference with high-performance fused kernels. We
+choose an integrated version of DeepSpeed-MoE that in-
+cludes all optimizations from DeepSpeed-TED and Tutel,
+as a state-of-the-art baseline, the baseline adopts TP for
+attention layers and EP for expert layers.
+TP Baseline - SGLang: SGLang (Zheng et al., 2024) is a
+6Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+5001000LongBench
+SLOTTFT (ms)-ThroughputDS-MoE s-MoE (s-TS) s-MoE (s-TS + s-EG)
+250500
+ SLOTPOT (ms)-Throughput
+50100150
+SLOp90-TBT (ms)-Throughput
+5001000GSM8K
+SLO 250500
+ SLO
+50100150
+SLO
+200 400 600 800
+Throughput
+(tokens / second)5001000HumanEval
+SLO
+200 400 600 800
+Throughput
+(tokens / second)250500
+ SLO
+200 400 600 800
+Throughput
+(tokens / second)50100150
+SLO
+(a) DeepSeek-V2 on GPU-Server-A (TP8-EP8).
+50010001500LongBench
+SLOTTFT (ms)-ThroughputDS-MoE s-MoE (s-TS) s-MoE (s-TS + s-EG)
+250500
+SLOTPOT (ms)-Throughput
+50100150
+SLOp90-TBT (ms)-Throughput
+50010001500GSM8K
+SLO250500
+ SLO
+50100150
+SLO
+200 400 600 800
+Throughput
+(tokens / second)50010001500HumanEval
+SLO
+200 400 600 800
+Throughput
+(tokens / second)250500
+SLO
+200 400 600 800
+Throughput
+(tokens / second)50100150
+SLO (b) Mixtral-8x7B on GPU-Server-A (TP8-EP4TP2).
+5001000LongBench
+SLOTTFT (ms)-ThroughputDS-MoE s-MoE (s-TS) s-MoE (s-TS + s-EG)
+200400
+ SLOTPOT (ms)-Throughput
+100200
+SLOp90-TBT (ms)-Throughput
+5001000GSM8K
+SLO
+200400
+ SLO
+100200
+SLO
+500 1000
+Throughput
+(tokens / second)5001000HumanEval
+SLO
+500 1000
+Throughput
+(tokens / second)200400
+ SLO
+500 1000
+Throughput
+(tokens / second)100200
+SLO
+(c) DeepSeek-V2 on GPU-Server-B (TP8-EP8).
+5001000LongBench
+SLOTTFT (ms)-ThroughputDS-MoE s-MoE (s-TS) s-MoE (s-TS + s-EG)
+250500
+SLOTPOT (ms)-Throughput
+100200
+ SLOp90-TBT (ms)-Throughput
+5001000GSM8K
+SLO250500
+SLO
+100200
+SLO
+500 1000
+Throughput
+(tokens / second)5001000HumanEval
+SLO
+500 1000
+Throughput
+(tokens / second)250500
+SLO
+500 1000
+Throughput
+(tokens / second)100200
+ SLO (d) Mixtral-8x7B on GPU-Server-B (TP8-EP4TP2).
+Figure 4: Inference throughput under TTFT, TPOT and p90-TBT latency constraints. DS-MoE: DeepSpeed-MoE. s-
+MoE: Speculative MoE, s-TS: Speculative Token Shuffling, s-EG: Speculative Expert Grouping. Note we tune parallel
+configurations and report the one DeepSpeed-MoE performs best.
+prevailing open-source LLM inference framework, adopt-
+ing a bunch of optimization including but not limited to
+continuous batching, paged attention, flash attention, radix-
+attention, advanced quantization, etc. SGLang declares op-
+timizations for MoE models with high-performance, fused
+triton kernels (OpenAI) to implement TP-based paralleliza-
+tion for both attention and expert layers.
+Metrics: Throughput is the number of tokens (tokens/s)
+that an inference system can process under a time limit.
+We report the average throughput over a batch of prompts
+under the following latency constraints. TTFT (Time to
+First Token) measures the duration between the request’s
+arrival and the first token’s generation time. TPOT (Time
+per Output Token is the average time to generate an output
+token in the decoding phase, i.e., the total decoding time of a
+request normalized by the number of tokens generated. TBT
+(Time between Tokens) is the latency of every subsequent
+token generated in the decoding phase. We report the 90th
+percentile of TBT (p90 TBT). Following prior work (Wu
+et al., 2024b;a), we set the latency SLO as 5 ×of the latency
+(i.e., TTFT, TPOT, or p90 TBT) under the lightest input
+load (minimal input length times batch size sampled from
+datasets and trace). For each dataset, we use 20% of the
+data to train the token activation prediction model, and the
+left 80% is used to sample experimental requests.5.4. Evaluation - Speculative MoE vs. DeepSpeed-MoE
+Figure 4 shows the end-to-end performance evaluation of
+Speculative MoE (s-MoE) and Deepspeed-MoE (DS-MoE).
+We evaluate two versions of s-MoE, namely s-MoE w/t s-TS,
+and s-MoE w/t s-TS+s-EG, to separate the contributions of
+Speculative Token shuffling (s-TS) and Speculative Expert
+Pre-grouping (s-EG), respectively.
+DeepSeek-V2. For DeepSeek-V2, s-MoE achieves 1.72x,
+1.15x and 1.49x throughput improvements compared to DS-
+MoE on GPU-Server-A under TTFT, TPOT and p-90-TBT
+SLO constraints, respectively. Results show s-MoE outper-
+forms DS-MoE even on the fastest (900GBps) homogeneous
+interconnects. Results show s-MoE can still benefit produc-
+tion settings configured with high-end GPU interconnects
+(e.g., NVLink or UALink), as hardware and technology
+advances alone can not completely remove the current com-
+munication bottleneck of MoE inference.
+On GPU-Server-B, which is configured with slow heteroge-
+neous interconnects (i.e., PCI-e and UPI), s-MoE attains
+a much larger boost over DS-MoE, where the throughput
+improvements rise to 1.89x, 2.35x, and 4.3x under the afore-
+mentioned SLOs. Results show that s-MoE is more pro-
+ductive and supportive for economic inference settings that
+lack homogeneous high-speed hardware interconnects, and
+7Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+algorithm and software optimizations remain more effective
+and cost-efficient remedies. For DeepSeek-V2, separate
+analyses show that s-TS and s-EG on average contribute to
+73% and 27% of the end-to-end throughput improvement of
+s-MoE, respectively. The results validate the effectiveness
+and essentialness of the two key designs within s-MoE.
+Mixtral-8x7B. For Mixtral-8x7B, the throughput improve-
+ments of s-MoE compared to DS-MoE is marginally lower
+to that of DeepSeek-V2, i.e., 1.72x, 1.72xand 1.49x on
+GPU-Server-A and 2.34x, 2.70x and 2.92x on GPU-Server-
+B, under TTFT, TPOT and p90-TBT SLO constraints. The
+number of experts per layer of Mixtral-8x7B is smaller
+(only 8 experts per layer), and thus, the gated experts to
+route are more concentrated rather than dispersed, which
+results in lower effectiveness (only 4% on average) for s-
+EG. However, s-TS remains effective in boosting DS-MoE.
+Overall, the consistent win of s-MoE over DS-MoE on both
+DeepSeek-V2 featuring many small experts and Mixtral-
+8x7B featuring few big experts, and on both high-end and
+low-end interconnects substantiate s-MoE as a generic ap-
+proach to boost modern MoE inference.
+5.5. A Detailed Look at EP Communication Reduction
+In Figure 5, we show the LAR (Local Activation Rate) and
+the resulting latency of a single expert layer on GPU-Server-
+A. Local activation means the tokens’ activation is routed
+to an expert collocated on the same GPU device, and thus
+remote routing and its associated EP communication can be
+skipped. A higher LAR is demanded. Results show, com-
+pared with DS-MoE, s-MoE can increase LAR by 43% and
+61% for DeepSeek-V2 and Mixtral-8x7B, which translates
+to 40.4%/68.8% latency reduction of the belonging expert
+layer. Besides DS-MoE and s-MoE, other bars in the figure
+are measured by mocking the routing module of DS-MoE
+and skipping the delays in communication to fabricate hy-
+pothetical baselines just for reference. Note that a 100%
+LAR may not be achieved in theory as different tokens can
+contradict each other to group their own hot experts but
+GPU memory is limited.
+5.6. Boosting SGLang with Speculative MoE
+Besides DS-MoE, we build a version of s-MoE into an-
+other state-of-the-art, open-sourced LLM inference engine
+SGLang (Zheng et al., 2024). Figure 7 shows, over all
+three datasets, s-MoE on average boosts SGLang’s infer-
+ence throughput by 1.68x, 1.96x, and 1.97x under TTFT,
+TPOT, and p90-TBT latency constraints, even over the
+fastest (900GBps) GPU interconnects. The results verify
+that s-MoE’s optimizations are not dedicated to DeepSpeed-
+MoE, and can serve as a generic booster for a spectrum of
+MoE and LLM inference engines.5.7. Algorithm Evaluation
+The token and expert co-shuffling algorithm needs to find
+balanced co-clusters of tokens and experts, with experts
+having a maximal likelihood of being gated (routed) from
+tokens within the same cluster, and minimal likelihood
+across clusters. An additional regularizer is load balanc-
+ing that ensures hot and cold experts are relatively evenly
+distributed. s-MoE adopts a cross-entropy-optimization-
+based (CEO-based) algorithm to approximately solve the
+problem and is evaluated against two other baseline algo-
+rithms, METIS (Karypis & Kumar, 1997) and 2D Balanced
+KMeans, using the same predicted routing likelihood as
+affinity. METIS models the token-expert routing matrix as
+an undirected graph and solves the minimum k-cut solu-
+tion. 2D Balanced KMeans performs a two-stage balanced
+KMeans clustering for tokens and experts with the predicted
+routing affinity separately. Figure 6 shows s-MoE achieves
+the best LAR (highest communication reduction) with bal-
+anced expert clusters; its LAR and imbalance rate outper-
+forms the best baseline by 14.2% and 10.2%, respectively.
+0.1
+DS-MoE
+(0.12)
+0.2
+0.3
+0.4
+0.5
+LTY
+(0.54)
+0.6
+0.7
+0.8
+0.9
+1.0
+Local Activation Rate01020single-layer all2all latency (ms)+43%
+-40.4%DeepSeek-V2 Layer #1
+0.1
+0.2
+DS-MoE
+(0.21)
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+LTY
+(0.82)
+0.9
+1.0
+Local Activation Rate0510+61%
+-68.8%Mixtral-8x7B Layer #0all2all-dispatch all2all-combine
+Figure 5: Local activation rate against overall EP overhead.
+2 4 8
+EP size0.250.500.75Local Activate Rate ()
+s-MoE Metis 2D Balanced KMeans DeepSpeed-MoE (Default)
+2 4 8
+EP size1.01.21.4Imbalance Rate ()
+Figure 6: Local activation rate ( α) and load-imbalance rate
+(β) of s-MoE-CEO and baseline algorithms.
+500 1000
+Throughput
+(tokens / second)5001000Synthetic
+SLOTTFT (ms)-ThroughputSGLang-TP8 SGlang + s-MoE
+500 1000
+Throughput
+(tokens / second)200400
+SLOTPOT (ms)-Throughput
+500 1000
+Throughput
+(tokens / second)75100
+SLOp90-TBT (ms)-Throughput
+Figure 7: s-MoE boosting SGLang. Model: DeepSeek-
+V2. Dataset: Longbench, GSM8K and Humaneval. Server:
+GPU Server A. Parallelism: SGLang - Attention(TP8), Ex-
+pert(TP8); s-MoE: Attention(TP8), Expert(EP8).
+6. Conclusion
+The communication overhead of expert parallelism renders
+a significant bottleneck in serving large-scale MoE models.
+We present s-MoE, which can proactively and losslessly
+trim EP’s all2all communication volume. Experiments
+8Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+in prevailing MoE serving engines DeepSpeed-MoE and
+SGLang show that s-MoE can significantly reduce com-
+munication overhead and boost inference throughput under
+differently specified SLO constraints.
+References
+Snowflakes-arctic. [Online]. Accessed 23 Oct 2024,
+https://www.snowflake.com .
+Artetxe, M., Bhosale, S., Goyal, N., Mihaylov, T., Ott, M.,
+Shleifer, S., Lin, X. V ., Du, J., Iyer, S., Pasunuru, R.,
+Anantharaman, G., Li, X., Chen, S., Akin, H., Baines, M.,
+Martin, L., Zhou, X., Koura, P. S., O’Horo, B., Wang, J.,
+Zettlemoyer, L., Diab, M., Kozareva, Z., and Stoyanov,
+V . Efficient large scale language modeling with mixtures
+of experts, 2022. URL https://arxiv.org/abs/
+2112.10684 .
+Bai, Y ., Lv, X., Zhang, J., Lyu, H., Tang, J., Huang, Z.,
+Du, Z., Liu, X., Zeng, A., Hou, L., Dong, Y ., Tang, J.,
+and Li, J. Longbench: A bilingual, multitask benchmark
+for long context understanding, 2024. URL https:
+//arxiv.org/abs/2308.14508 .
+Chen, C., Li, M., Wu, Z., Yu, D., and Yang, C. Ta-moe:
+Topology-aware large scale mixture-of-expert training.
+In Koyejo, S., Mohamed, S., Agarwal, A., Belgrave, D.,
+Cho, K., and Oh, A. (eds.), Advances in Neural Informa-
+tion Processing Systems , volume 35, pp. 22173–22186.
+Curran Associates, Inc., 2022.
+Chen, M., Tworek, J., Jun, H., Yuan, Q., de Oliveira Pinto,
+H. P., Kaplan, J., Edwards, H., Burda, Y ., Joseph, N.,
+Brockman, G., Ray, A., Puri, R., Krueger, G., Petrov,
+M., Khlaaf, H., Sastry, G., Mishkin, P., Chan, B., Gray,
+S., Ryder, N., Pavlov, M., Power, A., Kaiser, L., Bavar-
+ian, M., Winter, C., Tillet, P., Such, F. P., Cummings, D.,
+Plappert, M., Chantzis, F., Barnes, E., Herbert-V oss, A.,
+Guss, W. H., Nichol, A., Paino, A., Tezak, N., Tang,
+J., Babuschkin, I., Balaji, S., Jain, S., Saunders, W.,
+Hesse, C., Carr, A. N., Leike, J., Achiam, J., Misra,
+V ., Morikawa, E., Radford, A., Knight, M., Brundage,
+M., Murati, M., Mayer, K., Welinder, P., McGrew, B.,
+Amodei, D., McCandlish, S., Sutskever, I., and Zaremba,
+W. Evaluating large language models trained on code.
+2021.
+Cobbe, K., Kosaraju, V ., Bavarian, M., Chen, M., Jun, H.,
+Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano,
+R., Hesse, C., and Schulman, J. Training verifiers to solve
+math word problems. arXiv preprint arXiv:2110.14168 ,
+2021.
+Dai, D., Deng, C., Zhao, C., Xu, R. X., Gao, H., Chen,
+D., Li, J., Zeng, W., Yu, X., Wu, Y ., Xie, Z., Li, Y . K.,Huang, P., Luo, F., Ruan, C., Sui, Z., and Liang, W.
+Deepseekmoe: Towards ultimate expert specialization in
+mixture-of-experts language models, 2024.
+DeepSeek-AI. Deepseek-v2: A strong, economical, and
+efficient mixture-of-experts language model, 2024a.
+DeepSeek-AI. Deepseek-v3 technical report, 2024b. URL
+https://arxiv.org/abs/2412.19437 .
+DeepSeek-AI. Deepseek-r1: Incentivizing reasoning ca-
+pability in llms via reinforcement learning, 2025. URL
+https://arxiv.org/abs/2501.12948 .
+Fedus, W., Zoph, B., and Shazeer, N. Switch transform-
+ers: Scaling to trillion parameter models with simple
+and efficient sparsity. Journal of Machine Learning
+Research , 23(120):1–39, 2022. URL http://jmlr.
+org/papers/v23/21-0998.html .
+He, J., Qiu, J., Zeng, A., Yang, Z., Zhai, J., and Tang, J.
+Fastmoe: A fast mixture-of-expert training system, 2021.
+URL https://arxiv.org/abs/2103.13262 .
+He, J., Zhai, J., Antunes, T., Wang, H., Luo, F., Shi, S., and
+Li, Q. Fastermoe: modeling and optimizing training of
+large-scale dynamic pre-trained models. In Proceedings
+of the 27th ACM SIGPLAN Symposium on Principles
+and Practice of Parallel Programming , PPoPP ’22, pp.
+120–134, New York, NY , USA, 2022. Association for
+Computing Machinery. ISBN 9781450392044. doi: 10.
+1145/3503221.3508418. URL https://doi.org/
+10.1145/3503221.3508418 .
+Holmes, C., Tanaka, M., Wyatt, M., Awan, A. A., Rasley,
+J., Rajbhandari, S., Aminabadi, R. Y ., Qin, H., Bakhtiari,
+A., Kurilenko, L., and He, Y . Deepspeed-fastgen: High-
+throughput text generation for llms via mii and deepspeed-
+inference, 2024.
+Huang, H., Ardalani, N., Sun, A., Ke, L., Lee, H.-H. S.,
+Sridhar, A., Bhosale, S., Wu, C.-J., and Lee, B. Towards
+moe deployment: Mitigating inefficiencies in mixture-of-
+expert (moe) inference, 2023. URL https://arxiv.
+org/abs/2303.06182 .
+Hwang, C., Cui, W., Xiong, Y ., Yang, Z., Liu, Z., Hu, H.,
+Wang, Z., Salas, R., Jose, J., Ram, P., Chau, J., Cheng,
+P., Yang, F., Yang, M., and Xiong, Y . Tutel: Adap-
+tive mixture-of-experts at scale. CoRR , abs/2206.03382,
+June 2022. URL https://arxiv.org/pdf/2206.
+03382.pdf .
+Hwang, R., Wei, J., Cao, S., Hwang, C., Tang, X., Cao, T.,
+and Yang, M. Pre-gated moe: An algorithm-system co-
+design for fast and scalable mixture-of-expert inference.
+In2024 ACM/IEEE 51st Annual International Symposium
+on Computer Architecture (ISCA) , pp. 1018–1031, 2024.
+doi: 10.1109/ISCA59077.2024.00078.
+9Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+Jiang, A. Q., Sablayrolles, A., Roux, A., Mensch, A., Savary,
+B., Bamford, C., Chaplot, D. S., de las Casas, D., Hanna,
+E. B., Bressand, F., Lengyel, G., Bour, G., Lample, G.,
+Lavaud, L. R., Saulnier, L., Lachaux, M.-A., Stock, P.,
+Subramanian, S., Yang, S., Antoniak, S., Scao, T. L.,
+Gervet, T., Lavril, T., Wang, T., Lacroix, T., and Sayed,
+W. E. Mixtral of experts, 2024a.
+Jiang, A. Q., Sablayrolles, A., Roux, A., Mensch, A.,
+Savary, B., Bamford, C., Chaplot, D. S., de las Casas,
+D., Hanna, E. B., Bressand, F., Lengyel, G., Bour, G.,
+Lample, G., Lavaud, L. R., Saulnier, L., Lachaux, M.-
+A., Stock, P., Subramanian, S., Yang, S., Antoniak, S.,
+Scao, T. L., Gervet, T., Lavril, T., Wang, T., Lacroix,
+T., and Sayed, W. E. Mixtral of experts, 2024b. URL
+https://arxiv.org/abs/2401.04088 .
+Karypis, G. and Kumar, V . Metis: A software package
+for partitioning unstructured graphs, partitioning meshes,
+and computing fill-reducing orderings of sparse matrices.
+1997.
+Kwon, W., Li, Z., Zhuang, S., Sheng, Y ., Zheng, L., Yu,
+C. H., Gonzalez, J., Zhang, H., and Stoica, I. Effi-
+cient memory management for large language model
+serving with pagedattention. In Proceedings of the
+29th Symposium on Operating Systems Principles , SOSP
+’23, pp. 611–626, New York, NY , USA, 2023. Associa-
+tion for Computing Machinery. ISBN 9798400702297.
+doi: 10.1145/3600006.3613165. URL https://doi.
+org/10.1145/3600006.3613165 .
+Li, J., Jiang, Y ., Zhu, Y ., Wang, C., and Xu, H. Ac-
+celerating distributed MoE training and inference with
+lina. In 2023 USENIX Annual Technical Conference
+(USENIX ATC 23) , pp. 945–959, Boston, MA, July
+2023. USENIX Association. ISBN 978-1-939133-35-9.
+URLhttps://www.usenix.org/conference/
+atc23/presentation/li-jiamin .
+Mosaic-Research. Databricks-dbrx. [On-
+line]. Accessed 23 Oct 2024, https:
+//www.databricks.com/blog/
+introducing-dbrx-new-state-art-open-llm .
+Nie, X., Miao, X., Wang, Z., Yang, Z., Xue, J., Ma, L.,
+Cao, G., and Cui, B. Flexmoe: Scaling large-scale
+sparse pre-trained model training via dynamic device
+placement. Proc. ACM Manag. Data , 1(1), May 2023.
+doi: 10.1145/3588964. URL https://doi.org/10.
+1145/3588964 .
+NVIDIA. Tensorrt-llm. [Online]. Accessed
+23 Oct 2024, https://github.com/NVIDIA/
+TensorRT-LLM .OpenAI. Applied ai experiments and examples
+for pytorch. [Online]. Accessed 23 Oct 2024,
+https://github.com/pytorch-labs/
+applied-ai/tree/main .
+Qian, Y ., Li, F., Ji, X., Zhao, X., Tan, J., Zhang, K., and Cai,
+X. Eps-moe: Expert pipeline scheduler for cost-efficient
+moe inference, 2025. URL https://arxiv.org/
+abs/2410.12247 .
+Qin, R., Li, Z., He, W., Zhang, M., Wu, Y ., Zheng, W.,
+and Xu, X. Mooncake: A kvcache-centric disaggregated
+architecture for llm serving, 2024. URL https://
+arxiv.org/abs/2407.00079 .
+Qwen-Team. Qwen1.5-moe: Matching 7b model per-
+formance with 1/3 activated parameters”, February
+2024. URL https://qwenlm.github.io/blog/
+qwen-moe/ .
+Rajbhandari, S., Li, C., Yao, Z., Zhang, M., Aminabadi,
+R. Y ., Awan, A. A., Rasley, J., and He, Y . DeepSpeed-
+MoE: Advancing mixture-of-experts inference and train-
+ing to power next-generation AI scale. In Chaudhuri, K.,
+Jegelka, S., Song, L., Szepesvari, C., Niu, G., and Sabato,
+S. (eds.), Proceedings of the 39th International Confer-
+ence on Machine Learning , volume 162 of Proceedings
+of Machine Learning Research , pp. 18332–18346. PMLR,
+17–23 Jul 2022. URL https://proceedings.mlr.
+press/v162/rajbhandari22a.html .
+Singh, S., Ruwase, O., Awan, A. A., Rajbhandari, S., He,
+Y ., and Bhatele, A. A hybrid tensor-expert-data par-
+allelism approach to optimize mixture-of-experts train-
+ing. In Proceedings of the 37th International Con-
+ference on Supercomputing , ICS ’23, pp. 203–214,
+New York, NY , USA, 2023. Association for Comput-
+ing Machinery. ISBN 9798400700569. doi: 10.1145/
+3577193.3593704. URL https://doi.org/10.
+1145/3577193.3593704 .
+Stojkovic, J., Zhang, C., ´I˜nigo Goiri, Torrellas, J., and
+Choukse, E. Dynamollm: Designing llm inference clus-
+ters for performance and energy efficiency, 2024. URL
+https://arxiv.org/abs/2408.00741 .
+Team, G. Gemini 1.5: Unlocking multimodal understanding
+across millions of tokens of context, 2024. URL https:
+//arxiv.org/abs/2403.05530 .
+Wu, B., Liu, S., Zhong, Y ., Sun, P., Liu, X., and Jin, X.
+Loongserve: Efficiently serving long-context large lan-
+guage models with elastic sequence parallelism, 2024a.
+URL https://arxiv.org/abs/2404.09526 .
+Wu, B., Zhong, Y ., Zhang, Z., Liu, S., Liu, F., Sun, Y .,
+Huang, G., Liu, X., and Jin, X. Fast distributed inference
+10Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+serving for large language models, 2024b. URL https:
+//arxiv.org/abs/2305.05920 .
+X-AI. Xai-grok-1. [Online]. Accessed 23 Oct 2024,
+https://github.com/xai-org/grok-1 .
+Xue, L., Fu, Y ., Lu, Z., Mai, L., and Marina, M. Moe-
+infinity: Offloading-efficient moe model serving, 2024.
+URL https://arxiv.org/abs/2401.14361 .
+Yao, J., Anthony, Q., Shafi, A., Subramoni, H., K., D., and
+Panda. Exploiting inter-layer expert affinity for accelerat-
+ing mixture-of-experts model inference, 2024.
+Yi, R., Guo, L., Wei, S., Zhou, A., Wang, S., and Xu, M.
+Edgemoe: Fast on-device inference of moe-based large
+language models, 2023. URL https://arxiv.org/
+abs/2308.14352 .
+Zhai, M., He, J., Ma, Z., Zong, Z., Zhang, R., and Zhai,
+J. SmartMoE: Efficiently training Sparsely-Activated
+models through combining offline and online paralleliza-
+tion. In 2023 USENIX Annual Technical Conference
+(USENIX ATC 23) , pp. 961–975, Boston, MA, July
+2023. USENIX Association. ISBN 978-1-939133-35-9.
+URLhttps://www.usenix.org/conference/
+atc23/presentation/zhai .
+Zheng, L., Yin, L., Xie, Z., Sun, C., Huang, J., Yu, C. H.,
+Cao, S., Kozyrakis, C., Stoica, I., Gonzalez, J. E., Bar-
+rett, C., and Sheng, Y . Sglang: Efficient execution
+of structured language model programs, 2024. URL
+https://arxiv.org/abs/2312.07104 .
+Zhong, S., Liang, L., Wang, Y ., Wang, R., Huang, R., and Li,
+M. Adapmoe: Adaptive sensitivity-based expert gating
+and management for efficient moe inference, 2024. URL
+https://arxiv.org/abs/2408.10284 .
+11Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+7 15 23 31 39 47 55 63
+Experts in deepseek-moe-16B layer 1 (shuffled)'?.,":()(-/_|ofasforatwithinfromonby
+81012141618
+Activation map kurtosis0.00.20.40.60.81.0Accumulated frequency
+(a) Example of intra-layer token-expert activation map (1st MoE layer
+of DeepSeek-MoE-16B profiled using the LongBench dataset). Darker
+color in the map indicates higher activation frequency or stronger
+correlation.
+0 5 10 15 20 25
+Expert groups at layer 401020Expert groups at layer 5
+1 2 3 4 5
+#Layers to lookup60.062.565.067.570.0Predication accuracy (%)
+(b) Example of inter-layer expert-expert correlation map (4th/5th MoE
+layer of Mixtral-8x7B profiled using the LongBench dataset). Darker
+color in the map indicates stronger correlation.
+allreduce all2all
+=0.2
+all2all
+=0.3
+all2all
+=0.4
+all2all
+=0.5
+all2all
+=0.6
+all2all
+=0.7
+all2all
+=0.8
+all2all
+=0.9
+0.00.51.0Norm. Comm.
+LatencyAPI: torch.all_to_all_single
+buffer size: 8192×11462
+data format: float16
+#GPUs: 8/connected via PCIe 5.0
+(c) Example of perfromance of allreduce andall2all under
+different local activation ratio ( α).
+Figure 8: Conjugacy illustration and collective communication micro-benchmark.
+A. Empirical Study of Token-expert Affinity
+A.1. Intra-layer bi-clustered token-expert Conjugacy
+Within each MoE layer, each expert module in an LLM layer is trained to process a particular semantic domain of tokens.
+Tokens and experts exhibit high affinity in different dimensions. We profile the intermediate activation of the gating module
+in each MoE layer in the DeepSeek-MoE-16B and Mixtral-8x7B. One important observation shows that strong bi-clustered
+conjugacy between tokens and experts, as shown in Figure 8. That is, experts are likely to be activated by a certain sub-group
+of tokens with high semantic affinity, while are not likely to be activated by other general tokens in vocabulary. And from
+tokens perspective, it is true that semantically similar tokens are likely to activate a certain sub-group of experts. We name
+this phenomenon bi-clustered conjugacy.
+Inter-layer expert-expert affinity The left picture of Figure 8(b) shows the activation correlation of the 4th and 5th layer
+of the Mixtral-8x7B model. The x-/y-axis represents the expert groups of a layer. For Mixtral-8x7B, each token is routed
+2 out of 8 experts at each layer. Thus, the number of expert groups at each layer is 8
+2
+= 28 . When tokens choose some
+concrete experts at the fourth layer, they tend to choose a rather fixed set of experts at the next layer with high probability.
+We name this phenomenon inter-layer expert-expert affinity .
+Simple conditional probability model for token activation path The above examples illustrate the tabularized relation-
+ship between tokens and experts. We argure that, simple conditional probability model can work to predict the activation
+12Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+path of tokens by combining the above intra-layer conjugacy and/inter-layer affinity. We first calculate the kurtosis2of each
+token’s activation map. The right picture of Figure 8(a) shows most of the kurtosis values are higher than 8, indicating that
+the to-route experts for each token concentrate on a narrowed set, regardless of the context. We further use partial (25%) of
+the profile dataset to calculate each tokens’ most routed top-k experts. Then the static top-k experts are used to predict the
+tokens activation using the left part (75%) of the profile dataset, achieving a 96.3% precision and a 78.8% F1 score. The
+right part of Figure 8(b) predicts the next-layer-activation via looking back the prior layers. As we know more about the
+previous activation sequence at layer L, we can predict the activation at layer L+ 1with higher confidence (about 70%
+when looking back 5 layers).
+Expert pre-grouping and token re-batching Leveraging the intrinsic conjugacy between tokens and experts in MoE
+models to achieve token-expert co-dispatching, may help reduce communication volume and boost distributed parallel
+inference. First, similar experts can be pre-grouped together at deployment time based on pre-profiled and modeled affinity.
+Second, on the fly, individual tokens can be re-shuffled and re-batched to the GPU devices that host the expert groups whose
+member experts have largest modeled conjugacy with the token. Such co-scheduling aims to avoid scattered, cross-device
+token-expert activations, or equivalently, maximize the probability of intro-device, local activations. Figure 8(c) shows an
+micro-benchmark experiment, testing the all2all latency under different local activation rate using the ncclall2allv
+API. With the local activation rate ( α) varying from 0.2 to 0.9, the latency decreases gradually, showing the performance
+gains with improved expert-token co-scheduling.
+B. Algorithm for the s-TS/s-EG Solver
+The Rubinstein Cross-Entropy Optimization (CEO) algorithm is a Monte Carlo method used primarily for optimization
+and importance sampling. Similar to the evolutionary algorithm, the CEO sprinkles points in space according to a certain
+rule, obtains the error of each point, and then determines the rule of the next round of sprinkle points according to the error
+information. The cross entropy method is named because the objective of the method (theoretically) is to minimize the cross
+entropy between the data distribution obtained by random scattered points and the actual data distribution (equivalent to
+minimizing the KL distance), trying to make the sampling distribution (sprinkling points) the same as the real distribution.
+Algorithm 1 describes the CEO-based token-expert co-scheduling algorithm in s-MoE. The algorithm models each
+expert/token’s choice of category as a D-dimensional multinomial distribution, and the probability of polynomial distribution
+is determined by pmatrix epandpmatrix tk. Under the initial conditions, the probability of selecting each class by
+expert/token is set to equal. In each iteration, several class label samples are first sampled according to the probability matrix
+(lines 25-26). The sampling function sample samples label points from the D-dimensional polynomial distribution (line
+11) and ensures that the number of experts in each category is equal (line 12-15). A relaxation factor βis used to ensure that
+the token frequency of each category is as equal as possible (lines 16-19). After the sampling is complete, the algorithm
+calculates the local activation frequency of each sample (line 27) as the score, and selects samples with top- ρ×100% scores
+to update the probability matrix (line 27–line 28). After completing the nsteps iteration, the algorithm takes the cluster
+with the highest probability for each expert/token as its cluster label (lines 32-33). The clsuter label of expert/token actually
+represents the number of the device to which expert/token is scheduled. At the same time, the value of the probability matrix
+is used as the confidence that each token belongs to its cluster. In practice, the hyperparameters βandρare set as 1.1 and 0.2.
+By now, the token-device scheduling table T, token-device scheduling confidence table Tp, and expert-device scheduling
+tableEare generated. After the scheduling table Eis constructed, the experts at each layer need to be rearranged according
+to the scheduling table during online inference service deployment. In addition, the s-MoE rearranges the gating module by
+column to implement transparent expert shuffle. The semantics of other layers are not affected. The rearranged experts are
+highly boxed, so that the token activation at each layer is de-cohesive, and the redundant network communication overhead
+caused by dispersive activation is reduced.
+B.1. Modeling Inter-layer Activation Conjugacy
+Leveraging the conditional probability model described in §A.1, we use a simple probability-based first-order Marcov chain
+to model the inter-layer activation conjugacy. To reduce the combination space, we model the activation device sequence
+rather than the activation expert sequence, because we only care about the device-level token rebatching. When looking
+2Kurtosis is a measure of the tailedness of a distribution. High Kurtosis indicates a token favors several fixed experts during multiple
+occurrences.
+13Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+Algorithm 1 CEO-based co-clustering algorithm
+input: nsteps : number of iteration steps; Cp: the token-2-expert confidence table; a: the token frequency; K: number of samples of
+each sampling; N: number of experts per layer; E: number of co-clusters; t: number of tokens; f: token load-balance factor; ρ:
+percentage of tokens to choose during each iteration
+output: E: expert labels; T: token labels; Tp: confidence of tokens choosing specific experts
+1pmatrix ep←ones( N,E)/ E
+2pmatrix tk←ones( t,E)/ E
+3Function sample( pmatrix ,nsamples ,type ,β):
+4 samples ←empty list
+5 repeat
+6 mask←ones( E)
+7 cnter←zeros( E), hash map (default value is 0)
+8 sample ←empty list
+9 forifrom0tolen( pmatrix )−1do
+10 p←norm( pmatrix [i]∗mask )
+11 cls←sample a value from a multinomial (1, E, p)
+12 iftype isexpert then
+13 cnter [cls]←cnter [cls] + 1
+14 ifcnter [cls] == N/E then
+15 mask [cls]←0
+16 iftype istoken then
+17 cnter [cls]←cnter [cls]+sum( Cp[i]∗a[i])
+18 ifcnter [cls]>=sum( Cp∗a)/ E∗βthen
+19 mask [cls]←0
+20 append clstosample
+21 append sample tosamples
+22 until generated nsamples samples
+23 return samples
+24
+25repeat
+26 epsamples ←sample( pmatrx ep,K,expert )
+27 tksamples ←sample( pmatrx tk,K,token ,f)
+28 scores ←summation of Tof the same co-clusters
+29 better samples ←samples with top- ρ×100% scores
+30 update pmatrix epandpmatrix tk
+31until iterating for nsteps steps
+32
+33E ←argmax( pmatrix ep, axis= 1)
+34T,Tp←argmax with values( pmatrix tk, axis= 1)
+backllayers, we construct a table shaped like [El, E], where the row of the table indicates the sequence of devices selected
+at the previous llayers and the column indicates the probability of activating the Edevices in the current layer. Like the
+§B shows, we also calculate the activation sequence to device table Aand the confidence table Ap. In practice, we set the
+number of looking-back layers as 2.
+B.2. Speculative Token Shuffling on the Fly Based on Fast Lookup
+To reduce the combination space, we model the activation device sequence rather than the activation expert sequence,
+because we only care about the device-level token rebatching.
+We implement a fast online re-batching mechanism based on fast looking-up tables (Algorithm 2). The algorithm queries
+the token-to-expert-cluster scheduling table Tand expert-cluster-sequence-to-expert-cluster table S, together with their
+confidences first. Then, the table with higher confidence is adopted to obtain the device ID list to which the current batch
+token needs to be shuffle (line 2). The algorithm performs the argsort operation to obtain the shuffle indicators (line 3) of the
+token. Then, the final shuffle indicators are obtained by grouping, aligning, and concatenation, and the token is shuffled
+(line 4 to line 7). After rebatching is complete, s-MoE calls the reduce-scatter operation. After MoE computing is
+complete, s-MoE runs the allgather operation to collect tokens. Finally, the order of tokens are shuffled back based
+on the previously calculated shuffle indicators (lines 14-18). The entire rebatch andresume processes do not involve
+14Speculative MoE: Communication Efficient Parallel MoE Inference with Speculative Token and Expert Pre-scheduling
+Algorithm 2 Online re-batching based on fast lookup
+input: B ∈Nn: Input token IDs; T: token-to-expert-cluster Schedule Table; A: expert-cluster-sequence-to-expert-cluster Schedule Table
+35Function rebatch tokens( B,T):
+36 devids←cond( Tp[B]>Ap[B],T[B],A[B])
+37 shfindices ←argsort( devids)
+38 gshfindices ←group bykey( shfindices )
+39 gshfindices ←align( gshfindices )
+40 shfindices ←concat( gshfindices )
+41 B ← B [shfindices ]
+42 return shfindices
+43
+44Function resume tokens( B, shf indices ):
+45 rshfindices ←argsort( shfindices )
+46 B ← B [rshfindices ]
+47
+48shfindices ←rebatch tokens( B,T)
+49Blocal←reduce scatter( B)
+50executing MoE layer B ←allgather( Blocal)
+51resume tokens( B,shfindices )
+load calculation and decision-making. They are directly completed by querying tables. The runtime overhead mainly
+involves large token matrix shuffling, which we optimize via high-performance kernels. The memory occupation of the
+scheduling tables is negligible. For example, for DeepSeek-V2, the memory space that the token-to-device table Toccupies
+is102400 ×60×2
+10242≈11.72MB (assuming the data format is int16 ).
+15

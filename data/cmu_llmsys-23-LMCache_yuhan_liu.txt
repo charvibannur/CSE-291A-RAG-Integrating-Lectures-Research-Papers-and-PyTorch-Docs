@@ -1,0 +1,570 @@
+Better KV Cache for LLM Serving
+Yuhan Liu
+04/09/2025
+1The Trends: LLM Inference will be HUGE
+Only ~10 companies are dedicated to training new LLMs.
+But 1,000,000s  of apps and orgs run LLM inference
+The significant computational requirements for INFERENCE 
+scaling now surpass the pre -training compute demands
+Jensen Huang, NVIDIA
+2Example: Inference Delay of LLMs is HIGH
+Running a 20K -Token input with Llama -3.1-70B on four A100 
+GPUs takes 4.8 SECONDS, with 4.2K tokens/sec throughput   
+3Previous Lecture: PagedAttention
+Application -level memory paging and virtualization for KV Cache
+4KV Cache in LLM
+Transformer Layer i
+-0.1
+0.3
+… 
+1.2-0.2
+0.5
+… 
+1.6-0.3
+0.7
+… 
+1.5
+KV Cache
+Is -0.5
+0.5
+… 
+1.6
+tomato a fruit
+5Better KV Cache Management for LLMs
+Serving Engines
+KV Cache 
+Management
+6
+Paged Attention And a better one!LMCache : KV Cache Software Library for Production Use
+Adopted by NINE industry companies
+73-10x delay savings in a lot of use cases (e.g., RAG and multi -round QA) 
+Store KV cache of reusable texts across various locations including 
+GPU, CPU DRAM, local Disk  , remote DiskThis Lecture: Prefill Optimization
+•In this lecture, we will focus on prefill optimizations within LMCache  
+in detail 
+•CacheGen  (SIGCOMM’24): Compressing KV cache into compact 
+bitstreams for faster transferring 
+•Compressing deltas
+•Layer -wise quantization
+•Smart Arithmetic Coding
+•CacheBlend  (EuroSys’25 Best Paper): Blending different KV 
+cache for different chunks in RAG for reducing inference latency
+•Selective recompute highly deviated tokens
+•Loading controller to pipeline recompute with loading
+8What’s Prefill? 
+9
+Challenge in KV Cache Management
+10Context
+Output
+1s DecodePrefill question 0.2sNetwork
+Llama 70BQuestion
+Prefill Context 9.5s
+Time3GbpsChallenge in KV Cache Management
+11
+Output Network
+Llama -70BQuestion
+Original
+KVcache
+~4.9GB
+TimeDecodePrefill questionLoading original KV cache 13s3Gbps
+1s0.2sWe want to reduce the size of the KV Cache to reduce prefill 
+computation and loading timeCompressing KV Cache for Faster Transferring
+12
+Output Network
+LLMQuestion
+TimeDecodeLoading compressed KV cache 2sCompressed
+KVcache
+0.5s Decompress3Gbps
+Prefill question
+1s0.2sPrefill with Compressed KV Cache
+K cacheOriginal KVcaches
+V cache
+Bitstreams
+GPULoadCompressGPU -based
+decompressionK cacheDecompressed KVcaches
+V cache
+Storage device
+13CacheGen  Moves Bits, not Tensors
+0101101010…0010K/V cache
+CacheGen  compresses tensor into BITSTREAMS  
+instead of Tensors!Bitstream formatTensor  Format
+14Opportunity #1:Nearby tokens have similar KV vectors
+15Transformer Layer i
+-0.1
+0.3
+… 
+1.21-0.2
+0.4
+… 
+1.22-0.25
+0.45
+… 
+1.3
+Is -0.5
+0.5
+… 
+1.5
+tomato a fruitKV vectors for nearby tokens are similar
+Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Technique #1: Compressing similar values 
+with deltas 
+For any token 𝑖atachannel and alayer
+Original:  |𝐾𝑖|,|𝑉𝑖|
+Delta:  |𝐾𝑖−𝑘𝑖−1|,|𝑉𝑖−𝑉𝑖−1|
+00.20.40.60.81
+0 2 4CDF
+Values (abs.)Original
+Delta
+16Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .K @ layer l
+and channel c
+…………
+Agroup oftokens
+Anchor token…
+ …Delta tensors
+Agroup oftokens
+Anchor token…
+ …Delta tensors
+……
+17Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Opportunity #2:Different Layers Have Different
+Sensitivity toCompression Errors
+00.20.40.60.811.2
+0 to 3 4 to 7 8 to 11 12 to 15 16 to 19 20 to 23LLM output
+accuracy
+Layer groupApplythesame amount ofrounding error todifferent layer groups
+18Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Technique #2: Applying More Aggressive 
+Quantization to Later Layers 
+19Layers 0 - 10
+Layers 10 - 20
+Layers 20 - 328 bits
+6 bits
+4 bits
+Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model serving." SIGCOMM 
+2024 Conference .Introduction to Arithmetic Coding
+Arithmetic Coding (AC) isalossless compression which encodes
+theinput data into bitstreams
+AC
+encoderProbability distribution
+{A:0.9, B:0.1}
+Symbols toencode
+AAAEncode
+first ” A”Any number
+in(0–0.9)Encode
+second ” A”Any number in
+(0–0.81)
+Any number in
+(0–0.729)Encode third ” A”
+0.01011010Important property forAC:iftheprobability distribution ismore
+skewed, theoutput willhave higher information gain (smaller
+size)
+20Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Opportunity #3:Grouping KV by channel and 
+layer is better than other groupings
+4.84.955.15.2Bits perelement
+Llama -7BNo grouping By token By channel By layer
+The information gain of grouping by their channel or layer >
+the information gain of grouping by tokens .Information gain
+21Technique #3:Smart AC by grouping KV by 
+channel and layer
+K tensor
+# of layers111111111111
+000000000000
+#oftokens222222222222
+Astrawman: putevery element together and doarithmetic coding
+22Technique #3:Smart AC by grouping KV by 
+channel and layer
+One group:
+One layer and
+one channel
+000000000
+222222222111111111K tensor
+# of layers111111111
+000000000
+#oftokens222222222
+23Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Prefill with Compressed KV Cache
+24K cacheOriginal KVcaches
+V cache
+Bitstreams
+GPULoadCompressGPU -based
+decompressionK cacheDecompressed KVcaches
+V cache
+Storage device•Compressing similar  
+values with deltas
+•Layer -wise 
+quantization
+•Smart Arithmetic 
+Coding
+Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Minimizing decompression overhead
+Itisslow todecompress thebitstreams totensor format with Arithmetic Coding
+Weimplement GPU -based decompression with CUDA kernels
+Wepipeline loading KVcaches with decompression
+25Chunk 
+#1
+TimeLoading KVcaches
+Decompressing KVcaches Chunk #
+1Chunk #
+2 …...
+Chunk #
+2Chunk #
+N-1Chunk
+#NChunk #
+3Chunk #
+N
+Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .Naïve Prefill
+ CacheGen
+CacheGen  Enabled
+7.16!! 2.7☺
+26Implementation: Compression function
+27def serialize( kv_cache, config, compressed_bits , chunk_size ) -> 
+CacheGenGPUEncoderOutput :
+# Split KV into separate K and V tensors
+…
+# Quantize the tensors
+….
+# Calculate CDFs for AC
+…
+# Initialize output buffers
+…
+# Process in chunks
+data_chunks  = []
+for i in range(0, chunk_size , CACHEGEN_CHUNK_SIZE):
+ ….
+https:// github.com /LMCache /LMCache /blob/dev/ lmcache /exp
+erimental/ storage_backend /naive_serde /cachegen_encoder.py28
+Implementation: Decompression function
+def from_bytes (bytestream ) -> torch.Tensor :
+# 1. Load encoded data from bytes
+…
+# 2. Move tensors to GPU
+…
+# 3. Get dimensions
+…
+# 4. Decode the data
+key, value = decode_function_gpu (…)
+# 5. Dequantize the tensors
+...
+https:// github.com /LMCache /LMCache /blob/dev/ lmcache /exp
+erimental/ storage_backend /naive_serde /cachegen_decoder.py29
+Implementation: Decompression CUDA Kernel
+// Main Decoding Kernel
+template<…>
+__global__ void decode_with_accessor_kernel (
+…
+) {
+// Shared memory allocation:
+// 1. CDF tensor [MAX_LP, BLOCK_SIZE]
+// 2. Bytestream  buffer [BLOCK_SIZE, OUTPUT_BUFFER_LENGTH_PER_THREAD]
+// 3. Lengths buffer [BLOCK_SIZE]
+// Main decoding loop:
+// 1. Initialize arithmetic coding state (low, high, value)
+// 2. For each token:
+// - Calculate count from current state
+// - Find symbol using binary search
+// - Update arithmetic coding state
+// - Handle renormalization
+}
+https:// github.com /LMCache /LMCache /blob/dev/ csrc/ac_dec.cuEvaluation
+Llama -2-70BLongChatNetwork
+(3Gbps)4 A40 w. Model Parallelism
+(Accuracy)
+System Metrics:
+Size ofKVcaches (MB)
+TTFT : Time -to-first-token (Total Prefill Delay)
+Workload Generator : Send different LongChat  requests sequentially
+30Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model 
+serving." SIGCOMM 2024 Conference .00.20.40.60.81
+0 1000 2000Accuracy
+Size ofKVcache (MB)CacheGen  Achieves More Efficiency with High 
+Accuracy Compared w/ Prefill and Quantization
+4.3x
+00.20.40.60.81
+0 2 4 6 8Accuracy
+Time -to-first-token (s)Prefill3.7x
+Size vs Accuracy TTFT vs Accuracy 
+31Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model serving." SIGCOMM 2024 Conference .CacheGen  Reduces Prefill Delay Under Different Conditions
+02468
+0.8 1.6 3.2 6.4 12.8 25.6 51.2TTFT (s)
+Bandwidth (Gbps)Prefill Quantization CacheGen
+32Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model serving." SIGCOMM 2024 Conference .CacheGen  further reduces size ofKV
+caches on top of other methods
+00.20.40.60.81
+0 500 1000Accuracy
+Size ofKVcache (MB)H2O CacheGen + H2O
+00.20.40.60.81
+0 500 1000 1500Accuracy
+Size ofKVcache (MB)LLMLingua
+CacheGen + LLMLingua
+33Liu, Yuhan, et al. " Cachegen : Kv cache compression and streaming for fast large language model serving." SIGCOMM 2024 Conference .This Lecture: Prefill Optimization
+•CacheGen  (SIGCOMM’24): Compressing KV cache into compact 
+bitstreams for faster transferring 
+•Compressing deltas
+•Layer -wise quantization
+•Smart Arithmetic Coding
+•CacheBlend  (EuroSys’25): Blending different KV cache for 
+different chunks in RAG for reducing inference latency
+•Selective recompute highly deviated tokens
+•Loading controller to pipeline recompute with loading
+34Challenge in RAG Systems 
+35
+User: “Can we use drones 
+        in agriculture?”
+Retriever
+Drone 
+Doc #1Drone 
+Doc #2Agriculture
+Doc #1Agriculture
+Doc #2
+LLM 
+Engine“Drones can …”
+RAG systems concatenate contexts 
+from multiple chunks to be fed into 
+LLM ➔ Long prefill delayDemo: Full Prefill vs CacheBlend
+Standard vLLM engineStandard vLLM  engine w. 
+CacheBlend
+36Existing solution 1: Prefix caching
+"Cristiano scored 8 goals at FIFA World 
+Cups."
+"Lionel Messi scored 13 goals at FIFA 
+World Cups."Doc 1 Doc 2 (Non -prefix) Query
+"Who scored more goals at FIFA 
+World Cups, Messi or Ronaldo?"
+"Lionel Messi scored more goals at FIFA 
+World Cups than Cristiano Ronaldo."
+ + [Query] KV cache Doc 
+1
+Doc 2Answer
+Prefix caching only achieves 50% hit rate even though 100% of the KV 
+cache are stored in GPU!
+37[1] Jin, Chao, et al. " Ragcache : Efficient knowledge caching for retrieval -augmented generation." arXiv  preprint 
+arXiv:2404.12457 (2024).
+[2] Gao, Bin, et al. " Attentionstore : Cost -effective attention reuse across multi -turn conversations in large 
+language model serving." ATC 24 .
+ Existing solution 2: Full KV reuse
+"Lionel Messi scored 13 goals at FIFA 
+World Cups."
+"Cristiano scored 8 goals at FIFA World 
+Cups."Doc 1 Doc 2 (Non -prefix) Query
+"Who scored more goals at FIFA 
+World Cups, Messi or Ronaldo?"
++ [Query] KV cache Doc 
+1Answer
+"The question is asking for information 
+about FIFA World Cups. The names of Messi 
+and Ronaldo are well -known …"KV cache Doc 
+2
+38Full KV reuse (naïve concatenation) gives bad generation quality!
+Gim, In, et al. "Prompt cache: Modular attention reuse for low -latency inference." MLSys  2024.Why KV reuse leads to bad quality? 
+Missing cross -attention
+Doc 1
+ Doc 2
+ + [Query]
+ + [Query]KV 
+cache 
+Doc 1KV 
+cache 
+Doc 2
+Doc 1 Doc 2Doc 1 Doc 2Cross -attention of 
+Doc1 and Doc2
+Normal attention matrix
+Doc 1 Doc 2Doc 1 Doc 2Cross -attention is ignored 
+when simply 
+concatenating KV cacheAttention matrix w. full KV 
+reuse
+(18, 7):
+The attention  between the 
+7-th token (in Doc 1) and 
+the 18-th token (in Doc 2).
+39Improved RAG System with CacheBlend
+: “Can we use drones 
+        in agriculture?”User
+ Retriever
+Drone 
+Doc #1Drone 
+Doc #2Agriculture
+Doc #1Agriculture
+Doc #2
+Fused 
+KV Cache
+LLM Engine
+“Drones   
+can …”
+Loading Controller
+CPU
+SSD
+Object Store
+KV Cache Blender
+40Yao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge Fusion." Proceedings of 
+the Twentieth European Conference on Computer Systems . 2025.Yao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.CacheBlend: Selective recomputation
+"Lionel Messi scored 13 goals at FIFA 
+World Cups. \n"
+"Cristiano scored 8 goals at FIFA World 
+Cups. \n"Doc 1 Doc 2 Query
++ [Query]"Who scored more goals at FIFA 
+World Cups, Messi or 
+Ronaldo? \n"
+Answer
+Reuse most KV cache while maintaining generation quality!"Lionel Messi scored more goals at FIFA 
+World Cups than Cristiano Ronaldo. \n" KV cache Doc 
+1Cross -attention
+KV cache Doc 
+2
+41CacheBlend : Recover positional embedding
+KV cache
+KV cacheKV cache
+KV cacheAt position 2
+Pre-ROPE 
+After ROPE
+Can be reused at any position!!ROPE: Rotary Positional Embedding
+42 Yao, Jiayi, et al. "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.CacheBlend : Selective recomputation
+(# total tokens)
+(# selected tokens)
+How to select 
+tokens?
+43
+Yao, Jiayi, et al. "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.Yao, Jiayi, et al. "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.Insight 1: The fraction of High -KV-Deviation 
+tokens is small
+Definition of KV deviation: 
+:  pre-computed KV cache 
+:  re-computed KV cache 
+44Definition of forward 
+attention deviation: 
+:  the user query CacheBlend : Recompute a small fraction of High -KV-Deviation tokens 
+greatly reduces forward attention deviation
+Definition of forward 
+attention: 
+Attention between the 
+context documents 
+and the query
+45 Yao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.Yao, Jiayi, et al. "CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.
+Spearman’s rank 
+correlation of KV 
+deviation
+Layer pairs
+Definition of Spearman’s rank 
+correlation: 
+Rank of KV deviation at layer l: [1, 2, 3, 4, 5]
+Rank of KV deviation at layer l+1: [2, 1, 3, 5, 4]
+d = [1, 2, 3, 4, 5] -  [2, 1, 3, 5, 4] = [ -1, 1, 0, -1, 0]n = 5
+46CacheBlend : High -KV-Deviation tokens are similar 
+across layersYao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.Loading Controller: Compute & load pipeline
+… …
+ Layer 1
+ Layer 2
+ Layer n
+…
+ L2
+ L3
+ Ln
+…
+L2
+ L3
+ Ln
+47Implementation of CacheBlend
+48
+def blend( self, layer_id , retrieved_k , retrieved_v , 
+valid_mask , original_positions ,
+fresh_q, fresh_k, fresh_v, positions , query_start_loc , 
+token_dim ):
+# Layer-specific handling:
+# Layer 0: Return fresh QKV directly
+…
+# Layer 1: Select tokens and prepare for blending
+…
+# Other layers: Perform actual blending with 
+positional encoding
+…https:// github.com /LMCache /LMCache /blob/dev/ lmcache /blend/ executor.pyEvaluation Setup
+•Dataset: "2WikiMQA" 
+•Top 6 chunks (512 tokens each)
+•1.5K sampled queries
+•Model: Llama 70B
+•GPU: 2x A40
+•KV cache initially stored on disk
+•Workload Generator: Sending requests to request queue at varying rate 
+(Query -per-Second)
+•Baselines:
+•Full Recompute 
+•Full KV reuse
+•Caching Prefix 49CacheBlend  achieves ~3X latency reduction
+F1 score
+0.00.20.4
+0 1 2 3Full KV 
+recomputeCaching 
+prefix onlyCacheBlend  
+(selective recompute)
+KV reuse
+(no recompute)
+Time to first token (TTFT) in seconds3x faster
+50Yao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.CacheBlend  achieves ~3X higher throughput
+TTFT(s)
+028
+0.0 0.25 0.50 0.75
+Request rate per second46Caching 
+prefix 
+onlyCacheBlend  
+(selective 
+recompute)Full KV 
+recompute
+3x higher 
+throughput
+51 Yao, Jiayi, et al. " CacheBlend : Fast Large Language Model Serving for RAG with Cached Knowledge 
+Fusion." Proceedings of the Twentieth European Conference on Computer Systems . 2025.This Lecture: Prefill Optimization
+•CacheGen  (SIGCOMM’24): Compressing KV cache into compact 
+bitstreams for faster transferring 
+•Compressing deltas
+•Layer -wise quantization
+•Smart Arithmetic Coding
+•CacheBlend  (EuroSys’25): Blending different KV cache for 
+different chunks in RAG for reducing inference latency
+•Selective recompute highly deviated tokens
+•Loading controller to pipeline recompute with loading
+52Walkthrough of a Simple Example in LMCache  
+53
+Set LMCache  config file
+python3 -m lmcache.experimental.server  
+localhost { port_number } cpuStart LMCache  storage backend
+LMCACHE_USE_EXPERIMENTAL=True
+LMCACHE_CONFIG_FILE= example.yaml  
+python3 offline_inference.py
+Run LMCache  with CacheGen54
+Importing LMCache  libraryInside offline_inference.py55
+Setting KV transfer
+config 
+Initializing vLLM  
+engine with 
+transfer configKey Functions in LMCache
+In LMCache /lmcache /experimental/ cache_engine.py
+56Compression Interface in LMCache
+https:// github.com /LMCache /LMCache /bl
+ob/dev/ lmcache /experimental/ storage_ba
+ckend /naive_serde /cachegen_encoder.py
+https:// github.com /LMCache /LMCache /bl
+ob/dev/ lmcache /experimental/ storage_ba
+ckend /naive_serde /cachegen_decoder.py
+57Key Takeaways
+•Two problems in KV Cache management:
+•How to quickly transfer KV cache to GPU memory? → Efficiently 
+compress and stream a KV cache [SIGCOMM'24]
+•How to quickly combine multiple KV caches? → Quickly combine KV 
+caches of multiple contexts [EuroSys’25 Best Paper]
+58LMCache
+KV Cache Layer
+Check out LMCache
+LLM Serving Layer
+Storage/Compute Layer
+Application Layerhttps://github.com/LMCache/LMCache
+CacheBlend CacheGen
+59Join our Slack channel!
+Contact me ( yuhanl@uchicago.edu ) if you are interested!

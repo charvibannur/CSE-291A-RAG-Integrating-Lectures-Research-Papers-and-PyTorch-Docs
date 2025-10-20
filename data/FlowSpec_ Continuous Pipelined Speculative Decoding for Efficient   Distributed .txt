@@ -1,0 +1,812 @@
+FlowSpec: Continuous Pipelined Speculative Decoding
+for Efficient Distributed LLM Inference
+Xing Liu1∗Lizhuo Luo2∗Ming Tang1Chao Huang3
+Abstract
+Distributed inference serves as a promising approach to enabling the inference
+of large language models (LLMs) at the network edge. It distributes the infer-
+ence process to multiple devices to ensure that the LLMs can fit into the device
+memory. Recent pipeline-based approaches have the potential to parallelize com-
+munication and computation, which helps reduce inference latency. However, the
+benefit diminishes when the inference request at the network edge is sparse, where
+pipeline is typically at low utilization. To enable efficient distributed LLM infer-
+ence at the edge, we propose FlowSpec , a pipeline-parallel tree-based speculative
+decoding framework. FlowSpec incorporates three key mechanisms to improve
+decoding efficiency: 1) score-based step-wise verification prioritizes more impor-
+tant draft tokens to bring earlier accpeted tokens; 2) efficient draft management to
+prune invalid tokens while maintaining correct causal relationship during verifi-
+cation; 3) dynamic draft expansion strategies to supply high-quality speculative
+inputs. These techniques work in concert to enhance both pipeline utilization
+and speculative efficiency. We evaluate FlowSpec on a real-world testbed with
+other baselines. Experimental results demonstrate that our proposed framework
+significantly improves inference speed across diverse models and configurations,
+achieving speedup ratios 1.28 ×-1.79×compared to baselines. Our code is publicly
+available at https://github.com/Leosang-lx/FlowSpec#
+1 Introduction
+Large language models (LLMs) have been widely adopted in intelligent applications in various
+domains such as education, finance, and Internet of Things (IoT). However, due to their massive size,
+LLM inference is commonly performed at the cloud, which can introduce significant response delay
+due to the long-distance transmission between users and centralized servers. Moreover, cloud-based
+inference often requires uploading sensitive user data, raising concerns of privacy leakage.
+As a result, deploying LLM inference at the network edge has emerged a promising approach to
+mitigate transmission overhead and enhance data privacy [Gill et al., 2025], particularly beneficial for
+industrial IoT and smart homes [Chang et al., 2021]. However, there are two main challenges. First,
+edge devices such as smartphones or embedded systems typically have limited memory (several GB),
+making it difficult to run advanced LLMs like LLaMA2 [Touvron et al., 2023a] or Qwen2 [Yang
+et al., 2024] with tens of billions of parameters (e.g., a 7B model requires over 14GB memory in
+FP16 precision). Second, their computational capabilities of edge devices are often restricted to CPUs
+or low-memory GPUs, causing high inference latency. While model compression techniques like
+pruning [Sanh et al., 2020] and quantization [Lin et al., 2024, Xiao et al., 2023] have been explored,
+they often incur performance degradation. A promising alternative is distribute inference [Ye et al.,
+∗Equal contribution1Department of Computer Science and Engineering, Southern University of Science
+and Technology2Department of Statistics and Data Science, Southern Univerisity of Science and Technology
+3School of Computing, Montclair State University. Corresponding author: tangm3@sustech.edu.cn
+Preprint. Under review.arXiv:2507.02620v2  [cs.DC]  14 Jul 20252024, Zhang et al., 2024], which partitions an LLM across multiple devices to enable collaborative
+and parallel inference, overcoming memory constraints and reduce inference latency.
+One widely adopted approach in distributed inference is pipeline parallelism (PP) [Huang et al.,
+2019, Zhang et al., 2024], which partitions a model into stages and assigns them to different de-
+vices. The pipeline then processes multiple inputs sequentially in a pipelined fashion, overlapping
+computation with communication and achieving more efficient communication compared to other
+parallel strategies1. However, the effectiveness of PP diminishes with sparse inference requests , which
+commonly occurs in LLM inference at the edge. Specifically, the generation of each token relies
+on the previous one, traditional autoregressive decoding cannot be parallelized across the pipeline
+stages. Therefore, sparse inference requests lead to insufficient parallelism across different stages
+of the pipeline, resulting in frequent pipeline cold starts (i.e., the period for the first input to pass
+through all pipeline stages) and hardware under-utilization. In addition, naive autoregressive LLM
+decoding is inherently I/O-bound [Leviathan et al., 2023] due to the low-FLOPs forward propagation
+and frequent access to KV cache. This issue is exacerbated in distributed scenarios, which can lead to
+additional communication overhead.
+To address this, speculative decoding (SD) [Leviathan et al., 2023] was proposed to accelerate LLM
+decoding. SD generates multiple draft tokens using a lightweight draft model and verifies them
+in parallel through the base LLM to ensure a correct inference output, enabling the generation of
+multiple tokens in a single forward pass. This alleviates the decoding I/O-bound under sparse-request
+scenario. However, traditional SD typically relies on synchronous draft generation and verification,
+which limits the efficiency of SD. In particular, the autoregressive draft generation on the draft model
+remains a bottleneck in SD, especially on resource-constrained edge devices where computation
+capacity and I/O bandwidth are both limited.
+To this end, researchers have investigated distributed speculative LLM decoding under pipelined
+architectures with asynchronous drafting and verification [Butler et al., 2024, Yin et al., 2025] to
+accelerate single-request LLM inference. By deploying the draft model and the base LLM on
+different devices, the current verification on the base LLM can be paralleled with the generation of
+new draft tokens on the draft model, achieving continuous SD on pipeline and thus reducing the
+cold starts overheads. However, designing a continuous speculative decoding on pipeline system
+is non-trivial. On the one hand, the tree-structure draft tokens should be managed carefully and
+efficiently, the invalid draft tokens should be discarded in real time while ensuring correct causal
+relationship between the remaining tokens. On the other hand, the asynchronous draft generation
+should maintain a continuous supply of high-quality draft for the pipeline to ensure a good continuity
+of speculative decoding in pipeline.
+In this work, we propose a pipeline-parallel tree-based speculative decoding framework for distributed
+LLM inference in edge environments. It extends tree-based SD into pipeline-based distributed
+inference system, enabling parallel inference among multiple devices to fully explore resource
+utilization potentials and reduce inference latency. Different from existing works, FlowSpec prioritizes
+high-scoring draft tokens through scores-based tree segmentation, and continuously feeds the pipeline
+with high-quality draft tokens based on the latest context, significantly improves the throughput of
+single-request decoding with pipeline parallelism. In addition, we propose tree pruning and expansion
+techniques to enable continuous verification by the base LLM, which reduces resource waste and
+avoids frequent cold starts. Our key contributions are summarized as follows:
+•FlowSpec adopts score-aware step-wise verification of the draft tree across the pipeline
+system. By evaluating draft tokens based on their confidence scores from the draft model,
+FlowSpec prioritizes high-probability draft tokens, enabling earlier token acceptance and
+accelerating speculative decoding.
+•FlowSpec introduces a fine-grained draft management mechanism to minimize redundant
+overhead in SD. It enables efficient collaborative pruning of invalid tokens and their KV
+cache across distributed devices, preserving causal relationships while maintaining memory
+efficiency. The system also proactively exits verification when all draft are invalid, avoiding
+unnecessary computation.
+1Other approaches include tensor parallelism (TP) [Shoeybi et al., 2019] and sequence parallelism (SP) [Li
+et al., 2021], while this paper focuses on PP. Please refer to Appendix B for detailed discussions.
+2•FlowSpec employs novel draft tree expansion strategies to sustain a steady supply of new
+draft tokens and improve the continuity of pipelined SD. Instead of simply expanding the
+current tree from the bottom, FlowSpec generates a new draft tree when the context is
+updated and merges it with the exisiting one, otherwise extends the current tree by selecting
+high-score nodes from the extended candidate drafts.
+•To evaluate FlowSpec, we deploy it on a real-world testbed and compare its performance
+with state-of-the-art baselines under various settings, including different base models and
+datasets. Experimental results show that FlowSpec achieves 1.35 ×–1.73×speedups in
+decoding compared to naive pipeline, demonstrating its effectiveness in improving inference
+performance.
+2 Related Works
+Distributed LLM Inference on Edge: Previous works proposed optimized TP-based approaches
+to mitigate its communication overhead in edge scenarios. For example, DeTransformer [Wei et al.,
+2024] reduces the number of communications in TP by modifying the model structure. V oltage [Hu
+and Li, 2024] reduces communication overhead in TP by reordering general matrix multiplications
+(GEMMs) and replacing All-Reduce with All-Gather. GALAXY [Ye et al., 2024] combines TP
+and SP for fine-grained computation-communication overlap. However, these TP-based approaches
+requires intra-layer communications for data synchronization in each decoder layer, leading to large
+communication and synchronization latency under the low-bandwidth connections between edges.
+Other studies proposed to deploy pipeline parallelism (PP) to enable collaborative LLM inference.
+SARATHI [Agrawal et al., 2023] proposes to split the input sequence into chunks and feeding them
+into the pipeline progressively, enabling parallel processing during the LLM prefilling phase to
+enhance performance. EdgeShard [Zhang et al., 2024] deploys LLMs at the edge using PP, reducing
+overhead through load balancing and improving system throughput by optimizing pipeline bubbles.
+However, these approaches may incur a large inference latency in sparse-request scenarios.
+Speculative Decoding: Speculative decoding (SD) [Leviathan et al., 2023] was proposed to accelerate
+LLM inference. Build upon this framework, many works focus on tree-based SD to improve token
+acceptance. For example, SpecInfer [Miao et al., 2024] and Medusa [Cai et al., 2024] generate
+multiple candidate tokens at each step, organizing them into a tree structure to enable parallel
+verification. Some works proposed leveraging contextual information to improve the quality of draft
+tokens by context-aware SD. EAGLE [Li et al., 2024a] predicts feature sequences of draft tokens
+by leveraging the hidden states from the base model as input and applies tree-based decoding in
+the construction of the draft token tree. GLIDE and CAPE [Du et al., 2024] utilize the KV cache
+of the base model to predict draft tokens and dynamically adjust the number of draft tokens based
+on confidence scores. Besides, EAGLE-2 [Li et al., 2024b] and OPT-Tree [Wang et al., 2025]
+dynamically construct draft trees based on accumulated confidence scores from the draft model,
+enabling context-aware and adaptive tree structures that improve both efficiency and generation
+accuracy. However, the above works focused on centralized inference scenarios, which cannot be
+directly applied to distributed inference at network edge.
+Distributed SD: Recent works proposed to extend SD into distributed inference system to address
+the sparse-request scenario. For example, Jupiter [Ye et al., 2025] partitions input sequences during
+prefilling and enables task-level parallel SD, while it applies to only specific outline-based tasks.
+AMUSD [McDanel, 2024] performs asynchronous drafting and verification on a two-stage pipeline,
+yet only supports sequence drafting. PipeInfer [Butler et al., 2024] fills pipeline bubbles with normal
+decoding and draft verification, but its simple generation of multiple draft trees introduces significant
+redundancy across stages. Additionally, its complicated draft management degrades system efficiency.
+Although recent work PipeDec [Yin et al., 2025] considered pruning and expansion of draft tree to
+implement continuous SD in pipeline. However, its layer-by-layer draft tree verification significantly
+limits the decoding throughput, and expanding the tree only from the bottom also restricts the
+continuity of context-aware SD approaches in pipeline.
+3···V1D0
+Tree generation
+Tree expansion PruningForward
+D2D transmission
+Broadcast pruning info𝑆(ସ)
+𝑆(ଷ)𝑆Draft Initialization Cont. SD Step
+V2
+V3𝑆(ଶ)
+𝑆(ଵ)Exit
+Draft Stage Verification Stage
+012345678
+𝑆(଴)𝑆(ଵ)𝑆(ଶ)Tree Generation
+0
+13
+246
+87 5Verification & Pruning
+0
+1
+24𝑝଴𝑝ଵ𝑝ଶ𝑆(଴)
+7
+01470
+1
+01Tree Expansion
+0
+21
+356
+4Merge
+0123456
+𝑆(ଵ)𝑆(ଶ)𝑆(ଷ)𝑆ୟୡୡ 𝑆(ଵ)𝑆(ଶ)𝑥୬ୣ୵𝑆(଴)𝑆(ଵ)𝑆(ଶ)
+𝑆(଴)𝑆(ଵ)
+𝑆(଴)
+Sampled Token
+Draft Token
+Accepted Token
+Rejected Token
+Appended TokenFigure 1: Overview of FlowSpec: An SD round includes a draft initialization step and multiple
+continuous SD steps. In draft initialization, segments of the initial generated draft tree are fed to V1
+to fill all pipeline stages. Once the first subsequence completes all inference stages, the subsequent
+continuous SD steps begin. In each step, the current tree is pruned based on the accepted tokens, and
+then expanded to generate new draft tokens that serve as input for the next step.
+3 Methodology
+3.1 FlowSpec Overview
+We propose a pipeline-parallel tree-based speculative decoding framework for distributed inference,
+called FlowSpec. It divides the layers of the base LLM into different pipeline stages. Motivated by
+evaluating draft tokens based on the output scores of the draft model from EAGLE-2 [Li et al., 2024b],
+FlowSpec incorporates a score-based draft tree step-wise verification framework with dynamic
+pruning and expansion strategies tailored for continuous speculative decoding in pipeline systems.
+Moreover, our framework can be generalized to other state-of-the-art tree-based SD approaches.
+Consider N+ 1devices in our system, each device corresponds to a pipeline stage. The first stage
+(device 0) employing the draft model is called the draft stage (denoted by "D0"), which is responsible
+for draft generation and accepting valid tokens based on the verification outputs from the base LLM.
+The base LLM is partitioned into Nconsecutive layers blocks distributed to the rest Ndevices, with
+device nserving as the n-thverification stage (denoted by "V n"). These stages are responsible for
+executing the corresponding forward pass during the verification of draft tokens in the base LLM. In
+Figure 1, the upper part shows devices 0toN= 3and their associated draft state D 0and verification
+stages V 1to V 3.
+To serve an LLM inference request, the input prompt is first processed in the prefilling phase . It is
+fed into the verification stages (i.e., forward pass from V1 to V N) to compute the initial KV cache
+and generate the first sampled token xnewthrough the base LLM. To accelerate the prefilling phase for
+long input sequence, we adopt chunked prefill [Agrawal et al., 2023], i.e., splitting the input prompt
+into segments and processing them sequentially across pipeline.
+After prefilling, the system starts the decoding phase (see Figure 1), which is the main focus of
+FlowSpec, including the score-based step-wise draft verification, together with efficient tree pruning
+and expansion design in real time. This phase consists of multiple SD rounds , each round contains
+an draft initialization step and a set of continuous SD steps:
+1) Draft Initialization Step: D0 first generates a large draft token tree Tbasebased on the latest
+sampled token xnew, and selects the top-scoring nodes to form a refined draft tree Tfor subsequent
+verification. Then, the associated draft sequence S(descending order of scores) of Tis divided into
+N+ 1segments S(0), ..., S(N), each with a length no greater than Lmax. This length is determined
+by hardware constraints. The draft segments S(0), ..., S(N)are then sequentially fed into the pipeline
+of the verification stages (i.e., from V1 to V N). For example, in Figure 1, D0 first sends S(0)to V1.
+Upon the completion of S(0)on V1, the intermediate result of S(0)is sent to V2 and then to V3. Once
+the first draft segment S(0)completes all verification stages and D0 receives the first verification
+4output of S(0), the continuous SD step starts. Note that the other segments are continuously being
+verified in the pipeline. For example, after S(0)completes V N,S(1)enters V Nfor execution.
+2) Continuous SD Steps: Once a draft segment S(i)completes all verification stages V 1to VN, its
+verification output (i.e., the next-token distribution from the base LLM) is sent to D0 for evaluation.
+With the verification result, D0 determines the accepted prefix and a new sampled token (i.e., xnew
+updates). The continuous SD steps of the current round continue and all other draft segments proceed
+to the next verification stage if the latest xnewsatisfies the continuous condition (detailed in 3.3).
+Otherwise, the current round terminates and a new round is initiated.
+In each continuous SD step, D0 executes the following two operations:
+•Tree Pruning: If D0 obtains a non-empty accepted prefix in the current continuous SD step,
+the current tree Tis pruned, retaining only the valid branches rooted at xnew. This process
+results in a smaller tree Tpr. Note that all stages need to perform pruning over its local
+replicas of Tto discard invalids draft tokens.
+•Tree Expansion: At each continuous SD step, D0 extends the current draft tree in two
+possible ways depending on whether new tokens are accepted. If new accepted tokens exist,
+D0 generate a new tree Tnewbased on the updated context and merges it with Tprto form
+the updated T. Otherwise, D0 continues the expansion of Tbased on extended Tbase. The
+newly generated draft portion then serves as the input for V1 in the next step.
+In the following discussion, unless specified, a draft sequence or segment implicitly includes its
+associated tree position IDs and tree attention mask.
+3.2 Draft Initialization: Score-Based Step-Wise Draft Verification
+In draft initialization step, D0 first constructs a draft token tree Tof depth d0withLnodes in the
+draft stage D0. Note that each node in the tree corresponds to a token in LLM inference, so we use
+"node" and "token" interchangeable in the following. The root of this tree is the sampled token xnew
+generated either in the prefilling phase or the previous rounds of SD. The construction of token tree
+contains the following procedures.
+Initial Tree Generation: D0 sets the root node (layer 0) to be the latest xnew. Then, it uses the draft
+model to generate the initial tree Tbase. The tree is initially rooted at xnewand extended layer by layer
+based on the nodes with the highest cumulative scores (inspired by Eagle-2 [Li et al., 2024b]) in each
+layer. The cumulative score for node niin a draft token tree is defined as follows:
+ccu(ni) =Y
+nj∈path(ni)c(nj) =cni×ccu(parent (nj)), (1)
+where path (ni)denotes all ancestor nodes along the path from the root node to ni. Since the
+draft model is an approximation of the base LLM, this cumulative score provides a nice estimated
+acceptance score of a draft token. To construct the next layer of Tbase, the draft model takes the tokens
+from the previous layer as input and generates the corresponding next-token scores. Base on these
+scores, the top- knext tokens for each input token form the new layer of Tbase. Among these, the top- k
+nodes with the highest cumulative scores are selected to continue the expansion of the next layer. D0
+expands Tbaseuntil it reaches layer d0.
+Score-Based Draft Segmentation: Then the top- Lnodes in Tbasewith the highest cumulative scores
+are selected to obtain the refined draft token tree T, with the corresponding draft token sequence S
+sorted in descending order of the draft token scores. Since a node always has a higher cumulative score
+than its children, the selected nodes can form a connected tree T. Then Sis split into consecutive,
+equal-length draft segments S(0), ..., S(N)with maximum length of lmax. These segments are then
+fed into the verification pipeline one after the other.
+Sorting the nodes based on their cumulative score have two advantages. First, since the cumulative
+score of a node is an estimate of its importance, the descending-score order prioritizes the verification
+of higher-scoring draft tokens, increasing the likelihood accepting more tokens in advance, thereby
+enabling faster and deeper expansion of the draft token tree. Second, since a parent node always has a
+higher score than its children, this ordering of the draft segments establishes a valid topological order
+of the tree T, which ensures correct causal relationship between tokens in the subsequent step-wise
+verification (i.e., a preceding token must be ahead of its successors in verification).
+50
+1 2
+3 4 5
+7 8 6
+012345678
+𝑆(଴)𝑆(ଵ)𝑆(ଶ)𝑝଴𝑝ଵ𝑝ଶ0
+1 2
+𝑥0
+1 2
+3 4 5
+7 8 6
+3 67
+𝑆(ଵ)𝑆(ଶ)0
+1 2
+012
+𝑆(ଵ)𝑆(ଶ)
+𝑆(଴)Verify Prune Reindex
+if 𝑥＝token(3)Draft token
+Sampled token
+Accepted token
+Pruned tokenFigure 2: An example of tree pruning showing by the indices of the draft tokens. The above part is of
+the tree form, and the below is the sequence. In this case, Iacc={0,1}andIdraft={3,6,7}.
+3.3 Continuous SD: Tree Pruning
+In each continuous SD step, once a draft segment S(i)completes all verification stages, D0 receives
+the corresponding final hidden state of the base LLM, and computes the output probability of S(i).
+By comparing the output distributions from the draft model and the base model, tokens that leads to
+an aligned distribution are accepted, denoted by Sacc. Meanwhile, an additional sampled token xnew
+is generated based on the output probability and Sacc. After that, D0 determines whether to continue
+the current SD round according to the continuous condition . The continuous condition is defined as:
+continuous _condition :=∃nnew∈ Ts.t.pathT(nnew) ={Sacc||xnew}, (2)
+where " ||" denotes sequence concatenation. If xnewsatisfies the continuous condition, which means
+xnewis already in the verification pipeline corresponding to the node nnew∈ T, thus the current SD
+round continues. Otherwise, all remaining draft tokens become invalid , therefore FlowSpec exits
+the current SD round and initiate a new one.
+The tree pruning process is illustrated in Figure 2. To prune T, D0 identifies all invalid branches
+according to Saccandxnew. The nodes to retain include nnewand all its descendant nodes in T, and
+these nodes form the pruned tree Tprwith root node nnew. The corresponding pruned sequence Spr
+preserves the original order of the retaining tokens in the origin sequence S.
+Besides D0, V1 to V Nalso need consistent pruning to update their local draft segments. Let Iacc
+andIprdenote the ordered sets of indices of the accepted tokens and retaining tokens of Tprin the
+sequence Sbefore pruning, respectively. D0 sends the full retaining set Iretain =Iacc∪ I pras the
+pruning information to all downstream stages V1 to V N. Letlglodenote the global context offset (i.e.,
+the total number of tokens of the full input prompt and all accepted tokens), which will be updated by
+lglo=lglo+|Sacc|after each pruning procedure. Then each element in Iretain is incremented by lglo
+such that the element indicates the position index of the associated token in the global sequence. For
+each stage, the pruning operation is applied to both the local draft segment and KV cache based on
+the following two index sets:
+•Segment Pruning: The local positions in the current draft segment corresponding to the
+tokens that need to be retained in the pruned tree Tpr, defined as Ilocal ={i−lcache|i∈
+Iretain, lcache≤i < l cache +ls}. Here, lcache andlsdenote the length of the KV cache and the
+length of the draft segment at the current stage, respectively. The indices are mapped from
+the global positions to local draft segment positions by substracting lcache.
+•KV cache pruning: The indices of nodes (tokens) to be retained in the KV cache are those
+associated with indices in set Iincache ={i∈ I retain|i < l cache}. Since KV cache includes the
+complete context, the indices used for cache pruning correspond to global positions.
+To prune a local draft segment (including the associated hidden states, tree position IDs and attention
+mask), we retain only the entries corresponding to Ilocal, and the full draft sequence Sis accordingly
+pruned to be Spr. To prune the KV cache, we first retain the KV cache entries corresponding to the
+previous context (i.e., positions before lglo). For the KV cache associated with the draft tokens (i.e.,
+positions ≥lglo), we only keep the entries whose indices match Iincache . This enables each stage to
+remove redundant KV cache entries and intermediate data related to pruned tokens, ensuring both
+consistency and memory efficiency in subsequent decoding steps.
+In this way, FlowSpec efficiently performs collaborative pruning on the irregular draft segments
+across the distributed pipeline system with low communication overhead, while maintaining correct
+causal relationship between all tokens throughout the entire lifecycle of the growing draft token tree.
+63.4 Continuous SD: Tree Expansion
+Unless the current SD round terminates, D0 performs tree expansion at the end of each continuous
+SD step. This process expands the current draft token tree to sustain continuous supply of new draft
+tokens for verification and hence reduces the chance of cold starts in pipeline parallelism. There are
+two possible situations for tree expansion as follows:
+Context-aware Expansion. D0 performs context-aware expansion immediately after finishing the
+pruning operation. As the existing draft tokens in Tprare generated based on stale context, they have
+limited reliability for SD under the updated context. In contrast, new draft tokens incorporate more
+up-to-date contextual information, making them more accurate and reliable. Therefore, instead of
+expanding the pruned tree from the bottom, FlowSpec grows a new tree from the current root node
+and merge them together, effectively improving the continuity for SD on pipeline.
+I
+am will
+fine going go
+,I
+am want
+fine
+forI
+am will
+fine going go
+, forwant
+to toPruned Tree New Tree Merged Tree
+Root node/ Sampled token Draft token node Duplicate node Appended Draft tokenIam will fine going go, for want to Expanded draftsequence
+Figure 3: An example explaining merging the old pruned
+draft tree and the newly generated draft tree.In addition to the pruned tree Tpr
+rooted with xnew, D0 generates a new
+treeTnewbased on the newly accepted
+Saccand sampled xnew, with size Lexp
+anddexpfrom the root node xnew. The
+generation of Tnewis of the same man-
+ner as generating the initial Tin draft
+initialization step ( Tbaseis also up-
+dated with a new one, and Tnewis a
+subtree of Tbase). Then, TprandTnew
+are merged as Tmeras the update to T.
+Specifically, the nodes in Tnewthat are
+new to Tprare selected and appended
+toTprasTmer. We determine whether
+a node in Tnewis a new draft token
+by checking if the path corresponding to the node exists in Tpr. D0 preloads the path set of
+TprasPpr={pathTpr(n)|n∈ T pr}, utilizing a hash table to efficiently store and distinguish
+nodes corresponding to different paths. Then the set of new draft tokens can be expressed by
+Nnew={n∈ T new|pathTnew(n)/∈ P pr}. To get the expanded draft sequence corresponding to
+Tmer, the new draft tokens are appended to the end of the existing complete draft sequence Spras
+Smer={Spr||Sapp}. Here Sappis the draft sequence of Nnew, which will serve as the new draft input
+for verification pipeline. An illustration is shown in Fig. 3. This process guarantees that the draft
+tokens already in the pipeline retain their original sequential order and appear at the front of the
+merged draft sequence, ensuring accurate causal structure between the current set of draft tokens.
+Score-aware Expansion . Since pruning operations are applied to the remaining draft segments,
+some segments received by the D0 may already be reduced to empty sequence. In this case, the
+context is not updated, further propagating the empty sequence can cause continuous idle pipeline. To
+ensure a continuous supply of new draft tokens, D0 also expands Tat this point. Specifically, D0 first
+expands the initial tree Tbase(which is preserved for tree expansion). Starting from the deepest layer,
+Tbaseis extended by additional dselayers (as mentioned in 3.2), forming a deeper tree T′
+0. From this
+extended T′
+0, we exclude all nodes already exists in the current tree T, and select the top- Lsenodes
+with the highest cumulative scores among the remaining ones. These nodes are then appended to the
+current tree T, similar to the appending tokens in tree merging. Their corresponding draft sequence
+Sseare then fed into pipeline as the new supplied draft tokens. The current draft sequence is also
+updated with S← {S||Sse}. In this way, we effectively verifies a larger draft tree, leading to a higher
+acceptance rate of draft tokens while ensuring a steady stream of new drafts for pipelined verification.
+4 Experiment
+4.1 Setups
+Hardware. The experiments were conducted on 5 NVIDIA Jetson Orin Nano units, each
+equipped with 8GB of RAM, interconnected via a local area network.
+Models and Datasets. We evaluated the performance of FlowSpec on 4 models within the EAGLE-2
+framework, i.e., LLaMA-Chat 7B, 13B [Touvron et al., 2023b] and Vicuna-v1.3 7B, 13B [Chiang
+7et al., 2023]. The weights of the draft models and base models are sourced from huggingface.co .
+The method’s performance is validated across 6 downstream tasks, i.e., multi -turn dialogue, code
+generation, mathematical reasoning, instruction understanding, text summarization, and question
+answering. The associated datasets are MT -bench [Zheng et al., 2023], HumanEval [Chen et al.,
+2021], GSM8K [Cobbe et al., 2021], Alpaca [Taori et al., 2023], CNN/Daily Mail [Nallapati et al.,
+2016], and Natural Questions [Kwiatkowski et al., 2019], respectively.
+Baselines. We compare FlowSpec against 2 representative baselines, i.e., Naive Pipeline Parallelism
+(Naive PP) andPipeDec . Naive PP partitions the speculative decoding model distributed across
+multiple devices, enabling the input data to be processed in a pipelined fashion. PipeDec [Yin et al.,
+2025] is a state-of-the-art method for distributed speculative decoding model that employs pipeline
+parallelism in resource constrained environment. We will show in the following that FlowSpec
+significantly outperforms the baselines in both inference efficiency and resource utilization.
+Metrics. We consider the following metrics:
+•Average Acceptance Length per Second ξ:The average number of tokens generated per
+second, which reflects the overall operational efficiency of the inference system.
+•Speedup Ratio (SR): The inference acceleration achieved compared to the baselines.
+To ensure accurate time measurements, each method undergoes the same warm -up procedure prior to
+testing in order to equalize cache hit rates.
+Implementation Details. We build a testbed using NVIDIA JetPack 5.1.2 (L4T R35.4.1 ) with
+CUDA 11.4 support. We employ the ARM -aarch64–specific PyTorch 1.11.0+cu114 [Paszke et al.,
+2019], installed via NVIDIA’s official Python 3.8 wheel. Our core codebase extends the original
+EAGLE -2 implementation. To deploy the 13B parameter model on the rest 4 NVIDIA Jetson Orin
+Nano units, we employed W4A16 quantization (4-bit storage while preserving 16-bit computation
+precision) via the bitsandbytes library integrated in Hugging Face transformers .More Detailed
+experimental settings are provided in the Appendix.
+4.2 Main Results
+Table 1 presents the results of FlowSpec and the baselines across multiple tasks on 4 LLM models.
+From the table, we observe that FlowSpec significantly outperforms both Naive PP and PipeDec
+on a variety of tasks. Across multiple tasks, FlowSpec achieves an average speedup of up to 1.79×
+compared to Naive PP on the mathematical reasoning task.
+Temperature = 0. Under the greedy sampling strategy, FlowSpec’s average performance on each
+model surpasses that of PipeDec and Naive PP. Specifically, on the LLaMA2-Chat 13B model, it
+achieves a 1.65 ×speedup over Naive PP, whereas PipeDec only attains a 1.21 ×speedup under
+the same conditions. More specifically, FlowSpec achieves a 1.70 ×speedup on the question an-
+swering (Natural Questions) dataset with the LLaMA2-Chat 13B model as well, demonstrating the
+effectiveness of our method. It is evident that FlowSpec delivers nearly consistent speedups across
+different tasks. For example, on the Vicuna-v1.3 7B model, it approximately achieves the average
+speedup ratio of 1.32 ×across these tasks, demonstrating that our method is effective and exhibits
+both robustness and stability under a variety of conditions. Overall, FlowSpec illustrates effectiveness
+and robustness at temperature = 0.
+Temperature = 1. Table 1 highlights FlowSpec’s remarkable advantage: on the LLaMA2-Chat
+13B model, it runs 1.71 ×faster than Naive PP at temperature = 1. On the Vicuna-v1.3 13B, it
+delivers a 1.79 ×boost on the math reasoning task (GSM8K). Moreover, it generates 7.88 tokens/s
+on the LLaMA2-Chat 7B on average, demonstrating outstanding efficacy. Owing to the uncertainty
+inherent in stochastic sampling, the acceleration achieved across different datasets and models exhibits
+appreciable variability.
+When executing text summarization on CNN/Daily Mail with temperature=1 on Vicuna-v1.3 7B,
+FlowSpec’s performance is marginally inferior to that of PipeDec. This is mainly due to the high
+decoding stochasticity and low draft acceptance rates from the draft model, leading to frequent cold
+starts in both approaches. Compared to FlowSpec, PipeDec’s layer-wise expansion strategy incurs
+slightly lower cold-start overhead, which may contribute to its modest performance gain in such
+cases. Nevertheless, FlowSpec demonstrates overall superiority and efficiency.
+8Table 1: Main Results , which contain the performance comparison between FlowSpec and the
+baselines across 6 datasets under two sampling settings (Temperature = 0 or 1, 0 means greedy
+sampling). We select 20 samples for each dataset and limit the length of the generated sequences to
+256. V and L2 are short for LLaMA2-Chat and Vicuna-v1.3, respectively. 7B and 13B denote the
+number of parameters of the respective models.
+MT-bench HumanEval GSM8K Alpaca CNN/DM Natural Ques. Mean
+Model Method ξ↑ SR↑ ξ↑ SR↑ ξ↑ SR↑ ξ↑ SR↑ ξ↑ SR↑ ξ↑ SR↑ ξ↑ SR↑
+Temperature = 0
+V 13BNaive PP 1.58 1.00 × 1.56 1.00 × 1.42 1.00 × 1.25 1.00 × 1.15 1.00 × 1.03 1.00 × 1.33 1.00 ×
+PipeDec 1.68 1.06 × 1.70 1.09 × 1.67 1.18 × 1.62 1.30 × 1.45 1.26 × 1.51 1.47 × 1.60 1.20 ×
+FlowSpec 2.55 1.61 × 2.54 1.63 × 2.35 1.65 × 2.05 1.64 × 1.82 1.58 × 1.74 1.69 × 2.18 1.64 ×
+V 7BNaive PP 7.69 1.00 × 7.60 1.00 × 6.83 1.00 × 6.27 1.00 × 4.81 1.00 × 5.04 1.00 × 6.37 1.00 ×
+PipeDec 7.61 0.99 × 7.58 1.00 × 7.49 1.10 × 7.27 1.16 × 6.19 1.29 × 6.81 1.35 × 7.16 1.12 ×
+FlowSpec 9.88 1.29 × 9.47 1.28 × 8.91 1.31 × 8.28 1.32 × 6.43 1.34 × 7.17 1.42 × 8.40 1.32 ×
+L2 13BNaive PP 1.45 1.00 × 1.58 1.00 × 1.37 1.00 × 1.25 1.00 × 1.12 1.00 × 1.13 1.00 × 1.31 1.00 ×
+PipeDec 1.64 1.13 × 1.69 1.07 × 1.63 1.19 × 1.60 1.28 × 1.47 1.29 × 1.55 1.37 × 1.59 1.21 ×
+FlowSpec 2.36 1.63 × 2.52 1.60 × 2.26 1.65 × 2.10 1.68 × 1.82 1.63 × 1.92 1.70 × 2.16 1.65 ×
+L2 7BNaive PP 6.86 1.00 × 7.29 1.00 × 6.23 1.00 × 6.19 1.00 × 4.77 1.00 × 5.29 1.00 × 6.10 1.00 ×
+PipeDec 7.33 1.07 × 7.49 1.02 × 7.25 1.16 × 7.19 1.16 × 6.17 1.29 × 6.78 1.29 × 7.03 1.15 ×
+FlowSpec 9.02 1.31 × 9.51 1.30 × 8.50 1.36 × 8.49 1.37 × 6.41 1.34 × 7.46 1.41 × 8.23 1.35 ×
+Temperature = 1
+V 13BNaive PP 1.31 1.00 × 1.41 1.00 × 1.17 1.00 × 1.06 1.00 × 1.01 1.00 × 0.97 1.00 × 1.16 1.00 ×
+PipeDec 1.64 1.25 × 1.64 1.16 × 1.59 1.36 × 1.55 1.46 × 1.41 1.40 × 1.49 1.54 × 1.55 1.34 ×
+FlowSpec 2.24 1.71 × 2.36 1.67 × 2.10 1.79 × 1.85 1.75 × 1.66 1.64 × 1.57 1.62 × 1.96 1.70 ×
+V 7BNaive PP 6.34 1.00 × 6.31 1.00 × 5.71 1.00 × 5.19 1.00 × 4.47 1.00 × 4.38 1.00 × 5.40 1.00 ×
+PipeDec 7.31 1.15 × 7.38 1.17 × 7.12 1.25 × 6.87 1.32 × 5.94 1.33 × 6.56 1.50 × 6.86 1.27 ×
+FlowSpec 8.26 1.30 × 8.71 1.38 × 7.88 1.38 × 7.37 1.42 × 5.96 1.33 × 6.32 1.44 × 7.42 1.37 ×
+L2 13BNaive PP 1.35 1.00 × 1.52 1.00 × 1.30 1.00 × 1.20 1.00 × 1.07 1.00 × 1.15 1.00 × 1.26 1.00 ×
+PipeDec 1.65 1.22 × 1.70 1.12 × 1.63 1.25 × 1.59 1.32 × 1.47 1.37 × 1.58 1.37 × 1.60 1.26 ×
+FlowSpec 2.32 1.72 × 2.63 1.73 × 2.22 1.71 × 2.04 1.70 × 1.72 1.61 × 1.99 1.73 × 2.15 1.71 ×
+L2 7BNaive PP 6.49 1.00 × 6.64 1.00 × 6.10 1.00 × 5.90 1.00 × 4.50 1.00 × 5.24 1.00 × 5.81 1.00 ×
+PipeDec 7.30 1.12 × 7.17 1.07 × 7.36 1.20 × 7.22 1.22 × 6.13 1.36 × 6.95 1.32 × 7.02 1.20 ×
+FlowSpec 8.53 1.31 × 8.90 1.34 × 8.37 1.37 × 8.01 1.36 × 6.14 1.36 × 7.31 1.40 × 7.88 1.36 ×
+Table 2: Ablation Results using the LLaMA2-Chat 7B model, showing average acceptance length
+per second ( ξ) and latency across four datasets under two sampling settings (Temperature = 0 or 1).
+We select 10 samples from each dataset.
+MT-bench HumanEval GSM8K Alpaca Mean
+Method ξ↑ Latency ↓ ξ↑ Latency ↓ξ↑ Latency ↓ξ↑ Latency ↓ξ↑ Latency ↓ SR↑
+Temperature = 0
+Naive PP 7.11 25.64 7.41 51.63 6.48 35.17 6.37 43.03 6.84 38.87 1.00 ×
+Pruned PP 8.52 20.89 8.73 42.66 8.19 27.07 8.22 31.69 8.42 30.58 1.23 ×
+FlowSpec w/o SBD 9.31 34.25 9.33 42.10 8.61 26.84 8.75 29.94 9.00 33.28 1.17 ×
+FlowSpec 9.61 18.35 10.00 37.38 8.93 25.20 8.85 30.43 9.35 27.84 1.37 ×
+Temperature = 1
+Naive PP 6.95 28.00 6.72 59.94 6.37 39.70 6.15 42.82 6.55 42.62 1.00 ×
+Pruned PP 8.17 21.51 7.94 51.08 7.84 27.75 7.64 33.96 7.90 33.58 1.21 ×
+FlowSpec w/o SBD 9.06 18.59 8.67 45.20 8.39 26.95 7.86 28.59 8.50 29.83 1.30×
+FlowSpec 9.10 19.53 9.15 38.87 8.64 25.85 8.01 35.27 8.73 29.88 1.33×
+4.3 Ablation Study
+Table 2 presents the results for different module configurations of FlowSpec on multiple tasks using
+LLaMA2-Chat 7B under two sampling conditions (Temperature = 0 or 1). Naive Pipeline Parallelism
+(Naive PP) follow the same setting above. Pruned Pipeline Parallelism (Pruned PP) extends Naive
+PP by leveraging Tree Pruning on the speculative decoding tree structure and incorporating early-exit
+strategies. FlowSpec w/o Score-Based Draft (FlowSpec w/o SBD) refer to the variant that applies
+Tree Expansion on top of Pruned PP as well as omitting the Score-Based Draft Segmentation. The
+different combinations of components confirm the effectiveness of each module.
+Score-Based Draft Segmentation. Comparing FlowSpec to FlowSpec w/o Score-Based Draft in
+Table 2 directly highlights the positive impact of the Score-Based component. By sorting draft tokens
+according to contextual scores, Score-Based Draft Segmentation increases the accepted rate within
+segments and enhances the quality of expansion drafts. As a result, FlowSpec achieves an average
+throughput of 8.49 tokens/s at temperature = 0 and 8.02 tokens/s at temperature = 1, both of which
+exceed the performance of the method without Score-Based Draft Segmentation.
+9Tree Pruning. The difference between Naive Pipeline Parallelism and Pruned Pipeline Parallelism
+highlights the effectiveness of tree pruning: enabling pruning yields a 1.25 ×speedup over Naive PP,
+demonstrating a clear performance improvement. Redundant computations in tree-based speculative
+decoding substantially degrade inference efficiency.
+Tree Expansion. Although the effectiveness of Tree Expansion is largely contingent on the draft
+model’s quality, our experiments nonetheless demonstrate substantial speedups. Notably, on the
+multi-turn dialogue task, FlowSpec without Score-Based Draft achieves throughputs of 9.06 and 9.31
+tokens per second at temperature settings of 0 and 1, respectively—far surpassing Pruned Pipeline
+Parallelism. This indicates that when the draft model is sufficiently capable, Tree Expansion delivers
+pronounced performance gains.
+5 Conclusion
+In this work, we proposed FlowSpec, a pipeline-parallel tree-based speculative decoding framework,
+which reduces the LLM inference latency in distributed system at network edge with sparse requests.
+To improve resource utilization and avoid cold starts of pipeline, we introduced three main techniques
+to achieve efficient continuous speculative decoding: (i) score-based step-wise verification to bring
+earlier accepted tokens in speculative decoding (ii) efficient draft management including tree pruning
+and early stop to eliminate redundant device computations. (iii) real-time tree expansion to ensure
+a continuous flow of high-quality draft tokens, maintaining decoding continuity. To evaluate the
+system performance, we constructed a testbed. Experimental results demonstrate the superiority of
+our method over the baseline.
+References
+Amey Agrawal, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav S Gulavani, and Ra-
+machandran Ramjee. Sarathi: Efficient llm inference by piggybacking decodes with chunked
+prefills. arXiv preprint arXiv:2308.16369 , 2023.
+Branden Butler, Sixing Yu, Arya Mazaheri, and Ali Jannesari. Pipeinfer: Accelerating llm in-
+ference using asynchronous pipelined speculation. In SC24: International Conference for
+High Performance Computing, Networking, Storage and Analysis , pages 1–19, 2024. doi:
+10.1109/SC41406.2024.00046.
+Tianle Cai, Yuhong Li, Zhengyang Geng, Hongwu Peng, Jason D. Lee, Deming Chen, and Tri
+Dao. Medusa: Simple llm inference acceleration framework with multiple decoding heads. In
+Proceedings of the 41st International Conference on Machine Learning , ICML’24. JMLR.org,
+2024.
+Zhuoqing Chang, Shubo Liu, Xingxing Xiong, Zhaohui Cai, and Guoqing Tu. A survey of recent
+advances in edge-computing-powered artificial intelligence of things. IEEE Internet of Things
+Journal , 8(18):13849–13875, 2021. doi: 10.1109/JIOT.2021.3088875.
+Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Pondé, Jared Kaplan, Harrison
+Edwards, Yura Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger,
+Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick
+Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mo Bavarian, Clemens Winter, Philippe
+Tillet, Felipe Petroski Such, David W. Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth
+Barnes, Ariel Herbert-V oss, William H. Guss, Alex Nichol, Igor Babuschkin, Suchir Balaji,
+Shantanu Jain, Andrew Carr, Jan Leike, Joshua Achiam, Vedant Misra, Evan Morikawa, Alec
+Radford, Matthew M. Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob
+McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating
+large language models trained on code. ArXiv , abs/2107.03374, 2021. URL https://api.
+semanticscholar.org/CorpusID:235755472 .
+Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng,
+Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna:
+An open-source chatbot impressing gpt-4 with 90%* chatgpt quality, March 2023. URL https:
+//lmsys.org/blog/2023-03-30-vicuna/ .
+10Karl Cobbe, Vineet Kosaraju, Mo Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman.
+Training verifiers to solve math word problems. ArXiv , abs/2110.14168, 2021. URL https:
+//api.semanticscholar.org/CorpusID:239998651 .
+Cunxiao Du, Jing Jiang, Xu Yuanchen, Jiawei Wu, Sicheng Yu, Yongqi Li, Shenggui Li, Kai Xu,
+Liqiang Nie, Zhaopeng Tu, and Yang You. Glide with a cape: a low-hassle method to accelerate
+speculative decoding. In Proceedings of the 41st International Conference on Machine Learning ,
+ICML’24. JMLR.org, 2024.
+Sukhpal Singh Gill, Muhammed Golec, Jianmin Hu, Minxian Xu, Junhui Du, Huaming Wu,
+Guneet Kaur Walia, Subramaniam Subramanian Murugesan, Babar Ali, Mohit Kumar, et al.
+Edge ai: A taxonomy, systematic review and future directions. Cluster Computing , 28(1):1–53,
+2025.
+Chenghao Hu and Baochun Li. When the edge meets transformers: Distributed inference with
+transformer models. In 2024 IEEE 44th International Conference on Distributed Computing
+Systems (ICDCS) , pages 82–92, 2024. doi: 10.1109/ICDCS60910.2024.00017.
+Yanping Huang, Youlong Cheng, Ankur Bapna, Orhan Firat, Dehao Chen, Mia Chen, HyoukJoong
+Lee, Jiquan Ngiam, Quoc V Le, Yonghui Wu, et al. Gpipe: Efficient training of giant neural
+networks using pipeline parallelism. Advances in neural information processing systems , 32, 2019.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris
+Alberti, Danielle Epstein, Illia Polosukhin, Matthew Kelcey, Jacob Devlin, Kenton Lee, Kristina N.
+Toutanova, Llion Jones, Ming-Wei Chang, Andrew Dai, Jakob Uszkoreit, Quoc Le, and Slav Petrov.
+Natural questions: a benchmark for question answering research. Transactions of the Association
+of Computational Linguistics , 2019.
+Yaniv Leviathan, Matan Kalman, and Yossi Matias. Fast inference from transformers via speculative
+decoding. In International Conference on Machine Learning , pages 19274–19286. PMLR, 2023.
+Shenggui Li, Fuzhao Xue, Chaitanya Baranwal, Yongbin Li, and Yang You. Sequence parallelism:
+Long sequence training from system perspective. arXiv preprint arXiv:2105.13120 , 2021.
+Yuhui Li, Fangyun Wei, Chao Zhang, and Hongyang Zhang. EAGLE: Speculative sampling requires
+rethinking feature uncertainty. In International Conference on Machine Learning , 2024a.
+Yuhui Li, Fangyun Wei, Chao Zhang, and Hongyang Zhang. EAGLE-2: Faster inference of language
+models with dynamic draft trees. In Empirical Methods in Natural Language Processing , 2024b.
+Ji Lin, Jiaming Tang, Haotian Tang, Shang Yang, Wei-Ming Chen, Wei-Chen Wang, Guangxuan
+Xiao, Xingyu Dang, Chuang Gan, and Song Han. Awq: Activation-aware weight quantization for
+llm compression and acceleration. In MLSys , 2024.
+Bradley McDanel. Amusd: Asynchronous multi-device speculative decoding for llm acceleration.
+arXiv preprint arXiv:2410.17375 , 2024.
+Xupeng Miao, Gabriele Oliaro, Zhihao Zhang, Xinhao Cheng, Zeyu Wang, Zhengxin Zhang, Rae
+Ying Yee Wong, Alan Zhu, Lijie Yang, Xiaoxiang Shi, Chunan Shi, Zhuoming Chen, Daiyaan
+Arfeen, Reyna Abhyankar, and Zhihao Jia. Specinfer: Accelerating large language model serving
+with tree-based speculative inference and verification. In Proceedings of the 29th ACM Interna-
+tional Conference on Architectural Support for Programming Languages and Operating Systems,
+Volume 3 , ASPLOS ’24, page 932–949, New York, NY , USA, 2024. Association for Computing
+Machinery. ISBN 9798400703867.
+Ramesh Nallapati, Bowen Zhou, Cícero Nogueira dos Santos, Çaglar Gülçehre, and Bing Xiang.
+Abstractive text summarization using sequence-to-sequence rnns and beyond. In Conference
+on Computational Natural Language Learning , 2016. URL https://api.semanticscholar.
+org/CorpusID:8928715 .
+11Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan,
+Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas
+Kopf, Edward Yang, Zachary DeVito, Martin Raison, Alykhan Tejani, Sasank Chilamkurthy,
+Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. Pytorch: An imperative style,
+high-performance deep learning library. In Advances in Neural Information Processing Systems 32 ,
+pages 8024–8035. Curran Associates, Inc., 2019. URL http://papers.neurips.cc/paper/
+9015-pytorch-an-imperative-style-high-performance-deep-learning-library.
+pdf.
+Victor Sanh, Thomas Wolf, and Alexander M. Rush. Movement pruning: Adaptive sparsity by fine-
+tuning. ArXiv , abs/2005.07683, 2020. URL https://api.semanticscholar.org/CorpusID:
+218665313 .
+Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catan-
+zaro. Megatron-lm: Training multi-billion parameter language models using model parallelism.
+arXiv preprint arXiv:1909.08053 , 2019.
+Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy
+Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model.
+https://github.com/tatsu-lab/stanford_alpaca , 2023.
+Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay
+Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation
+and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023a.
+Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay
+Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation
+and fine-tuned chat models. arXiv preprint arXiv:2307.09288 , 2023b.
+Jikai Wang, Yi Su, Juntao Li, Qingrong Xia, Zi Ye, Xinyu Duan, Zhefeng Wang, and Min Zhang. Opt-
+tree: Speculative decoding with adaptive draft tree structure. Trans. Assoc. Comput. Linguistics ,
+13:188–199, 2025. doi: 10.1162/TACL\_A\_00735. URL https://doi.org/10.1162/tacl_
+a_00735 .
+Yuanxin Wei, Shengyuan Ye, Jiazhi Jiang, Xu Chen, Dan Huang, Jiangsu Du, and Yutong Lu.
+Communication-efficient model parallelism for distributed in-situ transformer inference. In 2024
+Design, Automation & Test in Europe Conference & Exhibition (DATE) , pages 1–6, 2024. doi:
+10.23919/DATE58400.2024.10546617.
+Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, and Song Han. SmoothQuant:
+Accurate and efficient post-training quantization for large language models. In Proceedings of the
+40th International Conference on Machine Learning , 2023.
+An Yang, Baosong Yang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Zhou, Chengpeng Li,
+Chengyuan Li, Dayiheng Liu, Fei Huang, Guanting Dong, Haoran Wei, Huan Lin, Jialong
+Tang, Jialin Wang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Ma, Jin Xu, Jingren Zhou,
+Jinze Bai, Jinzheng He, Junyang Lin, Kai Dang, Keming Lu, Ke-Yang Chen, Kexin Yang,
+Mei Li, Min Xue, Na Ni, Pei Zhang, Peng Wang, Ru Peng, Rui Men, Ruize Gao, Runji
+Lin, Shijie Wang, Shuai Bai, Sinan Tan, Tianhang Zhu, Tianhao Li, Tianyu Liu, Wenbin
+Ge, Xiaodong Deng, Xiaohuan Zhou, Xingzhang Ren, Xinyu Zhang, Xipin Wei, Xuancheng
+Ren, Yang Fan, Yang Yao, Yichang Zhang, Yunyang Wan, Yunfei Chu, Zeyu Cui, Zhenru
+Zhang, and Zhi-Wei Fan. Qwen2 technical report. ArXiv , abs/2407.10671, 2024. URL
+https://api.semanticscholar.org/CorpusID:271212307 .
+Shengyuan Ye, Jiangsu Du, Liekang Zeng, Wenzhong Ou, Xiaowen Chu, Yutong Lu, and Xu Chen.
+Galaxy: A resource-efficient collaborative edge ai system for in-situ transformer inference. In
+IEEE INFOCOM 2024 - IEEE Conference on Computer Communications , pages 1001–1010, 2024.
+Shengyuan Ye, Bei Ouyang, Liekang Zeng, Tianyi Qian, Xiaowen Chu, Jian Tang, and Xu Chen.
+Jupiter: Fast and resource-efficient collaborative inference of generative llms on edge devices.
+arXiv preprint arXiv:2504.08242 , 2025.
+12Haofei Yin, Mengbai Xiao, Rouzhou Lu, Xiao Zhang, Dongxiao Yu, and Guanghui Zhang. Pipedec:
+Low-latency pipeline-based inference with dynamic speculative decoding towards large-scale
+models. arXiv preprint arXiv:2504.04104 , 2025.
+Mingjin Zhang, Xiaoming Shen, Jiannong Cao, Zeyang Cui, and Shan Jiang. Edgeshard: Efficient
+llm inference via collaborative edge computing. IEEE Internet of Things Journal , pages 1–1, 2024.
+doi: 10.1109/JIOT.2024.3524255.
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang,
+Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Haotong Zhang, Joseph E. Gonzalez, and Ion Stoica.
+Judging llm-as-a-judge with mt-bench and chatbot arena. ArXiv , abs/2306.05685, 2023. URL
+https://api.semanticscholar.org/CorpusID:259129398 .
+13A Extended Experiment Results
+A.1 Detailed Experimental Settings
+The main experiments were conducted on 5 NVIDIA Jetson Orin Nano units, with the base LLM
+partitioned across four of these devices. In the main experiments, we set L= 80 ,d0= 6, and
+Lmax = 16 for Gardener and all baseline methods. For Gardener, we further configure dexp= 6and
+Lexp=−1where Lexp=−1indicates that all expand tokens are treated as a single input segment.
+Since expand tokens are pruned prior to transmission, the resulting segments remain small, yielding
+high efficiency. For PipeDec, we select 16 tokens per layer.
+All other experimental settings mirror those of the main experiments.
+A.2 Statistical Results
+Table 3: Statistical Results. This table depicts the outcomes of three independent runs for each
+model configuration on MT-Bench, evaluated under two sampling settings (temperature = 0 and 1).
+We selected 10 samples and limit the length of the generated sequences to 128. SD refer to standard
+deviation. V 7B and L2 7B are short for Vicuna-7B-v1.3 and LLaMA2-Chat 7B, respectively.
+Eval 1st Eval 2nd Eval 3rd Mean SD
+Model Method ξ↑ Latency ↓ ξ↑ Latency ↓ ξ↑ Latency ↓ ξ↑ Latency ↓ ξ Latency
+Temperature = 0
+V 7BNaive PP 5.658 18.320 5.661 18.310 5.659 18.317 5.659 18.316 1.528e-03 5.132e-03
+PipeDec 6.760 14.986 6.770 14.965 6.763 14.979 6.764 14.977 5.132e-03 1.069e-02
+Gardener 7.857 13.091 7.870 13.069 7.892 13.031 7.873 13.064 1.769e-02 3.035e-02
+L2 7BNaive PP 7.022 18.151 7.022 18.149 7.020 18.126 7.021 18.142 1.155e-03 1.389e-02
+PipeDec 7.295 17.218 7.279 17.256 7.291 17.227 7.288 17.234 8.327e-03 1.986e-02
+Gardener 9.396 13.347 9.384 13.363 9.390 13.355 9.390 13.355 6.000e-03 8.000e-03
+Temperature = 1
+V 7BNaive PP 3.936 28.736 3.936 28.734 3.936 28.735 3.936 28.735 0.000e+00 1.000e-03
+PipeDec 6.272 18.541 6.278 18.526 6.277 18.527 6.276 18.531 3.215e-03 8.386e-03
+Gardener 5.408 19.925 5.411 19.913 5.413 19.906 5.411 19.915 2.517e-03 9.609e-03
+L2 7BNaive PP 6.678 18.508 6.684 18.493 6.673 18.522 6.678 18.507 5.508e-03 1.450e-02
+PipeDec 7.216 16.242 7.210 16.256 7.197 16.284 7.208 16.261 9.713e-03 2.139e-02
+Gardener 8.679 14.161 8.700 14.126 8.701 14.125 8.693 14.137 1.242e-02 2.050e-02
+The evaluation results exhibit high consistency, as indicated by the extremely small standard devi-
+ations. As table 3 depicted, we selected 10 samples from MT-Bench and limited the length of the
+generated sequences to 128. For all methods across the various models, the standard deviations of
+both the Average Acceptance Length per Second and the latency are minimal, indicating virtually no
+fluctuation across the three runs and, consequently, highly stable outcomes.
+Empirical results show that Gardener outperforms all other methods. The differences in mean Average
+Acceptance Length per Second and in latency between Gardener and competing approaches are
+substantially larger than their standard deviations (SDs), which in turn exceed their standard errors
+of the mean (SEMs), thereby convincingly demonstrating Gardener’s superiority across diverse
+evaluation settings.
+Under the condition of temperature = 1on the V 7B model, Naive PP’s Average Acceptance Length
+per Second is nearly the same across all three runs, resulting in a zero SD of ξ.
+B Generation and Parallelism of LLMs
+B.1 LLM Inference and Generation
+Decoder-only LLM Architecture: Modern LLMs adopt a decoder-only architecture, composed of
+a token embedding layer followed by multiple stacked transformer decoder layers. Each decoder
+layer integrates self-attention mechanisms, feed-forward networks (FFNs) and residual connections,
+enabling LLMs to capture complex contextual dependencies. The final output of the last decoder
+layer is passed through a classification head to produce probability distributions for the next token.
+An example is illustrated in the left part of Fig 4.
+14EmbeddingEmbedding
+Decoder- 1
+Decoder- 2
+HeadDecoder- 3
+Decoder- 4
+TokenL1
+L2
+L3
+L4L1
+L2
+L3
+L4L1
+L2
+L3
+L4Input
+Token Token Token×2
+×2
+×2
+×2
+Tensor Parallelism Pipeline “Parallelism”Input Input
+𝑥௧←𝑝(𝑥௧|𝑥ழ௧)
+Embedding
+Decoder- 1
+Decoder- 𝑁
+···
+HeadBase LLMDraft Model
+LLM Inference
+Prefilling Decoding Data Flow Blocked CommunicationFigure 4: Left: Prefilling and decoding of LLM inference. Right: LLM inference with Tensor
+Parallelism and Pipeline Parallelism.
+Generation Phases of LLMs: The sequence generation of LLMs relies on the key-value caching
+(KV cache) mechanism, which divides generation process into two phases: prefilling anddecoding .
+In the prefilling phase , the LLM processes the entire input prompt in a single forward pass to generate
+the probability of the first new token and save the KV cache for all initial input tokens. This phase is
+characterized by high computaitional intensity and is typically computation-bottleneck. Then in the
+decoding phase , the LLM autoregressively generates the next new token based on the previous one.
+Each step involves a low-FLOPs forward propagation and requires frequent access to the KV cache
+and model parameters, making this phase inherently I/O-bound.
+B.2 Parallel Strategies
+The growth rate of the model parameter scales far outpaces that of hardware performance improve-
+ment, resulting in an increasing demand for distributed LLM deployment. To scale LLM inference
+efficiently, various parallelism strategies have been proposed.
+Data parallelism (DP) distributes distinct inference requests across multiple complete model replicas
+to enable parallel computation, typically employed to enhance the throughput of training and inference
+on high-performance computing (HPC) systems, which becomes infeasible in edge scenarios with
+constrained memory and sparse requests.
+Tensor parallelism (TP) decomposes model parameters and splits GEMMs along the hidden dimen-
+sion within each layer, enabling intra-layer computation parallelism. Although TP reduces per-device
+memory usage, it requires two All-Reduce operations per layer to synchronize results. In edge
+systems with low-bandwidth connections, these frequent communications become a major bottleneck.
+And illustration is shown in the middle part of Fig. 4.
+Sequence parallelism (SP) partitions the input along the sequence dimension to enable parallel layer
+execution. Similar to TP, SP also requires synchronization (e.g., All-Gather) within each layer, but
+critically, it necessitates a complete model replica on each device. This conflicts with the memory
+constraints and low-bandwidth nature of typical edge environments, limiting its practicality.
+Pipeline parallelism (PP) partitions the model into sequential stages assigned to different devices.
+By splitting a batch into micro-batches and overlapping inter-stage communication and computation,
+PP achieve both memory efficient and communication efficiency. However, during the decoding
+phase, PP faces significant challenges due to the autoregressive nature of token generation, especially
+in single-request scenarios. As shown in the right part of Fig. 4, in LLM decoding, each new
+15token depends on the previously generated token, and the forward propagation must be executed
+sequentially. As a result, when applying pipeline parallelism to decoding, each pipeline stage must
+frequently wait for the upstream stage to complete its computation before proceeding. This leads
+to significant idle time and low device utilization, severely limiting the potential speedup of LLM
+decoding.
+In summary, only the strategies with model partitioning such as TP and PP can address the
+memory constraints of edge devices. However, they face key challenges in LLM decoding under
+edge scenarios. TP suffers from high communication overhead due to frequent synchronization under
+limited bandwidth, while PP struggles with low concurrency and resource utilization when dealing
+with sparse inference requests.
+C Limitations
+Despite the effectiveness and flexibility of our approach, several limitations should be acknowledged.
+First, our method is based on existing speculative decoding frameworks and is designed to be
+compatible with most off-the-shelf speculative strategies. However, this also implies that the overall
+performance of our method is inherently bounded by the quality and efficiency of the underlying
+speculative decoding baselines.
+Second, our pruning mechanism removes redundant draft tokens during verification, which can
+sometimes result in empty draft segments for certain pipeline stages. This leads to idle computation
+slots and underutilized resources during the verification of draft token tree. To mitigate this issue,
+we introduce a tree expansion strategy to fill the draft pool with new candidate tokens, therefore
+maintaining pipeline activity.
+Third, due to the structure of the draft tree and its partitioned step-wise verification process, the number
+of verification stages cannot be arbitrarily increased. The size of the draft token tree is typically
+limited and deeper nodes often provide less reliable predictions, making fine-grained splitting of
+the draft token tree across many stages impractical. To fit large-scale deployment scenarios with
+abundant devices, combining our approach with other model parallelism techniques such as TP can
+help control the number of pipeline stages while scaling efficiently.
+16

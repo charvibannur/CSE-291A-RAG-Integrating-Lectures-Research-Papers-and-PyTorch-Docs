@@ -1,0 +1,457 @@
+[sourcetorch.backends
+Created On: Sep 16, 2020 | Last Updated On: Jun 12, 2025
+torch.backends  controls the behavior of various backends that PyTorch supports.
+These backends include:
+torch.backends.cpu
+torch.backends.cuda
+torch.backends.cudnn
+torch.backends.cusparselt
+torch.backends.mha
+torch.backends.mps
+torch.backends.mkl
+torch.backends.mkldnn
+torch.backends.nnpack
+torch.backends.openmp
+torch.backends.opt_einsum
+torch.backends.xeon
+torch.backends.cpu
+torch.backends.cpu. get_cpu_capability ( )
+Return cpu capability as a string value.
+Possible values: - “DEFAULT” - “VSX” - “Z VECTOR” - “NO AVX” - “AVX2” - “AVX512” -
+“SVE256”
+Return type:
+strTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 1/17[sourcetorch.backends.cuda
+torch.backends.cuda. is_built ( )
+Return whether PyTorch is built with CUDA support.
+Note that this doesnʼt necessarily mean CUDA is available; just that if this PyTorch binary were
+run on a machine with working CUDA drivers and devices, we would be able to use it.
+torch.backends.cuda.matmul. allow_tf32
+A bool that controls whether TensorFloat-32 tensor cores may be used in matrix
+multiplications on Ampere or newer GPUs. See TensorFloat-32 (TF32) on Ampere (and later)
+devices.
+torch.backends.cuda.matmul. allow_fp16_reduced_precision_reduction
+A bool that controls whether reduced precision reductions (e.g., with fp16 accumulation type
+are allowed with fp16 GEMMs.
+torch.backends.cuda.matmul. allow_bf16_reduced_precision_reduction
+A bool that controls whether reduced precision reductions are allowed with bf16 GEMMs.
+torch.backends.cuda. cufft_plan_cache
+cufft_plan_cache  contains the cuFFT plan caches for each CUDA device. Query a specific
+device iʼs cache via torch.backends.cuda.cufft_plan_cache[i].
+torch.backends.cuda.cufft_plan_cache. size
+A readonly int that shows the number of plans currently in a cuFFT plan cache.
+torch.backends.cuda.cufft_plan_cache. max_size
+A int that controls the capacity of a cuFFT plan cache.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 2/17[source
+[sourcetorch.backends.cuda.cufft_plan_cache. clear ( )
+Clears a cuFFT plan cache.
+torch.backends.cuda. preferred_blas_library (backend=None )
+Override the library PyTorch uses for BLAS operations. Choose between cuBLAS, cuBLASLt,
+and CK [ROCm-only].
+This flag is experimental and subject to change.
+When PyTorch runs a CUDA BLAS operation it defaults to cuBLAS even if both cuBLAS and
+cuBLASLt are available. For PyTorch built for ROCm, hipBLAS, hipBLASLt, and CK may offer
+different performance. This flag (a str) allows overriding which BLAS library to use.
+If “cublas” is set then cuBLAS will be used wherever possible.
+If “cublaslt” is set then cuBLASLt will be used wherever possible.
+If “ck” is set then CK will be used wherever possible.
+If “default” (the default) is set then heuristics will be used to pick between the other
+options.
+When no input is given, this function returns the currently preferred library.
+User may use the environment variable TORCH_BLAS_PREFER_CUBLASLT=1 to set the
+preferred library to cuBLASLt globally. This flag only sets the initial value of the preferred
+library and the preferred library may still be overridden by this function call later in your
+script.
+Note: When a library is preferred other libraries may still be used if the preferred library doesnʼ
+implement the operation(s) called. This flag may achieve better performance if PyTorchʼs librar
+selection is incorrect for your applicationʼs inputs.
+Return type:
+_BlasBackend
+torch.backends.cuda. preferred_rocm_fa_library (backend=None )Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 3/17[source[ROCm-only] Override the backend PyTorch uses in ROCm environments for Flash Attention.
+Choose between AOTriton and CK
+This flag is experimeental and subject to change.
+When Flash Attention is enabled and desired, PyTorch defaults to using AOTriton as the
+backend. This flag (a str) allows users to override this backend to use composable_kernel
+If “default” is set then the default backend will be used wherever possible. Currently
+AOTriton.
+If “aotriton” is set then AOTriton will be used wherever possible.
+If “ck” is set then CK will be used wherever possible.
+When no input is given, this function returns the currently preferred library.
+User may use the environment variable TORCH_ROCM_FA_PREFER_CK=1 to set the
+preferred library to CK globally.
+Note: When a library is preferred other libraries may still be used if the preferred library doesnʼ
+implement the operation(s) called. This flag may achieve better performance if PyTorchʼs librar
+selection is incorrect for your applicationʼs inputs.
+Return type:
+_ROCmFABackend
+torch.backends.cuda. preferred_linalg_library (backend=None )
+Override the heuristic PyTorch uses to choose between cuSOLVER and MAGMA for CUDA linea
+algebra operations.
+This flag is experimental and subject to change.
+When PyTorch runs a CUDA linear algebra operation it often uses the cuSOLVER or MAGMA
+libraries, and if both are available it decides which to use with a heuristic. This flag (a str)
+allows overriding those heuristics.Warning ⚠
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 4/17If “cusolver” is set then cuSOLVER will be used wherever possible.
+If “magma” is set then MAGMA will be used wherever possible.
+If “default” (the default) is set then heuristics will be used to pick between cuSOLVER and
+MAGMA if both are available.
+When no input is given, this function returns the currently preferred library.
+User may use the environment variable TORCH_LINALG_PREFER_CUSOLVER=1 to set the
+preferred library to cuSOLVER globally. This flag only sets the initial value of the preferred
+library and the preferred library may still be overridden by this function call later in your
+script.
+Note: When a library is preferred other libraries may still be used if the preferred library doesnʼ
+implement the operation(s) called. This flag may achieve better performance if PyTorchʼs
+heuristic library selection is incorrect for your applicationʼs inputs.
+Currently supported linalg operators:
+torch.linalg.inv()
+torch.linalg.inv_ex()
+torch.linalg.cholesky()
+torch.linalg.cholesky_ex()
+torch.cholesky_solve()
+torch.cholesky_inverse()
+torch.linalg.lu_factor()
+torch.linalg.lu()
+torch.linalg.lu_solve()
+torch.linalg.qr()
+torch.linalg.eigh()
+torch.linalg.eighvals()
+torch.linalg.svd()
+torch.linalg.svdvals()
+Return type:
+_LinalgBackend
+class torch.backends.cuda. SDPAParamsTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 5/17[source
+[source
+[source
+[sourcetorch.backends.cuda. flash_sdp_enabled ( )
+This flag is beta and subject to change.
+Returns whether flash scaled dot product attention is enabled or not.
+torch.backends.cuda. enable_mem_efficient_sdp (enabled )
+This flag is beta and subject to change.
+Enables or disables memory efficient scaled dot product attention.
+torch.backends.cuda. mem_efficient_sdp_enabled ( )
+This flag is beta and subject to change.
+Returns whether memory efficient scaled dot product attention is enabled or not.
+torch.backends.cuda. enable_flash_sdp (enabled )
+This flag is beta and subject to change.
+Enables or disables flash scaled dot product attention.Warning ⚠
+Warning ⚠
+Warning ⚠
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 6/17[source
+[source
+[source
+[sourcetorch.backends.cuda. math_sdp_enabled ( )
+This flag is beta and subject to change.
+Returns whether math scaled dot product attention is enabled or not.
+torch.backends.cuda. enable_math_sdp (enabled )
+This flag is beta and subject to change.
+Enables or disables math scaled dot product attention.
+torch.backends.cuda. fp16_bf16_reduction_math_sdp_allowed ( )
+This flag is beta and subject to change.
+Returns whether fp16/bf16 reduction in math scaled dot product attention is enabled or not.
+torch.backends.cuda. allow_fp16_bf16_reduction_math_sdp (enabled )
+This flag is beta and subject to change.
+Enables or disables fp16/bf16 reduction in math scaled dot product attention.Warning ⚠
+Warning ⚠
+Warning ⚠
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 7/17[source
+[source
+[source
+[sourcetorch.backends.cuda. cudnn_sdp_enabled ( )
+This flag is beta and subject to change.
+Returns whether cuDNN scaled dot product attention is enabled or not.
+torch.backends.cuda. enable_cudnn_sdp (enabled )
+This flag is beta and subject to change.
+Enables or disables cuDNN scaled dot product attention.
+torch.backends.cuda. is_flash_attention_available ( )
+Check if PyTorch was built with FlashAttention for scaled_dot_product_attention.
+Returns:
+True if FlashAttention is built and available; otherwise, False.
+Return type:
+bool
+This function is dependent on a CUDA-enabled build of PyTorch. It will return False in
+non-CUDA environments.
+torch.backends.cuda. can_use_flash_attention (params,
+debug=False )
+Check if FlashAttention can be utilized in scaled_dot_product_attention.Warning ⚠
+Warning ⚠
+Note 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 8/17[sourceParameters:
+params (_SDPAParams) – An instance of SDPAParams containing the tensors for quer
+key, value, an optional attention mask, dropout rate, and a flag indicating if the attentio
+is causal.
+debug (bool) – Whether to logging.warn debug information as to why FlashAttention
+could not be run. Defaults to False.
+Returns:
+True if FlashAttention can be used with the given parameters; otherwise, False.
+Return type:
+bool
+This function is dependent on a CUDA-enabled build of PyTorch. It will return False in
+non-CUDA environments.
+torch.backends.cuda. can_use_efficient_attention (params, debug=False )
+Check if efficient_attention can be utilized in scaled_dot_product_attention.
+Parameters:
+params (_SDPAParams) – An instance of SDPAParams containing the tensors for quer
+key, value, an optional attention mask, dropout rate, and a flag indicating if the attentio
+is causal.
+debug (bool) – Whether to logging.warn with information as to why efficient_attention
+could not be run. Defaults to False.
+Returns:
+True if efficient_attention can be used with the given parameters; otherwise, False.
+Return type:
+bool
+This function is dependent on a CUDA-enabled build of PyTorch. It will return False in
+non-CUDA environments.Note 
+Note To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 9/17[source
+[sourcetorch.backends.cuda. can_use_cudnn_attention (params,
+debug=False )
+Check if cudnn_attention can be utilized in scaled_dot_product_attention.
+Parameters:
+params (_SDPAParams) – An instance of SDPAParams containing the tensors for quer
+key, value, an optional attention mask, dropout rate, and a flag indicating if the attentio
+is causal.
+debug (bool) – Whether to logging.warn with information as to why cuDNN attention
+could not be run. Defaults to False.
+Returns:
+True if cuDNN can be used with the given parameters; otherwise, False.
+Return type:
+bool
+This function is dependent on a CUDA-enabled build of PyTorch. It will return False in
+non-CUDA environments.
+torch.backends.cuda. sdp_kernel (enable_flash =True, enable_math =True,
+enable_mem_efficient =True, enable_cudnn =True )
+This flag is beta and subject to change.
+This context manager can be used to temporarily enable or disable any of the three backends
+for scaled dot product attention. Upon exiting the context manager, the previous state of the
+flags will be restored.
+torch.backends.cudnnNote 
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 10/17[source
+[sourcetorch.backends.cudnn. version ( )
+Return the version of cuDNN.
+torch.backends.cudnn. is_available ( )
+Return a bool indicating if CUDNN is currently available.
+torch.backends.cudnn. enabled
+A bool that controls whether cuDNN is enabled.
+torch.backends.cudnn. allow_tf32
+A bool that controls where TensorFloat-32 tensor cores may be used in cuDNN convolutions
+on Ampere or newer GPUs. See TensorFloat-32 (TF32) on Ampere (and later) devices.
+torch.backends.cudnn. deterministic
+A bool that, if True, causes cuDNN to only use deterministic convolution algorithms. See also
+torch.are_deterministic_algorithms_enabled()  and
+torch.use_deterministic_algorithms() .
+torch.backends.cudnn. benchmark
+A bool that, if True, causes cuDNN to benchmark multiple convolution algorithms and select
+the fastest.
+torch.backends.cudnn. benchmark_limit
+A int that specifies the maximum number of cuDNN convolution algorithms to try when
+torch.backends.cudnn.benchmark is True. Set benchmark_limit to zero to try every available
+algorithm. Note that this setting only affects convolutions dispatched via the cuDNN v8 API.
+torch.backends.cusparseltTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 11/17[source
+[source
+[source
+[sourcetorch.backends.cusparselt. version ( )
+Return the version of cuSPARSELt
+Return type:
+Optional[int]
+torch.backends.cusparselt. is_available ( )
+Return a bool indicating if cuSPARSELt is currently available.
+Return type:
+bool
+torch.backends.mha
+torch.backends.mha. get_fastpath_enabled ( )
+Returns whether fast path for TransformerEncoder and MultiHeadAttention is enabled, or True
+if jit is scripting.
+The fastpath might not be run even if get_fastpath_enabled  returns True unless all
+conditions on inputs are met.
+Return type:
+bool
+torch.backends.mha. set_fastpath_enabled (value )
+Sets whether fast path is enabled
+torch.backends.mpsNote 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 12/17[source
+[source
+[source
+[sourcetorch.backends.mps. is_available ( )
+Return a bool indicating if MPS is currently available.
+Return type:
+bool
+torch.backends.mps. is_built ( )
+Return whether PyTorch is built with MPS support.
+Note that this doesnʼt necessarily mean MPS is available; just that if this PyTorch binary were
+run a machine with working MPS drivers and devices, we would be able to use it.
+Return type:
+bool
+torch.backends.mkl
+torch.backends.mkl. is_available ( )
+Return whether PyTorch is built with MKL support.
+class torch.backends.mkl. verbose (enable )
+On-demand oneMKL verbosing functionality.
+To make it easier to debug performance issues, oneMKL can dump verbose messages
+containing execution information like duration while executing the kernel. The verbosing
+functionality can be invoked via an environment variable named MKL_VERBOSE. However, this
+methodology dumps messages in all steps. Those are a large amount of verbose messages.
+Moreover, for investigating the performance issues, generally taking verbose messages for one
+single iteration is enough. This on-demand verbosing functionality makes it possible to control
+scope for verbose message dumping. In the following example, verbose messages will be
+dumped out for the second inference only.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 13/17[source
+[sourceParameters:
+level – Verbose level - VERBOSE_OFF: Disable verbosing - VERBOSE_ON: Enable verbosin
+torch.backends.mkldnn
+torch.backends.mkldnn. is_available ( )
+class torch.backends.mkldnn. verbose (level )
+On-demand oneDNN (former MKL-DNN) verbosing functionality.
+To make it easier to debug performance issues, oneDNN can dump verbose messages
+containing information like kernel size, input data size and execution duration while executing
+the kernel. The verbosing functionality can be invoked via an environment variable named
+DNNL_VERBOSE. However, this methodology dumps messages in all steps. Those are a large
+amount of verbose messages. Moreover, for investigating the performance issues, generally
+taking verbose messages for one single iteration is enough. This on-demand verbosing
+functionality makes it possible to control scope for verbose message dumping. In the following
+example, verbose messages will be dumped out for the second inference only.
+Parameters:
+level – Verbose level - VERBOSE_OFF: Disable verbosing - VERBOSE_ON: Enable verbosin
+- VERBOSE_ON_CREATION : Enable verbosing, including oneDNN kernel creation
+torch.backends.nnpackimport  torch
+model(data)
+with  torch .backends .mkl .verbose(torch .backends .mkl .VERBOSE_ON ):
+    model(data)
+import  torch
+model(data)
+with  torch .backends .mkldnn .verbose(torch .backends .mkldnn .VERBOSE_ON ):
+    model(data)
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 14/17[source
+[source
+[source
+[source
+[source
+[sourcetorch.backends.nnpack. is_available ( )
+Return whether PyTorch is built with NNPACK support.
+torch.backends.nnpack. flags (enabled=False )
+Context manager for setting if nnpack is enabled globally
+torch.backends.nnpack. set_flags (_enabled )
+Set if nnpack is enabled globally
+torch.backends.openmp
+torch.backends.openmp. is_available ( )
+Return whether PyTorch is built with OpenMP support.
+torch.backends.opt_einsum
+torch.backends.opt_einsum. is_available ( )
+Return a bool indicating if opt_einsum is currently available.
+You must install opt-einsum in order for torch to automatically optimize einsum. To make opt-
+einsum available, you can install it along with torch: pip install torch[opt-einsum]  or by
+itself: pip install opt-einsum. If the package is installed, torch will import it automatically
+and use it accordingly. Use this function to check whether opt-einsum was installed and
+properly imported by torch.
+Return type:
+bool
+torch.backends.opt_einsum. get_opt_einsum ( )
+Return the opt_einsum package if opt_einsum is currently available, else None.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 15/17Return type:
+Any
+torch.backends.opt_einsum. enabled
+A bool that controls whether opt_einsum is enabled (True by default). If so, torch.einsum w
+use opt_einsum (https://optimized-einsum.readthedocs.io/en/stable/path_finding.html) if
+available to calculate an optimal path of contraction for faster performance.
+If opt_einsum is not available, torch.einsum will fall back to the default contraction path of left
+to right.
+torch.backends.opt_einsum. strategy
+A str that specifies which strategies to try when torch.backends.opt_einsum.enabled  is
+True. By default, torch.einsum will try the “auto” strategy, but the “greedy” and “optimal”
+strategies are also supported. Note that the “optimal” strategy is factorial on the number of
+inputs as it tries all possible paths. See more details in opt_einsumʼs docs (https://optimized-
+einsum.readthedocs.io/en/stable/path_finding.html).
+torch.backends.xeon
+Previous
+Meta deviceNext
+torch.exportRate this Page★★★★★
+© Copyright PyTorch Contributors.Send Feedback
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 16/17Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.
+© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy. To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.backends — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/backends.html 17/17

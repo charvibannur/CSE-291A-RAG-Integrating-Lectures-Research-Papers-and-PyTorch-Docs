@@ -1,0 +1,1052 @@
+torch
+Created On: Dec 23, 2016 | Last Updated On: Mar 10, 2025
+The torch package contains data structures for multi-dimensional tensors and defines mathematic
+operations over these tensors. Additionally, it provides many utilities for efficient serialization of
+Tensors and arbitrary types, and other useful utilities.
+It has a CUDA counterpart, that enables you to run your tensor computations on an NVIDIA GPU
+with compute capability >= 3.0.
+Tensors
+is_tensorReturns True if obj is a PyTorch tensor.
+is_storageReturns True if obj is a PyTorch storage object.
+is_complexReturns True if the data type of input is a complex data type i.e.,
+one of torch.complex64, and torch.complex128.
+is_conjReturns True if the input is a conjugated tensor, i.e. its conjugate
+bit is set to True.
+is_floating_pointReturns True if the data type of input is a floating point data type
+i.e., one of torch.float64, torch.float32, torch.float16,
+and torch.bfloat16.
+is_nonzeroReturns True if the input is a single element tensor which is not
+equal to zero after type conversions.
+set_default_dtypeSets the default floating point dtype to d.
+Get the current default floating point torch.dtype.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 1/43get_default_dtype
+set_default_deviceSets the default torch.Tensor  to be allocated on device.
+get_default_deviceGets the default torch.Tensor  to be allocated on device
+set_default_tensor_type
+numelReturns the total number of elements in the input tensor.
+set_printoptionsSet options for printing.
+set_flush_denormalDisables denormal floating numbers on CPU.
+Creation Ops
+Random sampling creation ops are listed under Random sampling and include:
+torch.rand() torch.rand_like() torch.randn() torch.randn_like()
+torch.randint() torch.randint_like() torch.randperm()  You may also use
+torch.empty()  with the In-place random sampling methods to create torch.Tensor  s
+with values sampled from a broader range of distributions.
+tensorConstructs a tensor with no autograd history (also known as a "leaf
+tensor", see Autograd mechanics) by copying data.
+sparse_coo_tensorConstructs a sparse tensor in COO(rdinate) format with specified
+values at the given indices.
+sparse_csr_tensorConstructs a sparse tensor in CSR (Compressed Sparse Row) with
+specified values at the given crow_indices  and col_indices.Note 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 2/43sparse_csc_tensorConstructs a sparse tensor in CSC (Compressed Sparse Column) with
+specified values at the given ccol_indices  and row_indices.
+sparse_bsr_tensorConstructs a sparse tensor in BSR (Block Compressed Sparse Row))
+with specified 2-dimensional blocks at the given crow_indices  and
+col_indices.
+sparse_bsc_tensorConstructs a sparse tensor in BSC (Block Compressed Sparse
+Column)) with specified 2-dimensional blocks at the given
+ccol_indices  and row_indices.
+asarrayConverts obj to a tensor.
+as_tensorConverts data into a tensor, sharing data and preserving autograd
+history if possible.
+as_stridedCreate a view of an existing torch.Tensorinput with specified size,
+stride and storage_offset.
+from_fileCreates a CPU tensor with a storage backed by a memory-mapped
+file.
+from_numpyCreates a Tensor from a numpy.ndarray.
+from_dlpackConverts a tensor from an external library into a torch.Tensor.
+frombufferCreates a 1-dimensional Tensor from an object that implements the
+Python buffer protocol.
+zerosReturns a tensor filled with the scalar value 0, with the shape defined
+by the variable argument size.
+zeros_likeReturns a tensor filled with the scalar value 0, with the same size as
+input.
+onesReturns a tensor filled with the scalar value 1, with the shape defined
+by the variable argument size.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 3/43ones_likeReturns a tensor filled with the scalar value 1, with the same size as
+input.
+arangeReturns a 1-D tensor of size  with values from the interval
+[start, end) taken with common difference step beginning from
+start.
+rangeReturns a 1-D tensor of size  with values from start
+to end with step step.
+linspaceCreates a one-dimensional tensor of size steps whose values are
+evenly spaced from start to end, inclusive.
+logspaceCreates a one-dimensional tensor of size steps whose values are
+evenly spaced from  to , inclusive, on a logarithmic
+scale with base base.
+eyeReturns a 2-D tensor with ones on the diagonal and zeros elsewhere.
+emptyReturns a tensor filled with uninitialized data.
+empty_likeReturns an uninitialized tensor with the same size as input.
+empty_stridedCreates a tensor with the specified size and stride and filled with
+undefined data.
+fullCreates a tensor of size size filled with fill_value.
+full_likeReturns a tensor with the same size as input filled with
+fill_value.
+quantize_per_tensorConverts a float tensor to a quantized tensor with given scale and zero
+point.
+quantize_per_channelConverts a float tensor to a per-channel quantized tensor with given
+scales and zero points. ⌈stepend−start⌉
+ + ⌊stepend−start⌋1
+basestartbaseend
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 4/43dequantizeReturns an fp32 Tensor by dequantizing a quantized Tensor
+complexConstructs a complex tensor with its real part equal to real and its
+imaginary part equal to imag.
+polarConstructs a complex tensor whose elements are Cartesian
+coordinates corresponding to the polar coordinates with absolute
+value abs and angle angle.
+heavisideComputes the Heaviside step function for each element in input.
+Indexing, Slicing, Joining, Mutating Ops
+adjointReturns a view of the tensor conjugated and with the last two dimensions
+transposed.
+argwhereReturns a tensor containing the indices of all non-zero elements of input.
+catConcatenates the given sequence of tensors in tensors in the given
+dimension.
+concatAlias of torch.cat().
+concatenateAlias of torch.cat().
+conjReturns a view of input with a flipped conjugate bit.
+chunkAttempts to split a tensor into the specified number of chunks.
+dsplitSplits input, a tensor with three or more dimensions, into multiple tensors
+depthwise according to indices_or_sections .
+column_stackCreates a new tensor by horizontally stacking the tensors in tensors.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 5/43dstackStack tensors in sequence depthwise (along third axis).
+gatherGathers values along an axis specified by dim.
+hsplitSplits input, a tensor with one or more dimensions, into multiple tensors
+horizontally according to indices_or_sections .
+hstackStack tensors in sequence horizontally (column wise).
+index_addSee index_add_()  for function description.
+index_copySee index_add_()  for function description.
+index_reduceSee index_reduce_()  for function description.
+index_selectReturns a new tensor which indexes the input tensor along dimension
+dim using the entries in index which is a LongTensor.
+masked_selectReturns a new 1-D tensor which indexes the input tensor according to
+the boolean mask mask which is a BoolTensor.
+movedimMoves the dimension(s) of input at the position(s) in source to the
+position(s) in destination.
+moveaxisAlias for torch.movedim().
+narrowReturns a new tensor that is a narrowed version of input tensor.
+narrow_copySame as Tensor.narrow()  except this returns a copy rather than shared
+storage.
+nonzero
+permuteReturns a view of the original tensor input with its dimensions permuted.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 6/43reshapeReturns a tensor with the same data and number of elements as input,
+but with the specified shape.
+row_stackAlias of torch.vstack().
+selectSlices the input tensor along the selected dimension at the given index.
+scatterOut-of-place version of torch.Tensor.scatter_()
+diagonal_scatterEmbeds the values of the src tensor into input along the diagonal
+elements of input, with respect to dim1 and dim2.
+select_scatterEmbeds the values of the src tensor into input at the given index.
+slice_scatterEmbeds the values of the src tensor into input at the given dimension.
+scatter_addOut-of-place version of torch.Tensor.scatter_add_()
+scatter_reduceOut-of-place version of torch.Tensor.scatter_reduce_()
+splitSplits the tensor into chunks.
+squeezeReturns a tensor with all specified dimensions of input of size 1 removed.
+stackConcatenates a sequence of tensors along a new dimension.
+swapaxesAlias for torch.transpose().
+swapdimsAlias for torch.transpose().
+tExpects input to be <= 2-D tensor and transposes dimensions 0 and 1.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 7/43takeReturns a new tensor with the elements of input at the given indices.
+take_along_dimSelects values from input at the 1-dimensional indices from indices
+along the given dim.
+tensor_splitSplits a tensor into multiple sub-tensors, all of which are views of input,
+along dimension dim according to the indices or number of sections
+specified by indices_or_sections .
+tileConstructs a tensor by repeating the elements of input.
+transposeReturns a tensor that is a transposed version of input.
+unbindRemoves a tensor dimension.
+unravel_indexConverts a tensor of flat indices into a tuple of coordinate tensors that
+index into an arbitrary tensor of the specified shape.
+unsqueezeReturns a new tensor with a dimension of size one inserted at the specified
+position.
+vsplitSplits input, a tensor with two or more dimensions, into multiple tensors
+vertically according to indices_or_sections .
+vstackStack tensors in sequence vertically (row wise).
+whereReturn a tensor of elements selected from either input or other,
+depending on condition.
+Accelerators
+Within the PyTorch repo, we define an “Accelerator” as a torch.device  that is being used
+alongside a CPU to speed up computation. These device use an asynchronous execution scheme,
+using torch.Stream  and torch.Event  as their main way to perform synchronization. We also
+assume that only one such accelerator can be available at once on a given host. This allows us toTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 8/43use the current accelerator as the default device for relevant concepts such as pinned memory,
+Stream device_type, FSDP, etc.
+As of today, accelerator devices are (in no particular order) “CUDA”, “MTIA”, “XPU”, “MPS”, “HPU”,
+and PrivateUse1 (many device not in the PyTorch repo itself).
+Many tools in the PyTorch Ecosystem use fork to create subprocesses (for example dataloading or
+intra-op parallelism), it is thus important to delay as much as possible any operation that would
+prevent further forks. This is especially important here as most acceleratorʼs initialization has such
+effect. In practice, you should keep in mind that checking
+torch.accelerator.current_accelerator()  is a compile-time check by default, it is thus always
+fork-safe. On the contrary, passing the check_available=True  flag to this function or calling
+torch.accelerator.is_available()  will usually prevent later fork.
+Some backends provide an experimental opt-in option to make the runtime availability check fork-
+safe. When using the CUDA device PYTORCH_NVML_BASED_CUDA_CHECK=1  can be used for example.
+StreamAn in-order queue of executing the respective tasks asynchronously in first in first out
+(FIFO) order.
+EventQuery and record Stream status to identify or control dependencies across Stream and
+measure timing.
+Generators
+GeneratorCreates and returns a generator object that manages the state of the algorithm
+which produces pseudo random numbers.
+Random sampling
+seedSets the seed for generating random numbers to a non-deterministic random
+number on all devices.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 9/43manual_seedSets the seed for generating random numbers on all devices.
+initial_seedReturns the initial seed for generating random numbers as a Python long.
+get_rng_stateReturns the random number generator state as a torch.ByteTensor.
+set_rng_stateSets the random number generator state.
+torch.default_generator Returns the default CPU torch.Generator
+bernoulliDraws binary random numbers (0 or 1) from a Bernoulli distribution.
+multinomialReturns a tensor where each row contains num_samples  indices sampled from
+the multinomial (a stricter definition would be multivariate, refer to
+torch.distributions.multinomial.Multinomial  for more details) probability
+distribution located in the corresponding row of tensor input.
+normalReturns a tensor of random numbers drawn from separate normal distributions
+whose mean and standard deviation are given.
+poissonReturns a tensor of the same size as input with each element sampled from a
+Poisson distribution with rate parameter given by the corresponding element in
+input i.e.,
+randReturns a tensor filled with random numbers from a uniform distribution on the
+interval 
+rand_likeReturns a tensor with the same size as input that is filled with random
+numbers from a uniform distribution on the interval .
+randintReturns a tensor filled with random integers generated uniformly between low
+(inclusive) and high (exclusive).
+randint_likeReturns a tensor with the same shape as Tensor input filled with random
+integers generated uniformly between low (inclusive) and high (exclusive).[0,1)
+[0,1)
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 10/43randnReturns a tensor filled with random numbers from a normal distribution with
+mean 0 and variance 1 (also called the standard normal distribution).
+randn_likeReturns a tensor with the same size as input that is filled with random
+numbers from a normal distribution with mean 0 and variance 1.
+randpermReturns a random permutation of integers from 0 to n - 1.
+In-place random sampling
+There are a few more in-place random sampling functions defined on Tensors as well. Click throug
+to refer to their documentation:
+torch.Tensor.bernoulli_()  - in-place version of torch.bernoulli()
+torch.Tensor.cauchy_()  - numbers drawn from the Cauchy distribution
+torch.Tensor.exponential_()  - numbers drawn from the exponential distribution
+torch.Tensor.geometric_()  - elements drawn from the geometric distribution
+torch.Tensor.log_normal_()  - samples from the log-normal distribution
+torch.Tensor.normal_()  - in-place version of torch.normal()
+torch.Tensor.random_()  - numbers sampled from the discrete uniform distribution
+torch.Tensor.uniform_()  - numbers sampled from the continuous uniform distribution
+Quasi-random sampling
+quasirandom.SobolEngine The torch.quasirandom.SobolEngine  is an engine for generating
+(scrambled) Sobol sequences.
+Serialization
+saveSaves an object to a disk file.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 11/43loadLoads an object saved with torch.save()  from a file.
+Parallelism
+get_num_threadsReturns the number of threads used for parallelizing CPU
+operations
+set_num_threadsSets the number of threads used for intraop parallelism on CPU.
+get_num_interop_threadsReturns the number of threads used for inter-op parallelism on
+CPU (e.g.
+set_num_interop_threadsSets the number of threads used for interop parallelism (e.g.
+Locally disabling gradient computation
+The context managers torch.no_grad(), torch.enable_grad() , and
+torch.set_grad_enabled()  are helpful for locally disabling and enabling gradient computation.
+See Locally disabling gradient computation for more details on their usage. These context manage
+are thread local, so they wonʼt work if you send work to another thread using the threading
+module, etc.
+Examples:
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 12/43no_gradContext-manager that disables gradient calculation.
+enable_gradContext-manager that enables gradient calculation.
+autograd.grad_mode.set_grad_enabled Context-manager that sets gradient calculation on or
+off.
+is_grad_enabledReturns True if grad mode is currently enabled.
+autograd.grad_mode.inference_mode Context-manager that enables or disables inference
+mode.
+is_inference_mode_enabledReturns True if inference mode is currently enabled.
+Math operations
+Constants>>> x = torch .zeros( 1, requires_grad =True)
+>>> with torch .no_grad():
+...     y = x * 2
+>>> y .requires_grad
+False
+>>> is_train  = False
+>>> with torch .set_grad_enabled (is_train ):
+...     y = x * 2
+>>> y .requires_grad
+False
+>>> torch .set_grad_enabled (True)  # this can also be used as a function
+>>> y = x * 2
+>>> y .requires_grad
+True
+>>> torch .set_grad_enabled (False)
+>>> y = x * 2
+>>> y .requires_grad
+False
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 13/43inf A floating-point positive infinity. Alias for math.inf.
+nan A floating-point “not a number” value. This value is not a legal number
+Alias for math.nan.
+Pointwise Ops
+absComputes the absolute value of each element in input
+absoluteAlias for torch.abs()
+acosComputes the inverse cosine of each element in input.
+arccosAlias for torch.acos().
+acoshReturns a new tensor with the inverse hyperbolic cosine
+of the elements of input.
+arccoshAlias for torch.acosh().
+addAdds other, scaled by alpha, to input.
+addcdivPerforms the element-wise division of tensor1 by
+tensor2, multiplies the result by the scalar value and
+adds it to input.
+addcmulPerforms the element-wise multiplication of tensor1
+by tensor2, multiplies the result by the scalar value
+and adds it to input.
+angleComputes the element-wise angle (in radians) of the
+given input tensor.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 14/43asinReturns a new tensor with the arcsine of the elements of
+input.
+arcsinAlias for torch.asin().
+asinhReturns a new tensor with the inverse hyperbolic sine of
+the elements of input.
+arcsinhAlias for torch.asinh().
+atanReturns a new tensor with the arctangent of the
+elements of input.
+arctanAlias for torch.atan().
+atanhReturns a new tensor with the inverse hyperbolic
+tangent of the elements of input.
+arctanhAlias for torch.atanh().
+atan2Element-wise arctangent of  with
+consideration of the quadrant.
+arctan2Alias for torch.atan2().
+bitwise_notComputes the bitwise NOT of the given input tensor.
+bitwise_andComputes the bitwise AND of input and other.
+bitwise_orComputes the bitwise OR of input and other.
+bitwise_xorComputes the bitwise XOR of input and other.
+bitwise_left_shiftComputes the left arithmetic shift of input by other
+bits.input  /otheri i
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 15/43bitwise_right_shiftComputes the right arithmetic shift of input by other
+bits.
+ceilReturns a new tensor with the ceil of the elements of
+input, the smallest integer greater than or equal to
+each element.
+clampClamps all elements in input into the range [min,
+max].
+clipAlias for torch.clamp().
+conj_physicalComputes the element-wise conjugate of the given
+input tensor.
+copysignCreate a new floating-point tensor with the magnitude
+of input and the sign of other, elementwise.
+cosReturns a new tensor with the cosine of the elements of
+input.
+coshReturns a new tensor with the hyperbolic cosine of the
+elements of input.
+deg2radReturns a new tensor with each of the elements of
+input converted from angles in degrees to radians.
+divDivides each element of the input input by the
+corresponding element of other.
+divideAlias for torch.div().
+digammaAlias for torch.special.digamma() .
+erfAlias for torch.special.erf() .
+erfcAlias for torch.special.erfc() .To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 16/43erfinvAlias for torch.special.erfinv() .
+expReturns a new tensor with the exponential of the
+elements of the input tensor input.
+exp2Alias for torch.special.exp2() .
+expm1Alias for torch.special.expm1() .
+fake_quantize_per_channel_affineReturns a new tensor with the data in input fake
+quantized per channel using scale, zero_point,
+quant_min  and quant_max, across the channel
+specified by axis.
+fake_quantize_per_tensor_affineReturns a new tensor with the data in input fake
+quantized using scale, zero_point, quant_min  and
+quant_max.
+fixAlias for torch.trunc()
+float_powerRaises input to the power of exponent, elementwise,
+in double precision.
+floorReturns a new tensor with the floor of the elements of
+input, the largest integer less than or equal to each
+element.
+floor_divide
+fmodApplies C++'s std::fmod entrywise.
+fracComputes the fractional portion of each element in
+input.
+frexpDecomposes input into mantissa and exponent
+tensors such that . input=mantissa×2exponentTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 17/43gradientEstimates the gradient of a function  in one
+or more dimensions using the second-order accurate
+central differences method and either first or second
+order estimates at the boundaries.
+imagReturns a new tensor containing imaginary values of the
+self tensor.
+ldexpMultiplies input by 2 ** other.
+lerpDoes a linear interpolation of two tensors start (given
+by input) and end based on a scalar or tensor
+weight and returns the resulting out tensor.
+lgammaComputes the natural logarithm of the absolute value of
+the gamma function on input.
+logReturns a new tensor with the natural logarithm of the
+elements of input.
+log10Returns a new tensor with the logarithm to the base 10
+of the elements of input.
+log1pReturns a new tensor with the natural logarithm of (1 +
+input).
+log2Returns a new tensor with the logarithm to the base 2 of
+the elements of input.
+logaddexpLogarithm of the sum of exponentiations of the inputs.
+logaddexp2Logarithm of the sum of exponentiations of the inputs in
+base-2.
+logical_andComputes the element-wise logical AND of the given
+input tensors.
+logical_notComputes the element-wise logical NOT of the given
+input tensor.g:R→nR
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 18/43logical_orComputes the element-wise logical OR of the given
+input tensors.
+logical_xorComputes the element-wise logical XOR of the given
+input tensors.
+logitAlias for torch.special.logit() .
+hypotGiven the legs of a right triangle, return its hypotenuse.
+i0Alias for torch.special.i0() .
+igammaAlias for torch.special.gammainc() .
+igammacAlias for torch.special.gammaincc() .
+mulMultiplies input by other.
+multiplyAlias for torch.mul().
+mvlgammaAlias for torch.special.multigammaln() .
+nan_to_numReplaces NaN, positive infinity, and negative infinity
+values in input with the values specified by nan,
+posinf, and neginf, respectively.
+negReturns a new tensor with the negative of the elements
+of input.
+negativeAlias for torch.neg()
+nextafterReturn the next floating-point value after input
+towards other, elementwise.
+Alias for torch.special.polygamma() .To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 19/43polygamma
+positiveReturns input.
+powTakes the power of each element in input with
+exponent  and returns a tensor with the result.
+quantized_batch_normApplies batch normalization on a 4D (NCHW) quantized
+tensor.
+quantized_max_pool1dApplies a 1D max pooling over an input quantized tensor
+composed of several input planes.
+quantized_max_pool2dApplies a 2D max pooling over an input quantized tensor
+composed of several input planes.
+rad2degReturns a new tensor with each of the elements of
+input converted from angles in radians to degrees.
+realReturns a new tensor containing real values of the self
+tensor.
+reciprocalReturns a new tensor with the reciprocal of the elements
+of input
+remainderComputes Python's modulus operation entrywise.
+roundRounds elements of input to the nearest integer.
+rsqrtReturns a new tensor with the reciprocal of the square-
+root of each of the elements of input.
+sigmoidAlias for torch.special.expit() .
+signReturns a new tensor with the signs of the elements of
+input.
+sgnThis function is an extension of torch.sign() to complex
+tensors.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 20/43signbitTests if each element of input has its sign bit set or
+not.
+sinReturns a new tensor with the sine of the elements of
+input.
+sincAlias for torch.special.sinc() .
+sinhReturns a new tensor with the hyperbolic sine of the
+elements of input.
+softmaxAlias for torch.nn.functional.softmax() .
+sqrtReturns a new tensor with the square-root of the
+elements of input.
+squareReturns a new tensor with the square of the elements of
+input.
+subSubtracts other, scaled by alpha, from input.
+subtractAlias for torch.sub().
+tanReturns a new tensor with the tangent of the elements
+of input.
+tanhReturns a new tensor with the hyperbolic tangent of the
+elements of input.
+true_divideAlias for torch.div()  with rounding_mode=None .
+truncReturns a new tensor with the truncated integer values
+of the elements of input.
+xlogyAlias for torch.special.xlogy() .To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 21/43Reduction Ops
+argmaxReturns the indices of the maximum value of all elements in the input
+tensor.
+argminReturns the indices of the minimum value(s) of the flattened tensor or
+along a dimension
+amaxReturns the maximum value of each slice of the input tensor in the
+given dimension(s) dim.
+aminReturns the minimum value of each slice of the input tensor in the
+given dimension(s) dim.
+aminmaxComputes the minimum and maximum values of the input tensor.
+allTests if all elements in input evaluate to True.
+anyTests if any element in input evaluates to True.
+maxReturns the maximum value of all elements in the input tensor.
+minReturns the minimum value of all elements in the input tensor.
+distReturns the p-norm of (input - other)
+logsumexpReturns the log of summed exponentials of each row of the input
+tensor in the given dimension dim.
+mean
+nanmeanComputes the mean of all non-NaN elements along the specified
+dimensions.
+medianReturns the median of the values in input.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 22/43nanmedianReturns the median of the values in input, ignoring NaN values.
+modeReturns a namedtuple (values,  indices)  where values is the mode
+value of each row of the input tensor in the given dimension dim, i.e.
+a value which appears most often in that row, and indices is the index
+location of each mode value found.
+normReturns the matrix norm or vector norm of a given tensor.
+nansumReturns the sum of all elements, treating Not a Numbers (NaNs) as zero.
+prodReturns the product of all elements in the input tensor.
+quantileComputes the q-th quantiles of each row of the input tensor along the
+dimension dim.
+nanquantileThis is a variant of torch.quantile()  that "ignores" NaN values,
+computing the quantiles q as if NaN values in input did not exist.
+stdCalculates the standard deviation over the dimensions specified by dim
+std_meanCalculates the standard deviation and mean over the dimensions
+specified by dim.
+sumReturns the sum of all elements in the input tensor.
+uniqueReturns the unique elements of the input tensor.
+unique_consecutiveEliminates all but the first element from every consecutive group of
+equivalent elements.
+varCalculates the variance over the dimensions specified by dim.
+var_meanCalculates the variance and mean over the dimensions specified by
+dim.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 23/43count_nonzeroCounts the number of non-zero values in the tensor input along the
+given dim.
+Comparison Ops
+allcloseThis function checks if input and other satisfy the condition:
+argsortReturns the indices that sort a tensor along a given dimension in ascending
+order by value.
+eqComputes element-wise equality
+equalTrue if two tensors have the same size and elements, False otherwise.
+geComputes  element-wise.
+greater_equalAlias for torch.ge().
+gtComputes  element-wise.
+greaterAlias for torch.gt().
+iscloseReturns a new tensor with boolean elements representing if each element of
+input is "close" to the corresponding element of other.
+isfiniteReturns a new tensor with boolean elements representing if each element is
+finite or not.
+isinTests if each element of elements  is in test_elements.
+isinfTests if each element of input is infinite (positive or negative infinity) or not.input≥other
+input>other
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 24/43isposinfTests if each element of input is positive infinity or not.
+isneginfTests if each element of input is negative infinity or not.
+isnanReturns a new tensor with boolean elements representing if each element of
+input is NaN or not.
+isrealReturns a new tensor with boolean elements representing if each element of
+input is real-valued or not.
+kthvalueReturns a namedtuple (values,  indices)  where values is the k th
+smallest element of each row of the input tensor in the given dimension
+dim.
+leComputes  element-wise.
+less_equalAlias for torch.le().
+ltComputes  element-wise.
+lessAlias for torch.lt().
+maximumComputes the element-wise maximum of input and other.
+minimumComputes the element-wise minimum of input and other.
+fmaxComputes the element-wise maximum of input and other.
+fminComputes the element-wise minimum of input and other.
+neComputes  element-wise.
+not_equalAlias for torch.ne().input≤other
+input<other
+input=otherTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 25/43sortSorts the elements of the input tensor along a given dimension in ascending
+order by value.
+topkReturns the k largest elements of the given input tensor along a given
+dimension.
+msortSorts the elements of the input tensor along its first dimension in ascending
+order by value.
+Spectral Ops
+stftShort-time Fourier transform (STFT).
+istftInverse short time Fourier Transform.
+bartlett_windowBartlett window function.
+blackman_windowBlackman window function.
+hamming_windowHamming window function.
+hann_windowHann window function.
+kaiser_windowComputes the Kaiser window with window length window_length  and
+shape parameter beta.
+Other Operations
+atleast_1dReturns a 1-dimensional view of each input tensor with zero dimensions.
+Returns a 2-dimensional view of each input tensor with zero dimensions.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 26/43atleast_2d
+atleast_3dReturns a 3-dimensional view of each input tensor with zero dimensions.
+bincountCount the frequency of each value in an array of non-negative ints.
+block_diagCreate a block diagonal matrix from provided tensors.
+broadcast_tensorsBroadcasts the given tensors according to Broadcasting semantics.
+broadcast_toBroadcasts input to the shape shape.
+broadcast_shapesSimilar to broadcast_tensors()  but for shapes.
+bucketizeReturns the indices of the buckets to which each value in the input
+belongs, where the boundaries of the buckets are set by boundaries.
+cartesian_prodDo cartesian product of the given sequence of tensors.
+cdistComputes batched the p-norm distance between each pair of the two
+collections of row vectors.
+cloneReturns a copy of input.
+combinationsCompute combinations of length  of the given tensor.
+corrcoefEstimates the Pearson product-moment correlation coefficient matrix of
+the variables given by the input matrix, where rows are the variables
+and columns are the observations.
+covEstimates the covariance matrix of the variables given by the input
+matrix, where rows are the variables and columns are the observations.
+crossReturns the cross product of vectors in dimension dim of input and
+other.r
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 27/43cummaxReturns a namedtuple (values,  indices)  where values is the
+cumulative maximum of elements of input in the dimension dim.
+cumminReturns a namedtuple (values,  indices)  where values is the
+cumulative minimum of elements of input in the dimension dim.
+cumprodReturns the cumulative product of elements of input in the dimension
+dim.
+cumsumReturns the cumulative sum of elements of input in the dimension dim.
+diag If input is a vector (1-D tensor), then returns a 2-D square tensor
+diag_embedCreates a tensor whose diagonals of certain 2D planes (specified by
+dim1 and dim2) are filled by input.
+diagflat If input is a vector (1-D tensor), then returns a 2-D square tensor
+diagonalReturns a partial view of input with the its diagonal elements with
+respect to dim1 and dim2 appended as a dimension at the end of the
+shape.
+diffComputes the n-th forward difference along the given dimension.
+einsumSums the product of the elements of the input operands  along
+dimensions specified using a notation based on the Einstein summation
+convention.
+flattenFlattens input by reshaping it into a one-dimensional tensor.
+flipReverse the order of an n-D tensor along given axis in dims.
+fliplrFlip tensor in the left/right direction, returning a new tensor.
+Flip tensor in the up/down direction, returning a new tensor.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 28/43flipud
+kronComputes the Kronecker product, denoted by , of input and other.
+rot90Rotate an n-D tensor by 90 degrees in the plane specified by dims axis.
+gcdComputes the element-wise greatest common divisor (GCD) of input
+and other.
+histcComputes the histogram of a tensor.
+histogramComputes a histogram of the values in a tensor.
+histogramddComputes a multi-dimensional histogram of the values in a tensor.
+meshgridCreates grids of coordinates specified by the 1D inputs in attr:tensors.
+lcmComputes the element-wise least common multiple (LCM) of input and
+other.
+logcumsumexpReturns the logarithm of the cumulative summation of the exponentiation
+of elements of input in the dimension dim.
+ravelReturn a contiguous flattened tensor.
+renormReturns a tensor where each sub-tensor of input along dimension dim
+is normalized such that the p-norm of the sub-tensor is lower than the
+value maxnorm
+repeat_interleaveRepeat elements of a tensor.
+rollRoll the tensor input along the given dimension(s).
+searchsortedFind the indices from the innermost dimension of sorted_sequence  such
+that, if the corresponding values in values were inserted before the⊗
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 29/43indices, when sorted, the order of the corresponding innermost
+dimension within sorted_sequence  would be preserved.
+tensordotReturns a contraction of a and b over multiple dimensions.
+traceReturns the sum of the elements of the diagonal of the input 2-D matrix.
+trilReturns the lower triangular part of the matrix (2-D tensor) or batch of
+matrices input, the other elements of the result tensor out are set to 0
+tril_indicesReturns the indices of the lower triangular part of a row-by- col matrix
+in a 2-by-N Tensor, where the first row contains row coordinates of all
+indices and the second row contains column coordinates.
+triuReturns the upper triangular part of a matrix (2-D tensor) or batch of
+matrices input, the other elements of the result tensor out are set to 0
+triu_indicesReturns the indices of the upper triangular part of a row by col matrix
+in a 2-by-N Tensor, where the first row contains row coordinates of all
+indices and the second row contains column coordinates.
+unflattenExpands a dimension of the input tensor over multiple dimensions.
+vanderGenerates a Vandermonde matrix.
+view_as_realReturns a view of input as a real tensor.
+view_as_complexReturns a view of input as a complex tensor.
+resolve_conjReturns a new tensor with materialized conjugation if input's conjugate
+bit is set to True, else returns input.
+resolve_negReturns a new tensor with materialized negation if input's negative bit is
+set to True, else returns input.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 30/43BLAS and LAPACK Operations
+addbmmPerforms a batch matrix-matrix product of matrices stored in batch1
+and batch2, with a reduced add step (all matrix multiplications get
+accumulated along the first dimension).
+addmmPerforms a matrix multiplication of the matrices mat1 and mat2.
+addmvPerforms a matrix-vector product of the matrix mat and the vector
+vec.
+addrPerforms the outer-product of vectors vec1 and vec2 and adds it to
+the matrix input.
+baddbmmPerforms a batch matrix-matrix product of matrices in batch1 and
+batch2.
+bmmPerforms a batch matrix-matrix product of matrices stored in input
+and mat2.
+chain_matmulReturns the matrix product of the  2-D tensors.
+choleskyComputes the Cholesky decomposition of a symmetric positive-
+definite matrix  or for batches of symmetric positive-definite
+matrices.
+cholesky_inverseComputes the inverse of a complex Hermitian or real symmetric
+positive-definite matrix given its Cholesky decomposition.
+cholesky_solveComputes the solution of a system of linear equations with complex
+Hermitian or real symmetric positive-definite lhs given its Cholesky
+decomposition.
+dotComputes the dot product of two 1D tensors.
+geqrfThis is a low-level function for calling LAPACK's geqrf directly.
+Alias of torch.outer().N
+A
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 31/43ger
+innerComputes the dot product for 1D tensors.
+inverseAlias for torch.linalg.inv()
+detAlias for torch.linalg.det()
+logdetCalculates log determinant of a square matrix or batches of square
+matrices.
+slogdetAlias for torch.linalg.slogdet()
+luComputes the LU factorization of a matrix or batches of matrices A.
+lu_solveReturns the LU solve of the linear system  using the partially
+pivoted LU factorization of A from lu_factor().
+lu_unpackUnpacks the LU decomposition returned by lu_factor()  into the P,
+L, U matrices.
+matmulMatrix product of two tensors.
+matrix_powerAlias for torch.linalg.matrix_power()
+matrix_expAlias for torch.linalg.matrix_exp() .
+mmPerforms a matrix multiplication of the matrices input and mat2.
+mvPerforms a matrix-vector product of the matrix input and the vector
+vec.
+orgqrAlias for torch.linalg.householder_product() .Ax=b
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 32/43ormqrComputes the matrix-matrix multiplication of a product of
+Householder matrices with a general matrix.
+outerOuter product of input and vec2.
+pinverseAlias for torch.linalg.pinv()
+qrComputes the QR decomposition of a matrix or a batch of matrices
+input, and returns a namedtuple (Q, R) of tensors such that
+ with  being an orthogonal matrix or batch of
+orthogonal matrices and  being an upper triangular matrix or batch
+of upper triangular matrices.
+svdComputes the singular value decomposition of either a matrix or batch
+of matrices input.
+svd_lowrankReturn the singular value decomposition (U, S, V) of a matrix,
+batches of matrices, or a sparse matrix  such that
+.
+pca_lowrankPerforms linear Principal Component Analysis (PCA) on a low-rank
+matrix, batches of such matrices, or sparse matrix.
+lobpcgFind the k largest (or smallest) eigenvalues and the corresponding
+eigenvectors of a symmetric positive definite generalized eigenvalue
+problem using matrix-free LOBPCG methods.
+trapzAlias for torch.trapezoid().
+trapezoidComputes the trapezoidal rule along dim.
+cumulative_trapezoid Cumulatively computes the trapezoidal rule along dim.
+triangular_solveSolves a system of equations with a square upper or lower triangular
+invertible matrix  and multiple right-hand sides .input=QRQ
+R
+A
+A≈Udiag(S)VH
+A bTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 33/43vdotComputes the dot product of two 1D vectors along a dimension.
+Foreach Operations
+This API is in beta and subject to future changes. Forward-mode AD is not supported.
+_foreach_absApply torch.abs()  to each Tensor of the input list.
+_foreach_abs_Apply torch.abs()  to each Tensor of the input list.
+_foreach_acosApply torch.acos()  to each Tensor of the input list.
+_foreach_acos_Apply torch.acos()  to each Tensor of the input list.
+_foreach_asinApply torch.asin()  to each Tensor of the input list.
+_foreach_asin_Apply torch.asin()  to each Tensor of the input list.
+_foreach_atanApply torch.atan()  to each Tensor of the input list.
+_foreach_atan_Apply torch.atan()  to each Tensor of the input list.
+_foreach_ceilApply torch.ceil()  to each Tensor of the input list.
+_foreach_ceil_Apply torch.ceil()  to each Tensor of the input list.
+_foreach_cosApply torch.cos()  to each Tensor of the input list.Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 34/43_foreach_cos_Apply torch.cos()  to each Tensor of the input list.
+_foreach_coshApply torch.cosh()  to each Tensor of the input list.
+_foreach_cosh_Apply torch.cosh()  to each Tensor of the input list.
+_foreach_erfApply torch.erf()  to each Tensor of the input list.
+_foreach_erf_Apply torch.erf()  to each Tensor of the input list.
+_foreach_erfcApply torch.erfc()  to each Tensor of the input list.
+_foreach_erfc_Apply torch.erfc()  to each Tensor of the input list.
+_foreach_expApply torch.exp()  to each Tensor of the input list.
+_foreach_exp_Apply torch.exp()  to each Tensor of the input list.
+_foreach_expm1Apply torch.expm1()  to each Tensor of the input list.
+_foreach_expm1_Apply torch.expm1()  to each Tensor of the input list.
+_foreach_floorApply torch.floor()  to each Tensor of the input list.
+_foreach_floor_Apply torch.floor()  to each Tensor of the input list.
+_foreach_logApply torch.log()  to each Tensor of the input list.
+_foreach_log_Apply torch.log()  to each Tensor of the input list.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 35/43_foreach_log10Apply torch.log10()  to each Tensor of the input list.
+_foreach_log10_Apply torch.log10()  to each Tensor of the input list.
+_foreach_log1pApply torch.log1p()  to each Tensor of the input list.
+_foreach_log1p_Apply torch.log1p()  to each Tensor of the input list.
+_foreach_log2Apply torch.log2()  to each Tensor of the input list.
+_foreach_log2_Apply torch.log2()  to each Tensor of the input list.
+_foreach_negApply torch.neg()  to each Tensor of the input list.
+_foreach_neg_Apply torch.neg()  to each Tensor of the input list.
+_foreach_tanApply torch.tan()  to each Tensor of the input list.
+_foreach_tan_Apply torch.tan()  to each Tensor of the input list.
+_foreach_sinApply torch.sin()  to each Tensor of the input list.
+_foreach_sin_Apply torch.sin()  to each Tensor of the input list.
+_foreach_sinhApply torch.sinh()  to each Tensor of the input list.
+_foreach_sinh_Apply torch.sinh()  to each Tensor of the input list.
+_foreach_roundApply torch.round()  to each Tensor of the input list.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 36/43_foreach_round_Apply torch.round()  to each Tensor of the input list.
+_foreach_sqrtApply torch.sqrt()  to each Tensor of the input list.
+_foreach_sqrt_Apply torch.sqrt()  to each Tensor of the input list.
+_foreach_lgammaApply torch.lgamma()  to each Tensor of the input list.
+_foreach_lgamma_Apply torch.lgamma()  to each Tensor of the input list.
+_foreach_fracApply torch.frac()  to each Tensor of the input list.
+_foreach_frac_Apply torch.frac()  to each Tensor of the input list.
+_foreach_reciprocalApply torch.reciprocal()  to each Tensor of the input list.
+_foreach_reciprocal_Apply torch.reciprocal()  to each Tensor of the input list.
+_foreach_sigmoidApply torch.sigmoid()  to each Tensor of the input list.
+_foreach_sigmoid_Apply torch.sigmoid()  to each Tensor of the input list.
+_foreach_truncApply torch.trunc()  to each Tensor of the input list.
+_foreach_trunc_Apply torch.trunc()  to each Tensor of the input list.
+_foreach_zero_Apply torch.zero()  to each Tensor of the input list.
+UtilitiesTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 37/43compiled_with_cxx11_abiReturns whether PyTorch was built with
+_GLIBCXX_USE_CXX11_ABI=1
+result_typeReturns the torch.dtype  that would
+result from performing an arithmetic
+operation on the provided input tensors.
+can_castDetermines if a type conversion is
+allowed under PyTorch casting rules
+described in the type promotion
+documentation.
+promote_typesReturns the torch.dtype  with the
+smallest size and scalar kind that is not
+smaller nor of lower kind than either
+type1 or type2.
+use_deterministic_algorithmsSets whether PyTorch operations must
+use "deterministic" algorithms.
+are_deterministic_algorithms_enabledReturns True if the global deterministic
+flag is turned on.
+is_deterministic_algorithms_warn_only_enabledReturns True if the global deterministic
+flag is set to warn only.
+set_deterministic_debug_modeSets the debug mode for deterministic
+operations.
+get_deterministic_debug_modeReturns the current value of the debug
+mode for deterministic operations.
+set_float32_matmul_precisionSets the internal precision of float32
+matrix multiplications.
+get_float32_matmul_precisionReturns the current value of float32
+matrix multiplication precision.
+set_warn_alwaysWhen this flag is False (default) then
+some PyTorch warnings may only appearTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 38/43[source
+[source
+[source
+[sourceonce per process.
+get_device_moduleReturns the module associated with a
+given device(e.g., torch.device('cuda'),
+"mtia:0", "xpu", ...).
+is_warn_always_enabledReturns True if the global warn_always
+flag is turned on.
+vmapvmap is the vectorizing map;
+vmap(func)  returns a new function that
+maps func over some dimension of the
+inputs.
+_assertA wrapper around Python's assert which
+is symbolically traceable.
+Symbolic Numbers
+class torch.SymInt (node )
+Like an int (including magic methods), but redirects all operations on the wrapped node. This i
+used in particular to symbolically record operations in the symbolic shape workflow.
+as_integer_ratio ( )
+Represent this int as an exact integer ratio
+Return type:
+tuple[‘SymIntʼ, int]
+class torch.SymFloat (node )
+Like a float (including magic methods), but redirects all operations on the wrapped node. This 
+used in particular to symbolically record operations in the symbolic shape workflow.
+as_integer_ratio ( )
+Represent this float as an exact integer ratioTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 39/43[source
+[source
+[source
+[sourceReturn type:
+tuple[int, int]
+conjugate ( )
+Returns the complex conjugate of the float.
+Return type:
+SymFloat
+hex ( )
+Returns the hexadecimal representation of the float.
+Return type:
+str
+is_integer ( )
+Return True if the float is an integer.
+class torch.SymBool (node )
+Like a bool (including magic methods), but redirects all operations on the wrapped node. This 
+used in particular to symbolically record operations in the symbolic shape workflow.
+Unlike regular bools, regular boolean operators will force extra guards instead of symbolically
+evaluate. Use the bitwise operators instead to handle this.
+sym_floatSymInt-aware utility for float casting.
+sym_fresh_size
+sym_intSymInt-aware utility for int casting.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 40/43sym_maxSymInt-aware utility for max which avoids branching on a < b.
+sym_minSymInt-aware utility for min().
+sym_notSymInt-aware utility for logical negation.
+sym_iteSymInt-aware utility for ternary operator (t if b else f.)
+sym_sumN-ary add which is faster to compute for long lists than iterated binary
+addition.
+Export Path
+This feature is a prototype and may have compatibility breaking changes in the future.
+export generated/exportdb/index
+Control Flow
+This feature is a prototype and may have compatibility breaking changes in the future.
+condConditionally applies true_fn or false_fn.
+OptimizationsWarning ⚠
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 41/43compileOptimizes given model/function using TorchDynamo and specified backend.
+torch.compile documentation
+Operator Tags
+class torch.TagPrevious
+Python APINext
+torch.is_tensorRate this Page★★★★★
+© Copyright PyTorch Contributors.
+Built with the PyData Sphinx Theme 0.15.4.Send Feedback
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 42/43© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/torch.html 43/43
