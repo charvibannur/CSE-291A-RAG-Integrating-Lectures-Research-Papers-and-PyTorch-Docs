@@ -19,6 +19,7 @@ GLOBAL METRICS (means ± stdev)
      chunk_overlap: 0.1876 ± 0.0686 (min 0.1140, max 0.3289)
   text_supported@3: 0.1556 ± 0.2061 (min 0.0000, max 0.6667)
      text_recall@3: 0.5500 ± 0.4848 (min 0.0000, max 1.0000)
+              bleu: 0.0559 ± 0.0603 (min 0.0000, max 0.1998)
 
 SPLIT-SPECIFIC (means)
 ------------------------------------------------------------------------------------------
