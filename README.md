@@ -5,6 +5,7 @@ This is the project repository for the course Systems for LLM and Agents (CSE291
 <img width="1000" alt="image" src="https://github.com/user-attachments/assets/6167a3c9-cd1b-4178-8730-4a841b488838" />
 
 ## Repository Structure
+``` bash
 ├── assets/ # Figures, images, and supporting visuals
 ├── baselines/ # BM25 lexical retriever and a semantic vector-based RAG baseline
 ├── data/ # Input documents (cleaned .txt files)
@@ -13,6 +14,7 @@ This is the project repository for the course Systems for LLM and Agents (CSE291
 ├── results/ # Retrieved passages and evaluation outputs
 ├── .gitignore
 └── README.md
+```
 
 ## Authors
 1. Charvi Bannur
