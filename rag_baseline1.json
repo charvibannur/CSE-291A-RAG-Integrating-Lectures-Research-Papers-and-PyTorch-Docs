@@ -1,0 +1,259 @@
+{
+    "queries": [
+        {
+            "query": "What optimizations does FlashAttention introduce compared to standard attention kernels implemented in PyTorch?",
+            "results": [
+                {
+                    "filename": "vTensor_ Flexible Virtual Tensor Management for Efficient LLM Serving.txt",
+                    "match": "up to 2.4×throughput increase in end-to-end serving scenarios compared to vLLM. Moreover, it saves up to 80% (57 GB) GPU memory usage compared to vLLM. 97.1 Methodology Setup. We conduct all experiments on a server with eight NVIDIA A100(80GB) GPUs and an Intel Xeon Platinum 8369B CPU. These GPUs are interconnected via NVLink. Evaluation Scenarios. We evaluate FLEXINFER across multiple self-attention computation kernels and end-to-end serving scenarios on different LLMs. For end-to-end serving, we focus on single-generation and prefix-caching scenarios containing multi-turn chatbot and prefix-sharing scenarios. For kernel implementations, we focused on a self-attention mechanism, including decoding and prefix-prefilling kernels."
+                },
+                {
+                    "filename": "S2-Attention_ Hardware-Aware Context Sharding Among Attention Heads.txt",
+                    "match": "introduce sample-dependent sparsity patterns, making it computationally expensive to determine eviction timing during decoding. In contrast, our approach uses a fixed sparsity pattern across all samples, eliminating the overhead of deciding which tokens to evict. Besides, KV eviction approaches are post-hoc and often perform much poorly as compared to the original dense counterpart (Ge et al., 2024a). Our HHST , as we will soon see in the experiments, adapts to the sparse attention during training (pre-training or post-training) performs comparably to dense baselines while reducing the training overhead. 5 E XPERIMENT To evaluate HHST , we first study the pre-training"
+                },
+                {
+                    "filename": "Progressive Sparse Attention_ Algorithm and System Co-design for   Efficient Att.txt",
+                    "match": "dynamically adjusts KV cache budgets according to the attention weight distributions of requests, minimizing the KV cache usage. Compared to InfiniGen, PSA reduces the KV cache ratio for attention by 1.8x on average for LWM-Text-7B. This result may seem counterintuitive, given InfiniGen uses fine-grained token-level selection. However, InfiniGen uses a uniform minimal attention score threshold to selects critical tokens, which fails to account for the varying ranges of attention scores across requests. Moreover, InfiniGen adopts weight matrices compression and inter-layer prefetching to speed up the KV cache selection and loading process, but this inadvertently results in accuracy degradation in attention"
+                }
+            ]
+        },
+        {
+            "query": "What are the trade-offs between simple post-training quantization and GPTQ?",
+            "results": [
+                {
+                    "filename": "cmu_llmsys-17-quantization2.txt",
+                    "match": "compared with accurate -but-expensive methods? 29 Fastest prior method•https://github.com/qwopqwop200/GPTQ -for-LLaMa/ •GPTQ in ohttps://github.com/qwopqwop200/GPTQ -for- LLaMa/blob/triton/gptq.py 31GPTQ for LLaMAGPTQ: Initialization 32 ●Reshape weights from the input layer ●Initialize Hessian matrixGPTQ: Hessian Matrix Update 33●Update Hessian matrix with information from a new batch of the input and output pairs GPTQ: Lazy Batch -Update 34 ●Processes weight matrix W in blocks. ●Updates quantization parameters conditionally based on group size and static grouping settings.GPTQ: Lazy Batch -Update 35 ●Applies quantization function quantize to weights and computes the loss due to quantization. ●Adjusts remaining block weights based on quantization error to minimize the overall error.GPTQ:"
+                },
+                {
+                    "filename": "cmu_llmsys-16-quantization.txt",
+                    "match": "and round the inputs X_quant = torch .clip((X * scale + zeropoint ).round (), -128, 127) # Dequantize X_dequant = (X_quant - zeropoint ) / scale return X_quant .to(torch .int8), X_dequanthttps://colab.research.google.com/drive/1DPr4mUQ92Cc - xf4GgAaB6dFcFnWIvqYi?usp=sharing 12Direct Quantization Colab13Today’s Topic •Low precision numbers in computer •Basic Quantization Methods Model Quantization Approaches 14Quantization during training post trainingexpensive re -training / finetuning Model Quantization Approaches 15Quantization during training post trainingpreserve accuracy scale to large parametersBRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021) OBQ (Frantar et al., 2022) ZeroQuant (Yao et al., 2022) LLM.int8() (Dettmers et al., 2022)Model Quantization Approaches 16Quantization during training post trainingpreserve"
+                },
+                {
+                    "filename": "The Early Bird Catches the Leak_ Unveiling Timing Side Channels in LLM   Serving.txt",
+                    "match": "obtain TTFT values in the end-to-end scenario, the attacker first clears both the victim’s and the attacker’s requests from the cache. Next, the attacker measures the TTFT for their own request after the victim’s system prompt has been cached. Below, we describe how the TTFT is gathered and how caches are flushed. •Timing measurement . As shown in Figure 5, the attacker begins by issuing a synthesized request containing the targeted system prompt. Once the end-of-sequence token is received in the POST response, a short delay is introduced, ensuring the system prompt resides in the KV cache. The attacker then"
+                }
+            ]
+        },
+        {
+            "query": "What are the challenges of theoretical distributed training (PipeDream) and what is the scaling efficiency of distributed real-world Trainium performance (HLAT)?",
+            "results": [
+                {
+                    "filename": "yiying_training-2.txt",
+                    "match": "All rights reserved. Amazon Confidential and Trademark. Intermediate Performance, cont’d 18•For Commonsense Reasoning, the model accuracy improves quickly at beginning of training, and starts to saturate at later training stages. This is similar as the trends observed in other LLM model trainings•For Math task (GSM8K), the learning curve shows an exponentially increasing trend. It increase very gradually for the initial ~1 trillion tokens and begins to improve significantly during the later stages of training•For World Knowledge task, the performance increases almost linearly with number of training tokens•May related to close-book testing problem•Those observations indicate the necessity of a set of"
+                },
+                {
+                    "filename": "S2-Attention_ Hardware-Aware Context Sharding Among Attention Heads.txt",
+                    "match": "review the basics of GPU memory and execution hierarchy, and then introduce our Merge-Q technique, which significantly improves the kernel’s efficiency while allowing more fine-grained customization of the sparse attention. 3.1 P RELIMINARIES GPU threads have access to a hierarchy of different types of memory. Global high-bandwidth memory (HBM ) is the slowest but largest (roughly >100×in latency and ∼6K×in size). Shared memory (SRAM ) is physically on chip, thus has larger bandwidth and lower latency compared to HBM. Optimizing the computation of the SRAM and minimizing the IO between HBM and SRAM are crucial for improving the efficiency of"
+                },
+                {
+                    "filename": "24_fsdp_2304_11277.txt",
+                    "match": "and then flattens and shards all of the parameters within each unit. The sharded parameters are communicated and recovered on-demand before computations, and then they are im- mediately discarded afterwards. This approach ensures that FSDP only needs to materialize parameters from one unit at a time, which significantly reduces peak memory consumption. The design and implementation of FSDP faces the following challenges. •User Experience is critical for achieving broad adoption. When working on prior PyTorch distributed training fea- tures such as DistributeDataParallel (DDP) [ 14], we observed that aligning the user experience of distributed training with that of local training"
+                }
+            ]
+        },
+        {
+            "query": "What is the difference between torch.disttibuted and torch.distributed.pipelining?",
+            "results": [
+                {
+                    "filename": "distributed_pipelining.txt",
+                    "match": "performs runtime shape/dtype inference automatically by propagating the outputs from stage0 to stage1 and so forth, in linear order. To bypass shape inference, pass th input_args and output_args to each PipelineStage instance. Parameters: submodule (nn.Module) – The PyTorch module wrapped by this stage. stage_index (int) – The ID of this stage. num_stages (int) – The total number of stages. device (torch.device) – The device where this stage is located. input_args (Union[torch.Tensor, Tuple[torch.tensor]], optional) – The input arguments for the submodule. output_args (Union[torch.Tensor, Tuple[torch.tensor]], optional) – The output arguments for the submodule. group (dist.ProcessGroup, optional) – The process group for distributed"
+                },
+                {
+                    "filename": "cmu_llmsys-15-model-parallel.txt",
+                    "match": "Li •Model Parallel Training •Pipeline Parallelism •Tensor Parallelism 2Today’s TopicModel Parallelism 3Motivation: The size of models increases exponentially fast and large. It is no longer possible to fit these large models into the memory of a single GPU. TransformerGPT1GPT2GPT3GopherPALMGPT4 LLaMA3.1DeepSeek -v3 Qwen3 001101001,00010,000 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025size(B)Model Parallel Training 4computation (forward/backward/update) of a model is distributed across multiple workers. Distributed layer -wise computation Distributed tensor computation F0F1F2F3 B0B1B2B3loss device 3, layer 3 device 2, layer 2 device 1, layer 1 device 0, layer 0 grad updatePipeline Parallelism 5Naïve Model Parallel: The model is distributed"
+                },
+                {
+                    "filename": "Domino_ Eliminating Communication in LLM Training via Generic Tensor   Slicing a.txt",
+                    "match": "GPU idleness between adjacent operations (i.e., bubble time). The primary reason for bub- bles is the computation time for different operations is less than the PyTorch scheduling latency. To address this issue, we employ CudaGraph [43, 58] to eliminate the gap between adjacent operations, thereby reducing the overall computation time. However, commonly-used on-device random number generator (RNG) feature is incompatible with CudaGraph. As a workaround, we utilize a fixed seed instead of random numbers to mimic the behavior of the RNG. 5 Evaluation This section provides detailed evaluation and benchmark re- sults of Domino. We first discuss the model and"
+                }
+            ]
+        },
+        {
+            "query": "Explain the importance of ImageNet in the works alexnet and googlenet.",
+            "results": [
+                {
+                    "filename": "10_efficientnet_1905_11946.txt",
+                    "match": "and then use the same scaling coefﬁcients for all other models (step 2). 5. Experiments In this section, we will ﬁrst evaluate our scaling method on existing ConvNets and the new proposed EfﬁcientNets. 5.1. Scaling Up MobileNets and ResNets As a proof of concept, we ﬁrst apply our scaling method to the widely-used MobileNets (Howard et al., 2017; San- dler et al., 2018) and ResNet (He et al., 2016). Table 3 shows the ImageNet results of scaling them in different ways. Compared to other single-dimension scaling methods, our compound scaling method improves the accuracy on all these models, suggesting the"
+                },
+                {
+                    "filename": "04_googlenet_1409_4842.txt",
+                    "match": "in the challenge with no external data used for training. In addition to the training techniques aforementioned in this paper, we adopted a set of techniques during testing to obtain a higher performance, which we elaborate below. 1. We independently trained 7 versions of the same GoogLeNet model (including one wider version), and performed ensemble prediction with them. These models were trained with the same initialization (even with the same initial weights, mainly because of an oversight) and learning rate policies, and they only differ in sampling methodologies and the random order in which they see input images. 2. During"
+                },
+                {
+                    "filename": "02_resnet_1512_03385.txt",
+                    "match": "better than the constructed solution (or unable to do so in feasible time). In this paper, we address the degradation problem by introducing a deep residual learning framework. In- stead of hoping each few stacked layers directly ﬁt a desired underlying mapping, we explicitly let these lay- ers ﬁt a residual mapping. Formally, denoting the desired underlying mapping as H(x), we let the stacked nonlinear layers ﬁt another mapping of F(x) :=H(x)\u0000x. The orig- inal mapping is recast into F(x)+x. We hypothesize that it is easier to optimize the residual mapping than to optimize the original, unreferenced mapping. To the"
+                }
+            ]
+        },
+        {
+            "query": "What search algorithm does AlphaZero use instead of alpha-beta search?",
+            "results": [
+                {
+                    "filename": "18_alphazero_1712_01815.txt",
+                    "match": "reinforcement learning algorithm. Instead of a handcrafted evaluation function and move ordering heuristics, AlphaZero utilises a deep neural network (p;v) =f\u0012(s)with parameters \u0012. This neural network takes the board po- sitionsas an input and outputs a vector of move probabilities pwith components pa=Pr(ajs) 2for each action a, and a scalar value vestimating the expected outcome zfrom position s, v\u0019E[zjs].AlphaZero learns these move probabilities and value estimates entirely from self- play; these are then used to guide its search. Instead of an alpha-beta search with domain-speciﬁc enhancements, AlphaZero uses a general- purpose Monte-Carlo tree search (MCTS) algorithm. Each search consists of"
+                },
+                {
+                    "filename": "cmu_llmsys-10-gpu-acceleration.txt",
+                    "match": "500 cycle 500 cycle 1 cycle Loading data takes more time than actual computation!10CUDA Device Memory Model Variable declaration Memory Scope Lifetime int var; Register Thread Grid int varArr[N]; Local Thread Grid __device__ __shared__ int SharedVar ;Shared Block Grid __device__ int GlobalVar ;Global Grid Application __device__ __constant__ int constVar ;Constant Grid Application 11Access Device MemoryOpportunity to speedup: Reuse loaded data 12NN𝐶=𝐴×𝐵 AB CN NN Nthreads in the thread block may use the same dataOpportunity to speedup: Reuse loaded data 13NN𝐶=𝐴×𝐵 AB CN NN Nthreads in the thread block may use the same dataStep 1 (simultaneously) load the first tile of"
+                },
+                {
+                    "filename": "InfiniGen_ Efficient Generative Inference of Large Language Models with   Dynami.txt",
+                    "match": "values of the skewed query and key matrices, then add these two matrices together. This helps us calculate the sum of each column and perform top- koperation only once while accommodating the outlier columns of both query and key matrices. We then sum the elements in each column and select the top- kcolumns in the matrix; we choose 30% of the columns in our work. Using the sum of column values captures the global trend of each column while minimizing the effect of variance in each row. The selected columns better approximate the attention pattern because of the use of"
+                }
+            ]
+        },
+        {
+            "query": "What is internal covariate shift, and how does it affect training?",
+            "results": [
+                {
+                    "filename": "05_batchnorm_1502_03167.txt",
+                    "match": "of internal covariate shift on train- ing, and the ability of Batch Normalization to combat it, weconsideredtheproblemofpredictingthedigitclasson theMNISTdataset(LeCunetal.,1998a). Weusedavery simple network, with a 28x28binary image as input, and 510K20K30K40K50K0.70.80.91 Without BN With BN −202 −202 (a) (b)WithoutBN (c)With BN Figure 1: (a) The test accuracy of the MNIST network trained with and without Batch Normalization, vs. the number of training steps. Batch Normalization helps the network train faster and achieve higher accuracy. (b, c)The evolution of input distributions to a typical sig- moid,overthecourseoftraining,shownas {15,50,85}th percentiles. Batch Normalization makes the distribution morestableandreducestheinternalcovariateshift. 3fully-connectedhiddenlayerswith100activationseach. Eachhiddenlayercomputes y =g(Wu+b)withsigmoid nonlinearity, and the weights Winitialized"
+                },
+                {
+                    "filename": "11_nas_rl_1611_01578.txt",
+                    "match": "to not predict stride or pooling, it can design a 15-layer architecture that achieves 5.50% error rate on the test set. This architecture has a good balance between accuracy and depth. In fact, it is the shallowest and perhaps the most inexpensive architecture among the top performing networks in this table. This architecture is shown in Appendix A, Figure 7. A notable feature of this architecture is that it has many rectangular ﬁlters and it prefers larger ﬁlters at the top layers. Like residual networks (He et al., 2016a), the architecture also has many one-step skip connections. This architecture is"
+                },
+                {
+                    "filename": "14_simclr_2002_05709.txt",
+                    "match": "2007 rather than a difference in mAP. A caveat of this procedure is that it does not consider run-to-run variability when training the models, only variability arising from using a ﬁnite sample of images for evaluation. B.8.2. R ESULTS WITH STANDARD RESNET The ResNet-50 ( 4\u0002) results shown in Table 8 of the text show no clear advantage to the supervised or self-supervised models. With the narrower ResNet-50 architecture, however, supervised learning maintains a clear advantage over self-supervised learning. The supervised ResNet-50 model outperforms the self-supervised model on all datasets with linear evaluation, and most (10 of 12) datasets with"
+                }
+            ]
+        },
+        {
+            "query": "What does IO-aware mean in the context of FlashAttention?",
+            "results": [
+                {
+                    "filename": "23_flashattention_2205_14135.txt",
+                    "match": "we plot of the validation perplexity throughout training of GPT-2 small/medium, using either HuggingFace implementation or our FlashAttention implementation. We see that FlashAttention be- haves the same as the baseline implementation and the validation perplexity curves of the two implementations almost lie on top of each other. Long Document Classiﬁcation. For MIMIC-III and ECtHR, we follow the hyperparameters of Dai et al. [13]. 26100k 200k 300k Training steps1015202530Val perplexityGPT-2-small HuggingFace GPT-2-small FlashAttention GPT-2-medium HuggingFace GPT-2-medium FlashAttentionFigure 4: Validation perplexity of GPT-2 small/medium using two implementations. We conﬁrm that FlashAttention yields the same validation curves as the baseline implementation from HuggingFace."
+                },
+                {
+                    "filename": "S2-Attention_ Hardware-Aware Context Sharding Among Attention Heads.txt",
+                    "match": "the dense model. This observation works as an initial validation of the context understanding ability of the HHST design. We’ll further validate it in the long context continual training section. We also found adding two dense layers generally leads to a significantly higher performance. Within theHomogeneous group, we can observe adding attention sink can significantly boost training quality, compared to only using the sliding window (SWA). In the Heterogeneous & Incomplete group, the vertical stride size is bigger than the number of attention heads, making the context incomplete after the union. For the Heterogeneous & Complete group, we tune the"
+                },
+                {
+                    "filename": "Apt-Serve_ Adaptive Request Scheduling on Hybrid Cache for Scalable LLM   Infere.txt",
+                    "match": "linear model. This approximation is reasonable as the time complexity of the linear transformation is proportional to the sequence length of request 𝑖. The coefficient𝜌in Eq. 6 can be determined before activating the serving pipeline, involving a marginal preprocessing cost of approximately 30 seconds in practice. In this way, the request manager can estimate the extra cost by any amount of hidden cache usage during serving. Additionally, the quantification model incorporates an SLO-aware fallback mechanism. For a given request 𝑖in the inference iteration 𝑒, its tracked pending time p𝑒 𝑖may exceed the latency SLOs. Including such a request in the"
+                }
+            ]
+        },
+        {
+            "query": "Why can cProfile and the CPU-mode autograd profiler give incorrect timings on CUDA code?",
+            "results": [
+                {
+                    "filename": "bottleneck.txt",
+                    "match": "instructions. Because your script will be profiled, please ensure that it exits in a finite amount of time. Due to the asynchronous nature of CUDA kernels, when running against CUDA code, the cProfile output and CPU-mode autograd profilers may not show correct timings: the reported CPU time reports the amount of time used to launch the kernels but does not include the time the kernel spent executing on a GPU unless the operation does a synchronize. Ops that do synchronize appear to be extremely expensive under regular CPU-mode profilers. In these case where timings are incorrect, the CUDA-mode autograd profiler"
+                },
+                {
+                    "filename": "extending.txt",
+                    "match": "will handle any potential autocast logic and redispatch down. The next feature in line will be autograd that will properly create the autograd graph and then redispatch down. Finally, we reach the backend kernel for CUDA which will launch the right CUDA kernel and return the final result. On the way out, autograd will attach the graph to the output and, finally, autocast will have a chance to do any update it needs on exit. One configuration of the dispatcher is the order in which all these feature and backend keys are called. The latest list and their order can"
+                },
+                {
+                    "filename": "yiying_Overview.txt",
+                    "match": "codeWhat can LLMs do?•Text Generation: Writing emails, articles, poems, and even code. •Translation: Translating languages with impressive accuracy. •Summarization: Condensing long documents into key points. •Question Answering: Providing answers to a wide range of questions. •Conversational AI: Powering chatbots and virtual assistants.What can’t LLM do (well)?•Hallucination: can generate seemingly correct but incorrect information. •Bias: can reﬂect biases present in their training data. •Real-time info: no access to data present after their training •Real-time info: no access to data present after their training •Privacy: your personal info can be part of training data •Security: LLMs can be manipulated to give/not give"
+                }
+            ]
+        },
+        {
+            "query": "How does auto-differentiation work in these frameworks?",
+            "results": [
+                {
+                    "filename": "MCR-DL_ Mix-and-Match Communication Runtime for Deep Learning.txt",
+                    "match": "operations are implemented in low- latency C++ code underneath a thin Python interface, we have maintained low overhead while ensuring compatibility with Python-based DL frameworks. The performance improvements inherent in mixing commu- nication backends are consistent with the ﬁndings of previous NCCL and MPI studies [37] and studies exploring the mixture of MPI with external runtimes in [20]. VIII. C ONCLUSION State-of-the-art deep learning (DL) models are pushing the boundaries of existing ﬁelds while pioneering entirely new areas of study. However, such DL models are often impossible or impractical to train on single processors or small-scale workstations. Further work in"
+                },
+                {
+                    "filename": "cmu_llmsys-05-dl-framework.txt",
+                    "match": "-level details (no need to write cuda ) oautomatic differentiation (no need to derive gradient calculation manually) •efficient in large -scale training and inference oautomatically scale to data and model size oautomatic hardware acceleration5Deep Learning Frameworks (also for LLMs)•Formulate machine learning computation using data flow graphs (data moving around a computation graph) •TensorFlow is an interface for expressing machine learning algorithms and an implementation for executing such algorithms •PyTorch is a programming framework for tensor computation, deep learning, and auto differentiation 6Deep Learning Programming Framework7Aspect PyTorch TensorFlow JAX NumPy Primary Use Deep learning Deep learningnumerical and ML computingnumerical computing Programming"
+                },
+                {
+                    "filename": "cmu_llmsys-04-autodiff.txt",
+                    "match": "3Warp 4SM partition1•Basic CUDA operations omemory allocation odata movement ocreating threads and running on SMs ▪specifying number of threads and number of blocks in a grid oreferring to data in GPU memory within a thread ▪using building index variables to refer to the data •Implementing parallel matrix operations on GPUs opartition the data and computation and assign to threads 3Recap•Learning algorithm for Neural Network •Computation Graph •Auto Differentiation 4Today’s Topic •Neural network layers oEmbedding (lookup table) oLinear oRelu oAverage pooling oSoftmax 5A Simple Feedforward Neural Network LinearReluLinearSoftmax Embedding “It is a good movie”Avg•𝑥𝑛,𝑦𝑛 are data and label pairs for training"
+                }
+            ]
+        },
+        {
+            "query": "What are FlashMLA, DeepEP, and DeepGEMM, and what problems do they each solve?",
+            "results": [
+                {
+                    "filename": "cmu_llmsys-13-distributed-training.txt",
+                    "match": "Operators that can be reused in Other Networks: Dropout, LayerNorm , Softmax , Cross Entropy hierachical auto-regressive search for large vocabulary converting sorting to parallel operations (max, filter, re -rank)Accelerating decodingRecap: Accelerating Transformer Layers•FlashMLA (released 2/24/2025) oFlashMLA is an efficient MLA decoding kernel for Hopper GPUs, optimized for variable -length sequences serving. •DeepEP (released 2/25/2025) oa communication library tailored for Mixture -of-Experts ( MoE) and expert parallelism (EP). It provides high -throughput and low -latency all -to-all GPU kernels, which are also as known as MoE dispatch and combine. •DeepGEMM (released 2/26/2025) oDeepGEMM is a library designed for clean and"
+                },
+                {
+                    "filename": "cmu_llmsys-19-MoE.txt",
+                    "match": "parameters in Mixtral 8x7B model? •56B? •47B! osince only FFN layers act are experts, the other parameters (attention, embedding) are shared 11Parameters of MoEDanger of MoE over-fitting to small data 12 •Encoder experts tend to specialize in token groups or shallow concepts (e.g., punctuation, proper nouns). •Decoder experts exhibit less specialization. •In multilingual setups, experts do not specialize in specific languages due to token routing and load balancing.What does an Expert network learn? 13•KeepTop1 with 3 routing experts (finding linear boundaries among expert centroids) 14Geometric Interpretation of Expert Routing•Transformer Mixture -of-Expert Model oSwitch Transformer architecture oShared -routed Experts •Training and"
+                },
+                {
+                    "filename": "yiying_ai-agents.txt",
+                    "match": "task. At the concert, three agents are collaborating to perform in a band. Outdoors, two agents are discussing lantern-making, planning the required materials, and finances by selecting and using tools. Users can participate in any of these stages of this social activityThe use cases for LLM agents, or Language Model-based agents, are vast and diverse. These agents, powered by large language models (LLMs), can be used in various scenarios, including:1.Single-agent applications2.Multi-agent systems3.Human-Agent cooperationCategory https://gptpluginz.com/llm-agents/LLM agents can be utilized as personal assistants to assist users in breaking free from daily tasks and repetitive labor. They can analyze, plan, and solve problems"
+                }
+            ]
+        },
+        {
+            "query": "What problem does the Model Context Protocol (MCP) solve?",
+            "results": [
+                {
+                    "filename": "yiying_ai-agents.txt",
+                    "match": "of models to choose from and distributes the tasks to expert models. LLM.ƔTask Execution:Expert models execute on the specific tasks and log results.ƔResponse Generation:LLM receives the execution results and provides summarized results to users. LLMs + APIs to expert models: HuggingGPTTALM: Tool Augmented Language ModelsTALM: Tool Augmented Language ModelsLLMs + training for tool use: TALMToolformer: Language Models Can Teach Themselves to Use Tools LLMs + training for tool use: ToolformerMCP (Model Context Protocol)●Connecting (N) LLMs to (M) external tools/resources used to be a NxM problem ●MCP standardizes the LLM-tool communication into a N->1->M process ●Build with a client-server model ●MCP"
+                },
+                {
+                    "filename": "yiying_llm-perf.txt",
+                    "match": "Understanding LLM PerformanceYiying ZhangTool use: ƔThe agent learns to call external APIsfor extra information that is missing from the model weights (often hard to change after pre-training), including current information, code execution capability, access to proprietary information sources and more.What is LLM Agentshttps://gptpluginz.com/llm-agents/ https://lilianweng.github.io/posts/2023-06-23-agent/ MCP (Model Context Protocol)●Connecting (N) LLMs to (M) external tools/resources used to be a NxM problem ●MCP standardizes the LLM-tool communication into a N->1->M process ●Build with a client-server model ●MCP client: the agent that needs to call tool/data ●MCP server: a service to expose external tools and data sources AI Agent/Workflow Frameworks●Frameworks initially proposed to"
+                },
+                {
+                    "filename": "yiying_Overview.txt",
+                    "match": "an AI workﬂow: Autonomous and can “morph”Here is a famous picture from Lilian Weng (from OpenAI)What is LLM Agentshttps://gptpluginz.com/llm-agents/ https://lilianweng.github.io/posts/2023-06-23-agent/ƔLanguage Mastery:Their inherent capability to both comprehend and produce language ensures seamless user interaction.ƔDecision-making:LLMs are equipped to reason and decide, making them adept at solving intricate issues.ƔFlexibility:Their adaptability ensures they can be molded for diverse applications.ƔCollaborative Interactions:They can collaborate with humans or other agents, paving the way for multifaceted interactions.Why LLM Agents stand out? Equipping Agents: The Power of Tooling•Tools: external functions, APIs, or even another (utility) agent (e.g., MCP server) •Agents can often decide when to call tools and what"
+                }
+            ]
+        },
+        {
+            "query": "What are the three core components of the TinyServe system?",
+            "results": [
+                {
+                    "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving.txt",
+                    "match": "training. These works emphasize that carefully designed synthetic stressors and caching strategies are essential for both graph-based and language-based workloads, re- inforcing the importance of lightweight analysis frameworks. 3 Methodology 3.1 System Overview: TinyServe TinyServe is a lightweight serving framework designed for serving tiny language models under tight memory and latency constraints. Rather than acting as a benchmarking tool, TinyServe serves as a real-time serving environment that enables sparsity-aware atten- tion, modular token selection, and efficient KV-cache reuse. The system is organized around three core components: (1)Query-Aware KV Retriever: Dynamically selects relevant key-value blocks at decode time based on the"
+                },
+                {
+                    "filename": "24_fsdp_2304_11277.txt",
+                    "match": "only materializes unsharded parameters and gradients of one unit at a time, and otherwise, it keeps parameters and gradients sharded. Throughout the training loop, the optimizer states are kept sharded. The memory requirements for FSDP are proportional to the size of the sharded model plus the size of the largest fully-materialized FSDP unit. Figure 1 demonstrates the overall workflow using a simple six layer model. Suppose FSDP decomposes the model into three parts, namely, [layer0, layer3] ,[layer1, layer2] , and [layer4, layer5] . The decomposition behavior can be controlled by user-defined func- tions. FSDP then wraps each of these three"
+                },
+                {
+                    "filename": "cmu_llmsys-02-gpu-programming.txt",
+                    "match": "Language Model 2bridges corn0.6 0.02 𝑃(𝑥𝑡|𝑥<𝑡) Decoder [BOS] Pgh is a city ofPgh is a city ofTransformerGPT1GPT2GPT3GopherPALMGPT4 Nemotron LLaMA3 -8BLLaMA3.1 Qwen2DeepSeek -v3 001101001,00010,000 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025size(B) 3Recap: Scaling of LLMs (the need for system optimization)•Programming model orelies on good abstraction •Latency/Throughput oData movement oComputation •Reliability •Security 4Recap: Important Topics in LLM systems•Neural Network Layer and low -level operators •Components of A GPU Server •GPU Architecture •Program Execution on GPU 5Outline Classifying the sentiment of online movie reviews. (Positive, negative, neutral) 6Text Classification Spider -Man is an almost -perfect extension of the experience of"
+                }
+            ]
+        },
+        {
+            "query": "What is NVIDIA GPU Confidential Computing (CC) and how does it secure communication?",
+            "results": [
+                {
+                    "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative .txt",
+                    "match": "the GPU, while “c” and “d” denote ciphertexts moved from the GPU back to the CPU. After the transfers, the current IV of CPU and GPU is 3 and 7, respectively. read/write GPU memory and modify the control flow. Hard- ware GPU confidential computing has low performance over- head and is backward-compatible with existing applications. This paper focuses on studying hardware GPU confidential computing. A closer look at NVIDIA CC. Although CVMs encrypt their memory, this encryption is separate from that used by NVIDIA CC. NVIDIA CC ensures the confidentiality and integrity of communication between a CVM and a GPU"
+                },
+                {
+                    "filename": "yiying_training-2.txt",
+                    "match": "Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark. Observations on training precision for 70B (preliminary) 37•Pure BF16 (without stochastic rounding) is usually bad (gradient can be unstable and explode)•This is observed for both 7B and 70B training. •Using master weights usually has better accuracy with little throughput impact•But requires more memory, so may run into OOM issue•Always use Zero-1 with master weights•Using FP32 for certain operations can improve accuracy•E.g. gradient accumulation and all-reduce, softmax & cross-entropy calculation•Negatively impact throughput and memory footprint•Stochastic rounding may cause drift when parallelism dimension is large•Can be partially mitigated with"
+                },
+                {
+                    "filename": "Tesseract_ Parallelize the Tensor Parallelism Efficiently.txt",
+                    "match": "Megatron-LM, its 𝑇𝑐𝑜𝑚𝑚 consists all-reduce operations, which makes its communication2𝛽(𝑝−1)𝑏𝑠ℎ 𝑝, and its isoefficiency function 𝑊∼𝑝3, where𝛽denotes time to transfer a scalar. For Optimus, its𝑇𝑐𝑜𝑚𝑚 consists broadcast and reduce operations, which makes its communication time2𝛽𝑏𝑠ℎ2𝑞log𝑝 𝑝, and its isoefficiency function 𝑊∼(√𝑝log𝑝)3. For Tesseract, its 𝑇𝑐𝑜𝑚𝑚 consists broadcast and reduce operations as well. Tesseract reduces communication between GPU significantly as well, which is a huge drawback for Cannon’s Algorithm and 2.5D matrix multiplication. With GPU amount 𝑝, Canon’s Algorithm requires 2∗𝑝3 2−2∗𝑝1 2times of information transfer between GPU for a single matrix multiplication operation, 2.5D algorithm requires 2∗𝑝−2∗𝑝1 3amount of transmission."
+                }
+            ]
+        },
+        {
+            "query": "Why can't you perform data-dependent operations on meta tensors?",
+            "results": [
+                {
+                    "filename": "meta.txt",
+                    "match": "allowing you to load a representation of the model without actually loading the actual parameters into memory. This can be helpful if you need to make transformations on the model before you load the actual data. Most operations can be performed on meta tensors, producing new meta tensors that describe what the result would have been if you performed the operation on a real tensor. You can use this to perform abstract analysis without needing to spend time on compute or space to represent the actual tensors. Because meta tensors do not have real data, you cannot perform data-dependent operations"
+                },
+                {
+                    "filename": "backends.txt",
+                    "match": "opt_einsum (https://optimized-einsum.readthedocs.io/en/stable/path_finding.html) if available to calculate an optimal path of contraction for faster performance. If opt_einsum is not available, torch.einsum will fall back to the default contraction path of left to right. torch.backends.opt_einsum. strategy A str that specifies which strategies to try when torch.backends.opt_einsum.enabled is True. By default, torch.einsum will try the “auto” strategy, but the “greedy” and “optimal” strategies are also supported. Note that the “optimal” strategy is factorial on the number of inputs as it tries all possible paths. See more details in opt_einsumʼs docs (https://optimized- einsum.readthedocs.io/en/stable/path_finding.html). torch.backends.xeon Previous Meta deviceNext torch.exportRate this Page★★★★★ © Copyright PyTorch Contributors.Send"
+                },
+                {
+                    "filename": "24_fsdp_2304_11277.txt",
+                    "match": "that the rate limiter’s effectiveness is not consistent, as it does not attain any speedups in the RegNet experiments, and even impedes the DeepViT ones. This behavior is expected since throttling the communications can only boost training if the fast CPU thread aggressively allocates GPU memory blocks and causes defragmentations. If it is difficult to identify with certainty from latency measurements or profiled traces, CUDA malloc retry can serve as a helpful indicator, which can be obtained from the num_alloc_retries key in the torch.cuda.memory_stats() dictionary. The experiments conducted with T5 models have demonstrated that the rate limiter technique can greatly"
+                }
+            ]
+        }
+    ]
+}
