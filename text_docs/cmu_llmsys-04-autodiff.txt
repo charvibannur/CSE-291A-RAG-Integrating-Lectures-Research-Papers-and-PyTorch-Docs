@@ -1,0 +1,326 @@
+11868 LLM Systems
+Auto Differentiation
+Lei Li
+•GPU is composed of 
+ostreaming processing units (SMs)
+▪each with four partitions of 32 cores
+▪shared L1 cache 
+omemory
+oL2 cache: share with all SMs
+•Threads organized in
+ogrid of thread blocks
+oeach block is divided into warps 
+running on one SM.
+2Recap
+Grid GPU
+Warp
+1Thread Block
+Warp
+1Warp
+2
+Warp
+3Warp
+4SM
+partition1•Basic CUDA operations
+omemory allocation
+odata movement
+ocreating threads and running on SMs
+▪specifying number of threads and number of blocks in a grid
+oreferring to data in GPU memory within a thread
+▪using building index variables to refer to the data
+•Implementing parallel matrix operations on GPUs
+opartition the data and computation and assign to threads
+3Recap•Learning algorithm for Neural Network
+•Computation Graph
+•Auto Differentiation
+4Today’s Topic
+•Neural network layers
+oEmbedding (lookup table)
+oLinear 
+oRelu
+oAverage pooling
+oSoftmax
+5A Simple Feedforward Neural Network
+LinearReluLinearSoftmax
+Embedding
+“It is a good movie”Avg•𝑥𝑛,𝑦𝑛 are data and label pairs for training
+•Cross entropy
+ℒ(𝜃)=1
+𝑁∑
+𝑛=1𝑁
+−log𝑓 (𝑥𝑛)𝑦𝑛
+•Pytorch  CrossEntropyLoss  is implemented as
+oNegative Likelihood on logits
+6Training Loss for Classificationloss = nn.CrossEntropyLoss ()
+output  = loss( input_logits , target_labels )
+grads = output.backward ()
+7Today’s focus (using PyTorch  Example)
+how is backward implemented?
+how does it work on any network?•Given a training set of input -output pairs 𝐷
+={(𝑥𝑛,𝑦𝑛)}𝑛=1𝑁
+o𝑥𝑛and 𝑦𝑛may both be vectors
+•To find the model parameters such that the model 
+produces the most accurate output for each 
+training input
+oOr a close approximation of it
+•Learning the parameter of a neural network is an 
+instance!
+oThe network architecture is given
+8The Learning Problem
+𝑦
+𝑿•Consider a generic function minimization problem, where x is 
+unknown variable
+min 𝑓(𝑥)
+𝑥 where  𝑓:ℝ𝑑→ℝ
+•Iterative update algorithm 
+𝑥𝑡+1←𝑥𝑡+Δ
+•so that 𝑓(𝑥𝑡+1)≪𝑓(𝑥𝑡)
+•How to find Δ
+9Generic Iterative Algorithm𝑓(𝑥𝑡+Δ𝑥)≈𝑓(𝑥𝑡)+Δ𝑥𝑇𝛻𝑓|𝑥𝑡
+•To make Δ𝑥𝑇𝛻𝑓|𝑥𝑡 smallest
+o⇒Δ𝑥in the opposite  direction  of 𝛻𝑓|𝑥𝑡i.e.Δ𝑥=−𝛻𝑓|𝑥𝑡
+•Update rule: 𝑥𝑡+1=𝑥𝑡−𝜂𝛻𝑓 |𝑥𝑡
+•𝜂is a hyper -parameter to control the learning rate
+10Gradient Descentset learning rate eta.
+1.set initial parameter 𝜃←𝜃0
+2.for epoch = 1 to maxEpoch or until converg :
+3.  for each batch in the data:
+4.    total_g  = 0
+5.    for each data (x, y) in data batch :
+6. compute error err(f(x; 𝜃) -y)
+7. compute gradient 𝑔=𝜕err (𝜃)
+𝜕𝜃
+8. total_g += g
+9. update 𝜃= 𝜃-eta * total_g / N
+11(Stochastic) Gradient Descent Algorithm•Goal: 𝜕𝑙
+𝜕𝑤𝑖
+•Forward computation
+•Backpropogation
+12How to compute the gradient for every 
+parameter in an “arbitrary network ”?
+LinearReluLinearSoftmax
+Embedding
+“It is a good movie”Avg•Learning algorithm for Neural Network
+•Computation Graph
+•Auto Differentiation
+13Today’s Topic
+•Calculations on a neural network can be defined using 
+computation graph
+•Each node denotes a variable or an operation
+•Directed edges to connect nodes, indicating the input 
+values for operations. 
+14Computation Graph
+𝑥1 ℎ2 ℎ3
+𝑤1*relu(.)ℎ4
+𝑤2*𝑜5
+𝑦1CEloss15𝑥1
+𝑥3
+𝑥51.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥42.0
+*
++f = x1 +  exp( 1.5 * x1 + 2.0 * x2) 
+Computation:
+1.Topological sorting of all 
+nodes
+2.Calculate the value for 
+each node given its inputx1= 3, x2=0.5•Put all nodes into un -
+processed queue. 
+•Repeatedly, find a node 
+without incoming edges from 
+un-processed nodes
+oevaluate its value based on 
+operation
+oremove the node from the 
+queue and add it to processed 
+queue
+16Topological Sort
+𝑥1
+𝑥3
+𝑥51.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥42.0
+*
++•Most autodiff  systems, including Pytorch /Autograd , explicitly 
+construct the computation graph. 
+•TensorFlow provide mini -languages for building 
+computation graphs directly. 
+•Disadvantage: need to learn a totally new API. 
+•Autograd  (JAX) instead builds them by tracing the forward 
+pass computation (similar to numpy ).
+17Building Computation Graph•Node class, with attributes
+ovalue: the actual value computed on a particular set of inputs 
+ofun: the primitive operation defining the node 
+oargs and kwargs : the arguments the op was called with 
+oparents: the parent Nodes
+•More details in next lecture
+18Implementation
+https://github.com/mattjj/autodidact  •Autograd’s  NumPy module provides primitive ops which 
+look and feel like NumPy functions, but secretly build the 
+computation graph.
+19Wrapper around Numpy
+•Learning algorithm for Neural Network
+•Computation Graph
+•Auto Differentiation
+oconstructing the computation graph for calculating gradients
+20Today ’s Topic
+•To learn a neural network, we need gradient of loss function 
+w.r.t.  parameters. 
+•Parameters are also variables, and represented as nodes in 
+the computation graph.
+•Chain rule => backpropogation
+𝑑𝑦(𝑧)
+𝑑𝑥=𝑑𝑦(𝑧)
+𝑑𝑧∙𝑑𝑧
+𝑑𝑥
+21Gradient Calculation22y=x1 +  exp(1.5 * x1 + 2.0 * x2) Computing the derivatives 𝜕𝑦
+𝜕𝑥𝑖
+Define ഥ𝑥𝑖=𝜕𝑦
+𝜕𝑥𝑖x1= 3, x2=0.5
+𝑥1
+𝑥3
+𝑥5𝑤1
+=1.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥4𝑤2
+=2.0
+*
++23y=x1 +  exp( 1.5 * x1 + 2.0 * x2) Computing the derivatives 𝜕𝑦
+𝜕𝑥𝑖
+Define ഥ𝑥𝑖=𝜕𝑦
+𝜕𝑥𝑖
+𝑥7=1
+𝑥6=1
+𝑥5=𝜕𝑦
+𝜕𝑥6∙𝜕𝑥6
+𝜕𝑥5=𝑥6∙exp(𝑥5)
+𝑥4=𝜕𝑦
+𝜕𝑥5∙𝜕𝑥5
+𝜕𝑥4=𝑥5
+𝑥3=𝜕𝑦
+𝜕𝑥5∙𝜕𝑥5
+𝜕𝑥3=𝑥5
+𝑤2=𝜕𝑦
+𝜕𝑥4∙𝜕𝑥4
+𝜕𝑤2=𝑥4∙𝑥2x1= 3, x2=0.5
+𝑥1
+𝑥3
+𝑥5𝑤1
+=1.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥4𝑤2
+=2.0
+*
++24𝑦 𝑧𝑥 ҧ𝑥=ത𝑦∙𝜕𝑦
+𝜕𝑥+ҧ𝑧∙𝜕𝑧
+𝜕𝑥
+…Node with multiple outgoing edgesJacobian
+𝐽=𝜕𝑦
+𝜕𝑥=𝜕𝑦1
+𝜕𝑥1𝜕𝑦1
+𝜕𝑥2
+𝜕𝑦2
+𝜕𝑥1𝜕𝑦2
+𝜕𝑥2
+25Partial derivatives for Vectors
+row: keep y index, iter x index
+col: keep x index, iter y index𝐽=𝜕𝑦
+𝜕𝑥=𝜕𝑦1
+𝜕𝑥1𝜕𝑦1
+𝜕𝑥2
+𝜕𝑦2
+𝜕𝑥1𝜕𝑦2
+𝜕𝑥2
+•computing the partial derivative for each node (vector)
+ҧ𝑥=𝐽𝑇ത𝑦
+26Vector Jacobian Product𝑦=𝑊𝑥
+ҧ𝑥=𝑊𝑇ത𝑦
+27Example•For each primitive operation, we must specify VJPs for each 
+of its arguments. 
+•defvjp  (defined in core.py ) is a convenience routine for 
+registering VJPs. 
+ defvjp (anp.exp ,    lambda g, ans, x: ans * g)
+28Implementing Vector -Jacobian Product (VJP)•Instead of explicitly computing the derivatives (gradients) for 
+each data sample following the backward direction
+•Construct a computation graph for gradient calculation for 
+every node 
+•Applicable to any input data (and output=loss)
+29Auto Differentiation30y=x1 +  exp(1.5 * x1 + 2.0 * x2) Computing the derivatives 𝜕𝑦
+𝜕𝑥𝑖
+Define ഥ𝑥𝑖=𝜕𝑦
+𝜕𝑥𝑖x1= 3, x2=0.5
+𝑥1
+𝑥3
+𝑥5𝑤1
+=1.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥4𝑤2
+=2.0
+*
++31y=x1 +  exp(1.5 * x1 + 2.0 * x2) x1= 3, x2=0.5
+𝑥1
+𝑥3
+𝑥5𝑤1
+=1.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥4𝑤2
+=2.0
+*
++
+𝑥7
+=1𝑥6𝑥4
+𝑥5
+exp(.)
+id𝑥5→6 *id𝑤2*𝑥2
+*
+𝑥3id𝑤1*𝑥1
+𝑥1→3*+Quiz
+32𝑥1
+𝑥2
+𝑥4𝑤
+*
+𝑥6exp(.)
+𝑥7+𝑥5
+=1𝑥3-
+1/x33Implementing Backward Pass 
+(important for HW 1)
+34Build the AutoDiff  Graph
+35Use AutoGrad
+•use finite differences to check our gradient calculations
+𝜕𝑓(𝑥1,𝑥2)
+𝜕𝑥1=𝑓𝑥1+ℎ,𝑥2−𝑓(𝑥1−ℎ,𝑥2)
+2ℎ
+•Care the precision!
+oUse double precision (fp64)
+oPick a small ℎ=0.000001
+oCompute the forward difference through the graph twice
+36How to check the correctness of gradient•Learning parameters of an NN needs gradient calculation
+•Computation Graph
+oto perform computation: topological traversal along the DAG
+•Auto Differentiation
+obuilding backward computation graph for gradient calculation
+•https:// github.com /mattjj /autodidact/
+37Summary•Auto Diff survey, https://arxiv.org/abs/1502.05767  
+•The Elements of Differentiable Programming (Book), 
+https://arxiv.org /abs/2403.14606  
+38Additional Reading•TensorFlow: A System for Large -Scale Machine Learning, 
+OSDI 2016.
+39Reading for Next Class

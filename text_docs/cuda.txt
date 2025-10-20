@@ -1,0 +1,253 @@
+torch.cuda
+Created On: Dec 23, 2016 | Last Updated On: Jun 13, 2025
+This package adds support for CUDA tensor types.
+It implements the same function as CPU tensors, but they utilize GPUs for computation.
+It is lazily initialized, so you can always import it, and use is_available()  to determine if your
+system supports CUDA.
+CUDA semantics has more details about working with CUDA.
+StreamContextContext-manager that selects a given stream.
+can_device_access_peerCheck if peer access between two devices is possible.
+current_blas_handleReturn cublasHandle_t pointer to current cuBLAS handle
+current_deviceReturn the index of a currently selected device.
+current_streamReturn the currently selected Stream for a given device.
+cudartRetrieves the CUDA runtime API module.
+default_streamReturn the default Stream for a given device.
+deviceContext-manager that changes the selected device.
+device_countReturn the number of GPUs available.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 1/11device_memory_usedReturn used global (device) memory in bytes as given by nvidia-
+smi or amd-smi.
+device_ofContext-manager that changes the current device to that of given
+object.
+get_arch_listReturn list CUDA architectures this library was compiled for.
+get_device_capabilityGet the cuda capability of a device.
+get_device_nameGet the name of a device.
+get_device_propertiesGet the properties of a device.
+get_gencode_flagsReturn NVCC gencode flags this library was compiled with.
+get_stream_from_externalReturn a Stream from an externally allocated CUDA stream.
+get_sync_debug_modeReturn current value of debug mode for cuda synchronizing
+operations.
+initInitialize PyTorch's CUDA state.
+ipc_collectForce collects GPU memory after it has been released by CUDA
+IPC.
+is_availableReturn a bool indicating if CUDA is currently available.
+is_initializedReturn whether PyTorch's CUDA state has been initialized.
+is_tf32_supportedReturn a bool indicating if the current CUDA/ROCm device
+supports dtype tf32.
+memory_usageReturn the percent of time over the past sample period during
+which global (device) memory was being read or written as givenTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 2/11by nvidia-smi.
+set_deviceSet the current device.
+set_streamSet the current stream.This is a wrapper API to set the stream.
+set_sync_debug_modeSet the debug mode for cuda synchronizing operations.
+streamWrap around the Context-manager StreamContext that selects a
+given stream.
+synchronizeWait for all kernels in all streams on a CUDA device to complete.
+utilizationReturn the percent of time over the past sample period during
+which one or more kernels was executing on the GPU as given by
+nvidia-smi.
+temperatureReturn the average temperature of the GPU sensor in Degrees C
+(Centigrades).
+power_drawReturn the average power draw of the GPU sensor in mW
+(MilliWatts)
+clock_rateReturn the clock speed of the GPU SM in MHz (megahertz) over
+the past sample period as given by nvidia-smi.
+AcceleratorErrorException raised while executing on device
+OutOfMemoryErrorException raised when device is out of memory
+Random Number Generator
+get_rng_stateReturn the random number generator state of the specified GPU as a
+ByteTensor.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 3/11get_rng_state_allReturn a list of ByteTensor representing the random number states of all
+devices.
+set_rng_stateSet the random number generator state of the specified GPU.
+set_rng_state_allSet the random number generator state of all devices.
+manual_seedSet the seed for generating random numbers for the current GPU.
+manual_seed_allSet the seed for generating random numbers on all GPUs.
+seedSet the seed for generating random numbers to a random number for the
+current GPU.
+seed_allSet the seed for generating random numbers to a random number on all
+GPUs.
+initial_seedReturn the current random seed of the current GPU.
+Communication collectives
+comm.broadcast Broadcasts a tensor to specified GPU devices.
+comm.broadcast_coalesced Broadcast a sequence of tensors to the specified GPUs.
+comm.reduce_add Sum tensors from multiple GPUs.
+comm.reduce_add_coalesced Sum tensors from multiple GPUs.
+comm.scatter Scatters tensor across multiple GPUs.
+comm.gather Gathers tensors from multiple GPU devices. To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 4/11Streams and events
+StreamWrapper around a CUDA stream.
+ExternalStreamWrapper around an externally allocated CUDA stream.
+EventWrapper around a CUDA event.
+Graphs (beta)
+is_current_stream_capturingReturn True if CUDA graph capture is underway on the current
+CUDA stream, False otherwise.
+graph_pool_handleReturn an opaque token representing the id of a graph
+memory pool.
+CUDAGraphWrapper around a CUDA graph.
+graphContext-manager that captures CUDA work into a
+torch.cuda.CUDAGraph  object for later replay.
+make_graphed_callablesAccept callables (functions or nn.Module s) and returns
+graphed versions.
+This package adds support for device memory management implemented in CUDA.
+Memory management
+empty_cacheRelease all unoccupied cached memory currently
+held by the caching allocator so that those can be
+used in other GPU application and visible in nvidia-
+smi.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 5/11get_per_process_memory_fractionGet memory fraction for a process.
+list_gpu_processesReturn a human-readable printout of the running
+processes and their GPU memory use for a given
+device.
+mem_get_infoReturn the global free and total GPU memory for a
+given device using cudaMemGetInfo.
+memory_statsReturn a dictionary of CUDA memory allocator
+statistics for a given device.
+memory_stats_as_nested_dictReturn the result of memory_stats()  as a nested
+dictionary.
+reset_accumulated_memory_statsReset the "accumulated" (historical) stats tracked by
+the CUDA memory allocator.
+host_memory_statsReturn a dictionary of CUDA memory allocator
+statistics for a given device.
+host_memory_stats_as_nested_dictReturn the result of host_memory_stats()  as a
+nested dictionary.
+reset_accumulated_host_memory_statsReset the "accumulated" (historical) stats tracked by
+the host memory allocator.
+memory_summaryReturn a human-readable printout of the current
+memory allocator statistics for a given device.
+memory_snapshotReturn a snapshot of the CUDA memory allocator
+state across all devices.
+memory_allocatedReturn the current GPU memory occupied by
+tensors in bytes for a given device.
+max_memory_allocatedReturn the maximum GPU memory occupied by
+tensors in bytes for a given device.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 6/11reset_max_memory_allocatedReset the starting point in tracking maximum GPU
+memory occupied by tensors for a given device.
+memory_reservedReturn the current GPU memory managed by the
+caching allocator in bytes for a given device.
+max_memory_reservedReturn the maximum GPU memory managed by the
+caching allocator in bytes for a given device.
+set_per_process_memory_fractionSet memory fraction for a process.
+memory_cachedDeprecated; see memory_reserved().
+max_memory_cachedDeprecated; see max_memory_reserved() .
+reset_max_memory_cachedReset the starting point in tracking maximum GPU
+memory managed by the caching allocator for a
+given device.
+reset_peak_memory_statsReset the "peak" stats tracked by the CUDA memory
+allocator.
+reset_peak_host_memory_statsReset the "peak" stats tracked by the host memory
+allocator.
+caching_allocator_allocPerform a memory allocation using the CUDA
+memory allocator.
+caching_allocator_deleteDelete memory allocated using the CUDA memory
+allocator.
+get_allocator_backendReturn a string describing the active allocator
+backend as set by PYTORCH_CUDA_ALLOC_CONF .
+CUDAPluggableAllocatorCUDA memory allocator loaded from a so file.
+change_current_allocatorChange the currently used memory allocator to be
+the one provided.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 7/11[sourceMemPoolMemPool represents a pool of memory in a caching
+allocator.
+caching_allocator_enableEnable or disable the CUDA memory allocator.
+class torch.cuda. use_mem_pool (pool, device=None )
+A context manager that routes allocations to a given pool.
+Parameters:
+pool (torch.cuda.MemPool) – a MemPool object to be made active so that allocations
+route to this pool.
+device (torch.device or int, optional) – selected device. Uses MemPool on the current
+device, given by current_device(), if device is None (default).
+This context manager makes only current threadʼs allocations route to the given pool.
+If a new thread is spawned inside the context manager (e.g. by calling backward) the
+allocations in that thread will not route to the given pool.
+NVIDIA Tools Extension (NVTX)
+nvtx.mark Describe an instantaneous event that occurred at some point.
+nvtx.range_push Push a range onto a stack of nested range span.
+nvtx.range_pop Pop a range off of a stack of nested range spans.
+nvtx.range Context manager / decorator that pushes an NVTX range at the beginning of
+its scope, and pops it at the end.
+Jiterator (beta)Note 
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 8/11jiterator._create_jit_fn Create a jiterator-generated cuda kernel for an
+elementwise op.
+jiterator._create_multi_output_jit_fn Create a jiterator-generated cuda kernel for an
+elementwise op that supports returning one or
+more outputs.
+TunableOp
+Some operations could be implemented using more than one library or more than one technique.
+For example, a GEMM could be implemented for CUDA or ROCm using either the cublas/cublasLt
+libraries or hipblas/hipblasLt libraries, respectively. How does one know which implementation is th
+fastest and should be chosen? Thatʼs what TunableOp provides. Certain operators have been
+implemented using multiple strategies as Tunable Operators. At runtime, all strategies are profiled
+and the fastest is selected for all subsequent operations.
+See the documentation for information on how to use it.
+Stream Sanitizer (prototype)
+CUDA Sanitizer is a prototype tool for detecting synchronization errors between streams in PyTorch
+See the documentation for information on how to use it.
+GPUDirect Storage (prototype)
+The APIs in torch.cuda.gds  provide thin wrappers around certain cuFile APIs that allow direct
+memory access transfers between GPU memory and storage, avoiding a bounce buffer in the CPU
+See the cufile api documentation for more details.
+These APIs can be used in versions greater than or equal to CUDA 12.6. In order to use these APIs,
+one must ensure that their system is appropriately configured to use GPUDirect Storage per the
+GPUDirect Storage documentation.
+See the docs for GdsFile for an example of how to use these.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 9/11gds_register_bufferRegisters a storage on a CUDA device as a cufile buffer.
+gds_deregister_bufferDeregisters a previously registered storage on a CUDA device as a
+cufile buffer.
+GdsFileWrapper around cuFile.
+hi★★★★★
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 10/11© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.cuda — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/cuda.html 11/11

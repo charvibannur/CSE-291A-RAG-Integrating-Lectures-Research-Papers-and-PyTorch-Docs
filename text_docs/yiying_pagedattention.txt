@@ -1,0 +1,91 @@
+LLM Inference - Pt. 2
+PagedAttentionYiying ZhangKV Cache●Memory space to store intermediate vector representations of tokens ○Working set rather than a “cache” ●The size of KV Cache dynamically grows and shrinks ○A new token is appended in each step ○Tokens are deleted once the sequence finishes
+2KV Cache Demonstration
+source: https://medium.com/@joaolages/kv-caching-explained-276520203249KV Cache Demonstration
+source: https://medium.com/@joaolages/kv-caching-explained-276520203249Key insightEfficient management of KV cache is crucial for high-throughput LLM serving The size of KV Cache dynamically grows and shrinks ○A new token is appended in each step ○Tokens are deleted once the sequence finishes
+513B LLM on A100-40GBParameters  (26GB, 65%)KV Cache (13GB, 33%)OthersMemory waste in KV CacheArtificialIntelligenceisthefutureoftechnology<eos><resv>…<resv>……2040 slots never used  (internal fragmentation)3 slots future used (reserved)External fragmentation3 token states for  request A’s promptRequest A current step2 slots for generated tokensLLMis…●Reservation: not used at the current step, but used in the future●Internal fragmentation: over-allocated due to the unknown output length.●External fragmentation: due to different sequence lengths.6Request BOSSegment 2External fragmentation with segmentation
+Segment 3Segment 4?External fragmentationMemory waste in KV Cache
+8
+        KV Cache usage (%)Only 20–40% of KV cache is utilized to store token states* Orca: Yu, G. I., Jeong, J. S., Kim, G. W., Kim, S., Chun, B. G. “Orca: A Distributed Serving System for Transformer-Based Generative Models” (OSDI 22).What fundamentally causes external 
+fragmentation?1.Segments of many different sizes 2.Each has to be allocated contiguously •“Million-dollar” question: Physical memory is precious.  Can we limit the waste to a single hole of X bytes?CSE 120 – Lecture 9 – Memory Management Overview
+Paging•Paging solves the external fragmentation problem by using fixed sized units in both physical and virtual memoryVirtual MemoryPage 0Page 1Page 2Page N-1Physical MemoryvLLM: Efficient memory management for LLM inference [SOSP’23]
+11Page 0Page 1Page 2Page 3Page 4Process AProcess BPhysical MemoryToken Block 0Token Block 1Token Block 2Token Block 3Token Block 4Request ARequest BKV CacheMemory management in OSMemory management in vLLMInspired by virtual memory and pagingToken block
+12Token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Block size = 4●A fixed-size contiguous chunk of memory that can store token states from left to rightKV CacheToken block
+13ArtificialIntelligenceistheToken blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Block size = 4●A fixed-size contiguous chunk of memory that can store token states from left to right
+-0.20.1-1.10.90.70.2-0.1-0.30.1ArtificialIntelligenceis-1.10.50.4theBlock 4820 KB / token (LLaMA-13B) Paged Attention●An attention algorithm that allows for storing continuous keys and values in non-contiguous memory space
+14
+Logical & physical token blocks
+15Request AAlanTuringisacomputerscientistPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3Physical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksCSE 120 – Lecture 9 – Memory Management Overview
+Page Tables•Page tables completely define the mapping between virtual pages and physical pages for an address space •Each process has an address space, so each process has a page table •Page tables are data structures maintained by the OS (and accessed by hardware)Virtual MemoryPage 0Page 1Page 2Page N-1Physical MemoryPage Table3 (PFN)0 (PFN)2 (PFN)5 (PFN)Page Table Entry (PTE)0325Logical & physical token blocks
+17Request AAlanTuringisacomputerscientistPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientist
+AlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled7412––––Block tableLogical & physical token blocks
+18Request AAlanTuringisacomputerscientistPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientist
+AlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled7412––––Block tableCompletion: “and”Logical & physical token blocks
+19Request AAlanTuringisacomputerscientistandPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientist
+AlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled7412––––Block tableCompletion: “and”Logical & physical token blocks
+20Request AAlanTuringisacomputerscientistandPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientistand
+AlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled7413––––Block tableCompletion: “and”Logical & physical token blocks
+21Request AAlanTuringisacomputerscientistandmathematicianPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientistandmathematician
+AlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled7414––––Block tableCompletion: “and mathematician”Logical & physical token blocks
+22Request AAlanTuringisacomputerscientistandmathematicianrenownedPrompt: “Alan Turing is a computer scientist”block 0block 1block 2block 3computerscientistandmathematician
+renownedAlanTuringisaPhysical token blocks (KV Cache)block 0block 1block 2block 3block 4block 5block 6block 7Logical token blocksPhysical block number# Filled741451––Block tableCompletion: “and mathematician renowned”Allocated on demandServing multiple requests
+23AlanTuringisacomputerscientistandmathematicianrenownedLogical token blocksRequest ABlock TablecomputerscientistandmathematicianArtificialIntelligenceistherenownedfutureoftechnologyAlanTuringisaPhysical token blocks (KV Cache)
+ArtificialIntelligenceisthefutureoftechnologyLogical token blocksRequest BBlock TableMemory efficiency of vLLM ●Minimal internal fragmentation ○Only happens at the last block of a sequence ○# wasted tokens / seq < block size ■Sequence: O(100) – O(1000) tokens ■Block size: 16 or 32 tokens ●No external fragmentation
+24AlanTuringisacomputerscientistandmathematicianrenownedInternal fragmentation
+OursKV Cache usage (%)Dynamic block mapping enables sharing
+25The future of cloud computing isLLM
+Promptbright and poised for further growth and transformation. Here's why: …intertwined with the advancement of artificial intelligence (AI). …likely to be characterized by several key trends: …Multiple outputsShared btw. sequencesE.g.) Parallel samplingIsolation: No SharingVirtual Address Space #1Physical MemoryVirtual Address Space #2Sharing PagesVirtual Address Space #1Physical MemoryVirtual Address Space #2PTEs Point to Same Physical PageCopy on Write•OSes spend a lot of time copying data ♦System call arguments between user/kernel space ♦Entire address spaces to implement fork() •Use copy-on-write (CoW) to defer large copies as long as possible, hoping to avoid them altogether ♦Instead of copying pages, create shared mappings of parent pages in child virtual address space ♦Shared pages are protected as read-only in parent and child »Reads happen as usual »Writes generate a protection fault, trap to OS, copy page, change page mapping in client page table, restart write instruction ♦How does this help fork()?  Copy on Write: Before ForkParent Virtual Address SpacePhysical MemoryCopy on Write: ForkParent Virtual Address SpacePhysical MemoryChild Virtual Address SpaceRead-Only MappingsCopy on Write: On A WriteParent Virtual Address SpacePhysical MemoryChild Virtual Address SpaceNow Read-Write & PrivateSharing token blocks
+32ThefutureofcloudcomputingisLogical token blocksSequence ABlock TableThefutureofcloudcomputingisPhysical token blocks (KV Cache)
+ThefutureofcloudcomputingisLogical token blocksSequence BBlock TableRef count: 2Sharing token blocks
+33ThefutureofcloudcomputingisbrightLogical token blocksSequence ABlock TableThefutureofcloudcomputingisPhysical token blocks (KV Cache)
+ThefutureofcloudcomputingisintertwinedLogical token blocksSequence BBlock TableRef count: 2 → 1Copy-on-WriteSharing token blocks
+34ThefutureofcloudcomputingisbrightLogical token blocksSequence ABlock TableThefutureofcloudcomputingiscomputingisbrightPhysical token blocks (KV Cache)
+ThefutureofcloudcomputingisintertwinedLogical token blocksSequence BBlock TableRef count: 1Copy-on-WriteSharing token blocks
+35ThefutureofcloudcomputingisbrightLogical token blocksSequence ABlock TableThefutureofcloudcomputingisintertwinedcomputingisbrightPhysical token blocks (KV Cache)
+ThefutureofcloudcomputingisintertwinedLogical token blocksSequence BBlock TableSharing token blocks
+36ThefutureofcloudcomputingisbrightandLogical token blocksSequence ABlock TableThefutureofcloudcomputingisintertwinedwithcomputingisbrightandPhysical token blocks (KV Cache)
+ThefutureofcloudcomputingisintertwinedwithLogical token blocksSequence BBlock TableSystem architecture & implementation
+37
+Megatron-LM
+Custom OpsvLLM (8K LoC in Python, 2K LoC in C++/CUDA)Block ManagervLLM Engine
+CPU Block AllocatorGPU Block AllocatorBlock tablesSchedulerWorker 1
+Model Shard 1Cache EngineWorker 2Model Shard 2Cache EngineWorker NModel Shard NCache Engine…
+●Metric: serving throughput ○The maximum request rate that the system can serve without exploding the queue (latency) ●Model: OPT-13B, GPU: A100-40GB ●Trace: synthesized using Poisson arrival process ○DatasetsExperimental setup
+Single sequence generation
+39
+6.3x higher than FasterTransformer 2.5x higher than Orca 13x higher than FasterTransformer 1.7x higher than Orca 
+Throughput bound by 100 ms per-token latencySummary of vLLM and PagedAttention●vLLM improves the memory efficiency of LLM serving by 2.5x–5x by reducing memory fragmentation and enabling sharing token states
+40●vLLM outperforms SOTA by 1.7x–4x in terms of serving throughput●vLLM is more effective for large models, long sequences, and complex sampling methodsIterative Scheduling in LLM InferenceEﬃcient GPU utilization but under one key assumptionR1R2R3R4I1R1R2R3R4I2R5R2R3R4I3R5R2R6R4I4R5R2R6R7I5R8R9R6R7I6
+SchedulingImproves GPU utilization by allowing new requests to join a batch at any iteration Assumes scheduling overhead can be ignoredIterative Scheduling in LLM InferenceCan scheduling overhead really be ignored?R1R2R3R4I1R1R2R3R4I2R5R2R3R4I3R5R2R6R4I4R5R2R6R7I5R8R9R6R7I6Experimenting with vLLM SchedulingComparing average scheduling time and model forwarding time•Running vLLM v0.5.54 (with chunked preﬁll, without preﬁx caching, without multi-step scheduling)
+•Llama-8B and Llama-70B running synthetic and real workloads on RunPod A100 GPUs Avg Per-Iteration Time (ms)04080120160
+1024:641024:1024ShareGPT
+ForwardSchedule Avg Per-Iteration Time (ms)04080120160
+1024:641024:1024ShareGPT
+Llama-8BLlama-70BScheduling takes as high as half of the total inference time!
+Higher impact of scheduling with smaller model and more decoding26.9%49.8%52%7%28%27.9%Where Does the Overhead Go?Breakdown analysis of vLLMMost overhead comes from per-token and per-request pre- and post-processing
+•Prepare metadata
+•Build input tensor
+•Detokenization
+•Prepare outputs
+Python object overheads
+running 1.3B model with 1024:1024What impacts scheduling overhead?•Higher scheduling overhead with larger chunk size => more token to pre-/post-process
+•Lower relative scheduling overhead with higher request load => more frontend processing *
+•Lower relative scheduling overhead with more preﬁll => fewer requests to processPer-Iteration Time (ms)04080120160
+51210242048
+ForwardSchedulePer-Iteration Time (ms)04080120160
+1024:64 Low1024:64 High1024:1024 Low1024:1024 HighShareGPT LowShareGPT High
+Llama-8B 1024:64 Varying Chunk SizeLlama-8B Varying Request Load (chunk size 512)12.7%24.6%38.8%* ﬁxed in latest vLLM versionWhat About Other LLM Inference Systems?A quick test on SGLang•Running SGLang v0.3.0 (with chunked preﬁll, with preﬁx caching, multi-step scheduling when pure decoding batch)
+•Same 8B and 1.3B tests Avg Per-Iteration Time (ms)020406080
+1024:641024:1024ShareGPT
+ForwardSchedule Avg Per-Iteration Time (ms)012.52537.550
+1024:641024:1024ShareGPT
+Llama-8BLlama-1.3B15.3%10.1%15.7%Scheduling overhead with SGLang much lower, but not to be ignoredSGLang has much simpler Python classes but impacted by preﬁx cache search18%18.8%
+17.3%What We Have Learned about LLM SchedulingIt is a tradeoﬀ•Scheduling overhead can be signiﬁcant and dominate e2e performance
+•Absolute scheduling overhead grow with both input size and task complexity
+•Input: vLLM scheduling grows with token and request counts (hint: implement in native language)
+•Complexity: SGLang overhead with preﬁx cache (esp. with big preﬁx tree)
+•Relative scheduling overhead is higher when other parts in e2e is faster
+•Faster model forwarding, less frontend processing, etc.
+•Chunked preﬁll makes scheduling overhead higher (both absolute and relative)
+•Multi-step scheduling lowers overall scheduling overhead but has its tradeoﬀs
+•Faster CPU and slower GPU reduce scheduling overhead (cmp. results on our servers with A6000 GPUs)

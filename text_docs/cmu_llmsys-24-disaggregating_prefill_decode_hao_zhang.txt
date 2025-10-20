@@ -1,0 +1,424 @@
+Disaggregating prefill and decode for 
+goodput -optimized LLM serving
+Speaker: Hao Zhang (UCSD)Agenda
+●LLM Serving 
+●Continuous Batching
+●Disaggregated prefill and decode
+●DistServe /Dynamo: Key Design and Implementations
+●Systems and Models based on Disaggregation
+2The era of Large Language Models (LLMs)
+LLM Chatting
+BizOpsContent 
+creationDev toolsProgramming
+Served by GPUs
+3LLM System Today Optimize Throughput
+5Inference process of LLMs
+Layer 1Layer N
+Artificialthe
+thefuture
+Layer 1Layer N
+Layer 1Layer N
+futureof
+Intelligence is InputOutput………
+Repeat until the sequence
+●Reaches its pre -defined maximum length (e.g., 2048 tokens)
+●Generates certain tokens (e.g., “<| end of sequence |>”)Generative LLM Inference: Autoregressive Decoding
+●Pre-filling phase (0 -th iteration):
+○Process all input tokens at once
+●Decoding phase (all other iterations):
+○Process a single token generated from previous iteration
+●Key-value cache:
+○Save attention keys and values for the following iterations to 
+avoid recomputation
+○Woosuk Kwon has covered in the previous lecture ☺Serving vs. Inference
+Serving : many requests, online traffic, 
+emphasize cost -per-query .Inference : fewer request, low, 
+offline traffic,
+Emphsize latency 
+large b b→1Challenge: How to efficiently serve many users requests 
+While minimizing the $ cost
+(= max throughput )
+(= min #GPU used)
+(= max GPU utilization)One of the Key Problem in LLM Serving
+large bReview: A Typical LLM’s Architecture
+9
+Review: LLM Inference Compute Characteristics 
+10
+•Compute:
+•Prefill: attention and large GEMM (mostly same with training)
+•Decode: s=1, GEMM degenerates to GEMV
+•Memory
+•New: KVcache
+•Communication
+•mostly same with trainingQ: how batch size b changes the picture?Review: LLM Inference Compute Characteristics 
+11
+•Compute:
+•Prefill: attention and large GEMM (mostly same with training)
+•Decode: s=1, GEMM degenerates to GEMV
+•Memory
+•New: KVcache
+•Communication
+•mostly same with trainingOurfocus: 
+howbatch size b changes the picture?Potential Bottleneck in Serving
+12
+•Compute:
+•Prefill:
+•Different prompts have different length :how tobatch?
+•Decode
+•Different prompts have different, unknown #generated tokens
+•Memory
+•New: KVcache size grows with b
+•Solution: paged attention
+large bAgenda
+●LLM Serving 
+●Continuous Batching
+●Disaggregated prefill and decode
+●DistServe /Dynamo: Key Design and Implementations
+●Systems and Models based on Disaggregation
+13LLM Decoding Timeline
+14
+Batching Requests to Improve GPU Performance
+Issues with static batching:
+●Requests may complete at different iterations
+●Idle GPU cycles
+●New requests cannot start immediately
+15
+Continuous Batching
+Benefits:
+●Higher GPU utilization
+●New requests can start immediately
+16Orca: A Distributed Serving System for Transformer -Based Generative Models. OSDI’22
+Continuous Batching Step -by-Step
+●Receives two new requests R1 and R2
+17Request Pool
+(CPU)Execution Engine
+(GPU)R1: optimizing ML 
+systems
+R2: LLM serving isMaximum serving batch 
+size = 3Continuous Batching Step -by-Step
+●Iteration 1: decode R1 and R2
+18R1: optimizing ML 
+systems
+R2: LLM serving is
+Iteration 1
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3Continuous Batching Step -by-Step
+●Iteration 1: decode R1 and R2
+19R1: optimizing ML 
+systems
+R2: LLM serving is
+Iteration 1
+Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+Q:Howtobatch these?Continuous Batching Step -by-Step
+●Receive a new request R3; finish decoding R1 and R2
+20R1: optimizing ML 
+systems requires
+R2: LLM serving is 
+critical .
+Iteration 1R3: A man
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3Continuous Batching Step -by-Step
+●Receive a new request R3; finish decoding R1 and R2
+21R1: optimizing ML 
+systems requires
+R2: LLM serving is 
+critical .
+Iteration 1
+Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+Q:Howtobatch these?Traditional Batching
+●Receive a new request R3; finish decoding R1 and R2
+22R2: LLM serving is 
+critical . <EOS>
+Iteration 2R3: A man
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+R1: optimizing ML 
+systems requires MLR4: A dog is
+R5: How areContinuous Batching
+●Iteration 2: decode R1, R2, R3; receive R4, R5; R2 completes 
+23R1: optimizing ML 
+systems requires ML
+R2: LLM serving is 
+critical . <EOS>
+Iteration 2R3: A man
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3R4: A dog is
+R5: How areContinuous Batching
+●Iteration 2: decode R1, R2, R3; receive R4, R5; R2 completes 
+24R1: optimizing ML 
+systems requires ML
+R2: LLM serving is 
+critical . <EOS>
+Iteration 2R3: A man
+Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+Q:Howtobatch these?Traditional vs.Continuous Batching
+●Iteration 2: decode R1, R2, R3; receive R4, R5; R2 completes 
+25R1: optimizing ML 
+systems requires ML
+R2: LLM serving is 
+critical . <EOS>
+Iteration 2R3: A man
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3R4: A dog is
+R5: How are
+R2: LLM serving is 
+critical . <EOS>
+Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+R1: optimizing ML 
+systems requires ML
+R3: A manContinuous Batching
+●Iteration 2: decode R1, R2, R3; receive R4, R5; R2 completes 
+26R1: optimizing ML 
+systems requires ML
+R2: LLM serving is 
+critical . <EOS>
+Iteration 2R3: A man
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3R4: A dog is
+R5: How areContinuous Batching Step -by-Step
+●Iteration 3: decode R1, R3, R4
+27
+Iteration 3
+Request Pool
+(CPU)Execution Engine
+(GPU)Maximum serving batch 
+size = 3
+R1: optimizing ML 
+systems requires MLR3: A man is
+R4: A dog isR5: How are28Summary: Continuous Batching
+●Handle early -finished and late -arrived requests more efficiently
+●Improve GPU utilization
+●Continuous Batching canimprove thethroughput by10xcompared tostatic
+batchingAgenda
+●LLM Serving
+●Continuous Batching
+●Disaggregated prefill and decode
+●DistServe /Dynamo: Key Design and Implementations
+●Systems and Models based on Disaggregation
+29LLM System Today Optimize Throughput
+Motivation: Applications have Diverse SLO
+TTFT TPOT
+Time to first token Time per output token
+Initial response time Average time between two subsequent generated tokens
+Human reading speed (P99 latency = 250ms)
+Data output generation (P99 latency = 35ms)Fast initial response
+User can tolerate longer initial response
+ SummarizationChatbotHigh Throughput ≠High Goodput
+= completed request / timeThroughput = 10 rps
+…High Throughput
+SystemHigh Throughput ≠High Goodput
+= completed request / timeThroughput = 10 rps
+= completed request within SLO / timeGoodput  = 3 rpsunder SLO 
+criteria
+can have
+Low Goodput!High Throughput
+System
+…
+High Throughput ≠High Goodput
+= completed request / timeThroughput = 10 rps
+= completed request within SLO / timeGoodput  = 3 rpsunder SLO 
+criteria
+can have
+Low Goodput!High Throughput
+System
+… High Throughput can 
+still have Low Goodput⇒Poor UX 
+Recall: Continuous BatchingPrefill and Decode have Distinct Characteristics
+Prefill
+DecodeCompute -bound
+Memory -boundOne prefill saturates compute.
+Must batch a lot of requests together to saturate computewasted time R1
+R2
+R2 arrivesRequest
+arrivalSeparate prefill / decode
+R1 and R2 in separate GPUs
+time
+No InterferenceR1
+R2
+time
+R2 arrivesRequest
+arrival
+Time wasted for decode
+Time wasted for prefillContinuous Batching
+Batch R1 and R2 together in 1 GPUContinuous Batching Cause InterferenceR1
+R2
+time
+R2 arrivesRequest
+arrival
+Time wasted for decode
+Time wasted for prefillR1
+R2
+time Request
+arrival R2 R3 R4R3
+R4
+wasted time Continuous Batching
+Batch R1 and R2 together in 1 GPUContinuous Batching
+Batch R1~R4 together in 1 GPUContinuous Batching Cause InterferenceHigher cost 
+x1
+add more GPU
+x4
+Colocation → Overprovision Resource to meet SLO
+Poor UX 
+ Good UX 
+lower cost 
+Colocation → Coupled Parallelism
+TTFT tight, TPOT loosePrefill
+Decode
+PP TP DP
+Prefill and Decode have 
+different preferences
+Coupled Parallelism StrategySummary: Problems caused by Colocation
+Continuous Batching Cause 
+Interference
+Summary: Problems caused by Colocation
+Continuous Batching Cause 
+Interference
+Is there a better way to achieve 
+better
+Goodput per GPU ?
+Coupled Parallelism StrategySolution: Disaggregating Prefill and Decode
+Opportunity: Disaggregating Prefill and Decoding
+●Prefill -Decoding interference is immediately eliminated
+●Naturally divide the SLO satisfaction problem into two optimizations:
+▪Prefill instance optimizes for TTFT.
+▪Decoding instance optimizes for TPOT.
+▪Choose the most suitable parallelism and resource allocation for each phase.
+44Colocate
+1 GPU for both Prefill and Decode
+Disaggregation achieves better goodputColocate Disaggregate (2P1D)
+2 GPU for Prefill + 1 GPU for Decode 1 GPU for both Prefill and Decode
+Disaggregation achieves better goodput
+goodputColocate Disaggregate (2P1D)
+2 GPU for Prefill + 1 GPU for Decode 1 GPU for both Prefill and Decode
+Simple Disaggregation
+achieves 2xgoodput 
+(per GPU)Disaggregation achieves better goodput
+goodputChallenges ofDisaggregation
+●Communication overhead for KV -Cache transmission
+●The optimization target —per-GPU goodput, is difficult to optimize: 
+○The workload pattern 
+○SLO requirements 
+○Parallelism strategies 
+○Resource allocation 
+○Network bandwidth 
+48Agenda
+●LLM Serving
+●Continuous Batching
+●Disaggregated prefill and decode
+●DistServe : Key Design and Implementations
+●Systems and Models based on Disaggregation
+49Core Problems
+P1-Placement: Solve X, Ygiven workload requirement that maximizes GPU goodput
+P2-Communication: Minimize the comm unication ofKVCache between XPand YD
+50XPYDDistServe Design Overview
+Definition of Placement: 
+1.parallelism strategy for prefill/decoding instance 
+2.the number of each instance to deploy
+3.how to place them onto the physical cluster
+Featured algorithms:
+1.Placement for High Node -Affinity Cluster 
+2.Placement for Low Node -Affinity Cluster 
+3.Online Scheduling Optimization
+51Placement for High Bandwidth Cluster
+Assumption: 
+●Nodes are connected with high bandwidth network, e.g., InfiniBand. 
+Observation: 
+●We can optimize prefill and decoding instances separately. 
+Algorithm Sketch: 
+●Use simulation to measure the goodput for a specific parallelism config.
+●Obtain the optimal parallelism config for each phase.
+●Use replication to match the overall traffic.
+52Placement forLow Bandwidth Cluster
+Assumption: 
+●GPUs inside one node are connected with NVLINK. 
+Observation: 
+●KV-Cache transmission only happens between the same layer
+Algorithm Sketch: 
+●Similar to the previous one but constraint the same stage of prefill/decoding 
+instances to be on the same node.
+53Example Placement
+54
+How Expensive isCommunication ofKVCaches?
+●Assume: 175B Model, A100 GPUs
+●Ifusing PCIe, latency ofKVCache transfer <time ofadecode step.
+●NVLink +DistServe algorithm willdobetter
+55
+Achieves 2.0x -4.48x
+compared to vanilla vLLM
+●Chatbot: 2.0 -3.4x
+●Code Completion: 3.2x
+●Summarization: 4.5xEvaluation
+DistServe: Disaggregating Prefill and Decoding for Goodput -optimized Large Language Model Serving
+Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, Hao ZhangContinuous batching vs.disaggregation
+●Itseems wearegoing back and forth
+●Actually no:
+○Continuous batching: improve GPU utilization hence throughput
+○Disaggregation: toaddress goodput --throughput s.t.SLOs
+●Also, keyinsights ofCBcarries todisaggregation
+○Batch attentions and MLPs differently
+○Exit finished request and pick upnew request asapDisaggregation Fun History
+●2023 end: Published and open sourced atUCSD (Hao’s lab), with aconcurrent work from
+Microsoft (not open source)
+●2024: OSS integration isslower compared toCB/paged attention asnosignificant gain
+was observed
+●2024: Yet, silently become thechosen architecture replacing continuous batching atlarge
+scale inlarge cooperates (e.g., Bytedance ,Google)
+●2025: Deepseek -v3uses prefill -decode disaggregation combined with different
+parallelisms forprefill and decoding instances.
+58Disaggregation Fun History
+●2025 :Nvidia GTC Keynote
+59
+DistServe Architecture
+60
+Key Components (Delta from vLLM )
+61
+Key Function: Decode Instances Migrate KVCaches
+62
+On Optimizing the Communication of Model Parallelism .MLSYS ’23Agenda
+●LLM Serving
+●Continuous Batching
+●Disaggregated prefill and decode
+●DistServe /Dynamo: Key Design and Implementations
+●Systems and Models based on Disaggregation
+63AFew New Models/Systems Build onDistServe
+●LMCache /Cachegen
+●DeepSeek -v3Serving
+●Nvidia Dynamo
+64LMCache /
+65
+KV
+Storagenetwork transfer
+w/compressionKV
+StorageKVcache canalso
+belossily stored
+andretrievedDeepSeek -V3:Disaggregation with Specialized Parallelisms
+4 TP/SP + 8 DP
+32EP in MoE
+redundant experts4 TP/SP + DP80
+EP320
+Nvidia Dynamo: Nvidia ’sImplementation
+Conclusion
+●From continuous batching todisaggregation
+●From Throughput toGoodput
+●Disaggregation is effective to optimize goodput !
+●Disaggregation achieves 2.0x -4.48 x

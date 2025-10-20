@@ -1,0 +1,302 @@
+11868 LLM Systems
+GPU Acceleration
+Lei Li
+2https:// learning.oreilly.com /library/vie
+w/programming -massively -
+parallel/9780323984638/? sso_link =y
+es&sso_link_from =cmu-edu
+•Tiling (Chap 5)
+•Memory parallelism (Chap 5 & 6)
+•Accelerating Matrix Multiplication on GPU (Chap 5 & 6)
+•Sparse Matrix Multiplication
+•cuBLAS
+3Outline: GPU Acceleration techniquesA100 80G PCIe
+FP32 19.5 TFLOPS
+Tensor Float 32 156 TFLOPS
+GPU Memory Bandwidth 1,935 GB/s
+4Memory Access Efficiency is Critical
+•How many FP32 operations per second
+omay also be bounded by memory load/store
+•Compute -to-global -memory -access -ratio
+othe number of FLOPs performed for each byte access from the 
+GPU global memory•Grid
+ofour thread blocks (2x2)
+oeach block with 4 threads (2x2)
+•Every thread is responsible for 
+calculating one element of 
+result matrix P.
+dim3  dimBlock (2, 2);
+dim3  dimGrid (2, 2);
+5Memory Access in Matrix Multiplication
+__global__  void  MatMulKernel (float  *a, float  *b, float  *c, int N) {
+ // Compute each thread's global row and col index -> output: ( i, j)
+ int row = blockIdx .y * blockDim .y + threadIdx .y;
+ int col = blockIdx .x * blockDim .x + threadIdx .x;
+ if (row >= N || col >= N) return ;
+ float  Pvalue  = 0.0;
+ for (int k = 0; k < N; k++) {
+  Pvalue  += a[row * N + k] * b[k * N + col];
+ }
+ c[row * N + col] = Pvalue ;
+}
+6Example: simple matrix multiplication
+1 FP32 multiply
+1 FP32 add
+2 global memory access 
+of FP32 (=4B)
+compute -to-global -
+memory -access: 
+2 / (2 * 4) = 0.25 FLOP/B•How much computation is based on memory access?
+o1935G * 0.25 FLOP/B = 483.75 GFLOPs
+o483.75GFLOPs = 2.48% of peak FP32 ops
+o483.75GFLOPs = 0.3% of peak Tensor FP32 ops
+•Memory -bound program 
+ocomputation limited by data transfer rate from memory7Peak Computation on A100
+A100 80G PCIe
+FP32 19.5 TFLOPS
+Tensor Float 32 156 TFLOPS
+GPU Memory Bandwidth 1,935 GB/s8Memory Access Efficiency
+…SM
+Core
+Control
+Core
+Core CoreCore Core
+Core CoreSM
+Core
+Control
+Core
+Core CoreCore Core
+Core CoreSM
+Core
+Control
+Core
+Core CoreCore Core
+Core Core
+L2 Cache
+Global MemoryRegisters
+Shared 
+MemoryL1 CacheConstant CacheRegisters
+Shared 
+MemoryL1 CacheConstant CacheRegisters
+Shared 
+MemoryL1 CacheConstant Cache≈1 cycle
+≈5 cycles
+≈5 cycles
+≈500 cyclesC[i] = A[i] + B[i];
+GPU Instructions:
+  ld.global.f32 %f1, [%rd1]; // Load A[ i] 
+  ld.global.f32 %f2, [%rd2]; // Load B[ i] 
+  
+  add.f32 %f3, %f1, %f2; // Perform fp32 addition 
+  
+  st.global.f32 [%rd3], %f3; // Store result
+9Loading vs Computing
+500 cycle
+500 cycle
+1 cycle
+Loading data takes more time than actual computation!10CUDA Device Memory Model
+Variable declaration Memory Scope Lifetime
+int var;    Register Thread Grid
+int varArr[N]; Local Thread Grid
+__device__ __shared__  int SharedVar ;Shared Block Grid
+__device__             int GlobalVar ;Global Grid Application
+__device__ __constant__ int constVar ;Constant Grid Application
+11Access Device MemoryOpportunity to speedup: Reuse loaded data
+12NN𝐶=𝐴×𝐵
+AB
+CN
+NN
+Nthreads in the thread block may 
+use the same dataOpportunity to speedup: Reuse loaded data
+13NN𝐶=𝐴×𝐵
+AB
+CN
+NN
+Nthreads in the thread block may 
+use the same dataStep 1 (simultaneously)
+load the first tile of each input matrix 
+to shared memory
+each thread in the thread block loads 
+one element
+wait for loading __syncthreads ()
+14Tiling for Matrix Multiplication
+NN𝐶=𝐴×𝐵
+AB
+CN
+NN
+NStep 2 
+each thread in the thread block 
+computes the partial sum from the 
+tiles in shared memory, threads wait 
+for each other to finish
+__syncthreads ()
+15Tiling for Matrix Multiplication
+NN𝐶=𝐴×𝐵
+AtileBtitle
+CN
+NN
+NStep 3 (simultaneously)
+load the next tile of each input matrix 
+to shared memory
+each thread in the thread block loads 
+one element
+16Tiling for Matrix Multiplication
+NN𝐶=𝐴×𝐵
+AB
+CN
+NN
+NStep 4 
+each thread in the thread block 
+updates the partial sum from the tiles 
+in shared memory, threads wait for 
+each other to finish
+17Tiling for Matrix Multiplication
+NN𝐶=𝐴×𝐵 B
+CN
+NN
+NBtitle
+AtileStep 5, 6, 7, 8 …
+continue for next tiles
+18Tiling for Matrix Multiplication
+NN𝐶=𝐴×𝐵
+AB
+CN
+NN
+N•Implement a kernel for tiled matrix multiplication
+https://github.com/llmsystem/llmsys_code_examples/blob/mai
+n/cuda_acceleration_demo/matmul_tile.cu  
+19Live Coding Session: Tiled Matrix 
+Multiplication#define TILE_WIDTH 2
+__global__ void  MatMulTiledKernel (float * d_A, float * d_B, float * d_C, int N) {
+ __shared__ float  As[TILE_WIDTH ][TILE_WIDTH ];
+ __shared__ float  Bs[TILE_WIDTH ][TILE_WIDTH ];
+ // Determine the row and col of the P element to be calculated for the thread
+ int row = blockIdx.y  * blockDim.y  + threadIdx.y ;
+ int col = blockIdx.x  * blockDim.x  + threadIdx.x ;
+ float  Cvalue  = 0;
+ for(int ph = 0; ph < N/ TILE_WIDTH ; ++ph) {
+  As[threadIdx.y ][threadIdx.x ] = d_A[row * N + ph * TILE_WIDTH  + threadIdx.x ];
+  Bs[threadIdx.y ][threadIdx.x ] = d_B[(ph * TILE_WIDTH  + threadIdx.y ) * N + col];
+  __syncthreads ();
+  for(int k = 0; k < TILE_WIDTH ; ++k) {
+   Cvalue  += As[ threadIdx.y ][k] * Bs[k][ threadIdx.x ];
+  }
+  __syncthreads ();
+ }
+ d_C[row * N + col] = Cvalue ;
+}20Tiled Matrix MultiplicationGPU NVIDIA H100 NVIDIA A100
+FP32 67 teraFLOPS 19.5 teraFLOPS
+Memory 80GB HBM3 80GB HBM2e
+Memory Bandwidth 3.35TB/s 2TB/s
+SMs 132 104
+Shared memory per SM 256K 192K
+Registers per SM 64K 64K
+23Memory Restriction24Memory Restriction
+If 1024 threads, 16384 registers
+•Each thread can use only 16384/1024 = 16 
+registers
+Each block can use up to 192 KB of shared 
+memory
+Tiled memory (e.g.):
+•As: 32 x 32 x 4 = 4KB
+•Bs: 32 x 32 x 4 = 4KB
+•Tiling (Chap 5)
+•Memory parallelism (Chap 5 & 6)
+•Accelerating Matrix Multiplication on GPU (Chap 5 & 6)
+•Sparse Matrix Multiplication
+•cuBLAS
+25Outline: GPU Acceleration techniques26Locality / Bursts Organization
+•Consecutive memory 
+accesses in a warp are 
+coalesced together. 
+•Row-major format to store 
+multidimensional array in C 
+and CUDA
+•allows DRAM burst, faster 
+than individual accessint row = blockIdx.y  * blockDim.y  + threadIdx.y ;
+ int col = blockIdx.x  * blockDim.x  + threadIdx.x ;
+ float  Cvalue  = 0;
+ for(int ph = 0; ph < N/ TILE_WIDTH ; ++ph) {
+  As[threadIdx.y ][threadIdx.x ] = d_A[row * N + ph * TILE_WIDTH  + threadIdx.x ];
+  Bs[threadIdx.y ][threadIdx.x ] = d_B[(ph * TILE_WIDTH  + threadIdx.y ) * N + col];
+  __syncthreads ();
+  for(int k = 0; k < TILE_WIDTH ; ++k) {
+   Cvalue  += As[ threadIdx.y ][k] * Bs[k][ threadIdx.x ];
+  }
+  __syncthreads ();
+ }
+ d_C[row * N + col] = Cvalue ;
+27Recap of Tiled Matrix Multiplication
+Each row of the tile is loaded 
+byTILE_WIDTH threads 
+whosethreadIdx are identical in the y 
+dimension and consecutive  in the x 
+dimension.•Tiling (Chap 5)
+•Memory parallelism (Chap 5 & 6)
+•Accelerating Matrix Multiplication on GPU (Chap 5 & 6)
+•Sparse Matrix Multiplication
+•cuBLAS
+28Outline: GPU Acceleration techniques29Sparse Matrix - CSR
+for(int row = 0; row < n; row++) {
+ float  dot = 0;
+ int row_start  = row_ptr [row];
+ int row_end  = row_ptr [row + 1];
+ for(int el = row_start ; el < row_end ; el++) 
+ {
+  dot += x[ el] * data[ col_index [el]];
+ }
+ y[row] += dot;
+}
+30Sparse Matrix -Vector Multiplication
+__global__ void  SpMVCSRKernel (float  *data, int *col_index , int *row_ptr , float  *x, float  *y, int 
+num_rows ) {
+ int row = blockIdx.x  * blockDim.x  + threadIdx.x ;
+ if(row < num_rows ) {
+  float  dot = 0;
+  int row_start  = row_ptr [row];
+  int row_end  = row_ptr [row + 1];
+  for(int elem  = row_start ; elem  < row_end ; elem ++) {
+   dot += x[row] * data[ col_index [elem ]];
+  }
+  y[row] += dot;
+ }
+}
+31Sparse Matrix -Vector Multiplication•CUDA Basic Linear Algebra Subroutine library
+•a lightweight library dedicated to GEneral  Matrix -to-matrix 
+Multiply (GEMM) operations
+32cuBLAS•must call before: 
+cublasStatus_t  cublasCreate (cublasHandle_t  *handle)
+•must call after: 
+cublasStatus_t  cublasDestroy (cublasHandle_t  handle)
+•float vector dot product
+cublasStatus_t  cublasSdot  (cublasHandle_t  handle,  int n, 
+ const  float *x, int incx, 
+ const  float *y, int incy, 
+ float *result) 33cuBLAS  APIs•Matrix vector product 𝑦=𝛼𝐴∙𝑥+𝛽𝑦
+cublasStatus_t  cublasSgemv (cublasHandle_t  handle,  
+ cublasOperation_t  trans,  
+ int m, int n, 
+ const  float *alpha,  
+ const  float *A, int lda, 
+ const  float *x, int incx, 
+ const  float *beta,  
+ float *y, int incy)
+34cuBLAS  APIs•Matrix matrix multiplication: C=𝛼𝐴∙𝐵+𝛽𝐶
+cublasStatus_t  cublasSgemm (cublasHandle_t  handle,  
+  cublasOperation_t  transa , 
+  cublasOperation_t  transb , 
+  int m, int n, int k, const  float *alpha,  
+  const  float *A, int lda, 
+  const  float *B, int ldb, 
+  const  float *beta,  
+  float *C, int ldc)
+35cuBLAS  APIs•Tiling
+•Coalesce memory access
+•Sparse matrix representation and multiplication
+•cuBLAS
+oreadily available vector, matrix -vector, matrix -matrix operations
+36Summary of GPU AccelerationLightSeq : A High Performance Inference Library for 
+Transformers. Wang et al. NAACL 2021.
+LightSeq2: Accelerated Training for Transformer -based 
+Models on GPUs. Wang et al. SC 2022. 
+37Reading for Next Class

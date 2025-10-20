@@ -1,0 +1,62 @@
+[source]torch.utils.mobile_optimizer
+Created On: Jun 11, 2025 | Last Updated On: Jun 11, 2025
+PyTorch Mobile is no longer actively supported. Redirecting to ExecuTorch documentation.
+PyTorch Mobile is no longer actively supported. Please check out ExecuTorch, PyTorchʼs
+all-new on-device inference library. You can also review documentation on XNNPACK and
+Vulkan delegates.
+torch.utils.mobile_optimizer. optimize_for_mobile (script_module ,
+optimization_blocklist =None, preserved_methods =None, backend='CPU' )
+Optimize a torch script module for mobile deployment.
+Parameters:
+script_module (ScriptModule) – An instance of torch script module with type of
+ScriptModule.
+optimization_blocklist (Optional[set[torch._C._MobileOptimizerType]]) – A set with
+type of MobileOptimizerType. When set is not passed, optimization method will run all
+the optimizer pass; otherwise, optimizer method will run the optimization pass that is
+not included inside optimization_blocklist.
+preserved_methods (Optional[list[~AnyStr]]) – A list of methods that needed to be
+preserved when freeze_module pass is invoked
+backend (str) – Device type to use for running the result model (‘CPUʼ(default),
+‘Vulkanʼ or ‘Metalʼ).
+Returns:
+A new optimized torch script module
+Return type:
+RecursiveScriptModuleWarning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.mobile_optimizer — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/mobile_optimizer.html 1/3Previous
+torch.utils.dlpackNext
+torch.utils.model_zooRate this Page★★★★★
+© Copyright PyTorch Contributors.
+Built with the PyData Sphinx Theme 0.15.4.Send Feedback
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.mobile_optimizer — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/mobile_optimizer.html 2/3© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.mobile_optimizer — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/mobile_optimizer.html 3/3

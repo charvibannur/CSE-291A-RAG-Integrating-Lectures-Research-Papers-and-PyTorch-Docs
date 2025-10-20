@@ -1,0 +1,382 @@
+11868/11968 LLM Systems
+Distributed Training
+Lei Li
+1
+We optimize the training process from 3 aspects
+Efficient Parameter Update
+via mixed precision
+Memory Management
+ High performance Kernels 
+for Forward and Backward
+via Fusion & Algebra trick
+𝛻𝑥
+ 𝛻𝑦Dropout
+ 𝑔
+ 𝑝
+fp32+
+𝛻𝑧
+ 𝛻𝑦
+×
+Layer
+Norm
+𝛻𝑥
+Reuse Memory
+Operators that can be reused in Other Networks:
+Dropout, LayerNorm , Softmax , Cross Entropy
+hierachical auto-regressive  
+search for large vocabulary
+converting sorting to 
+parallel operations (max, 
+filter, re -rank)Accelerating decodingRecap: Accelerating Transformer Layers•FlashMLA  (released 2/24/2025)
+oFlashMLA  is an efficient MLA decoding kernel for Hopper GPUs, optimized 
+for variable -length sequences serving. 
+•DeepEP  (released 2/25/2025)
+oa communication library tailored for Mixture -of-Experts ( MoE) and expert 
+parallelism (EP). It provides high -throughput and low -latency all -to-all GPU 
+kernels, which are also as known as MoE dispatch and combine.
+•DeepGEMM  (released 2/26/2025)
+oDeepGEMM  is a library designed for clean and efficient FP8 General Matrix 
+Multiplications (GEMMs) with fine -grained scaling
+3Deepseek  opensource libraries
+https://github.com/deepseek -ai/ •Overview of large -scale model training
+•Multi -GPU communication
+•Data Parallel Training via AllReduce
+4OutlineTransformerGPT1GPT2GPT3GopherPALMGPT4
+Nemotron
+LLaMA3 -8BLLaMA3.1
+Qwen2DeepSeek -v3
+001101001,00010,000
+2016 2017 2018 2019 2020 2021 2022 2023 2024 2025size(B)
+5Scale of LLMs
+671B1.8TGPT1GPT2GPT3 GopherPALMGPT4 LLaMA3.1
+Qwen2DeepSeek -v3
+01101001,00010,000100,000
+2017 2018 2019 2020 2021 2022 2023 2024 2025 2026Tokens (B)
+6Scale of Training Data
+15T•Pretraining for Deepseek  V3 (671B)
+o2,048 H800 GPUs
+otrained for 2 months
+oa total of 2.664 million H800 GPU hours
+•LLaMA  3.1(405B) 
+ousing 16,000 H100 GPUs
+oa total of 30.84 million GPU hours
+7Large -scale Distribution TrainingStrategies for Scalable Training
+8
+Partition the data
+single node 
+data parallel
+distributed 
+data parallel
+parameter 
+server
+Partition the Model
+Model 
+parallel
+Pipeline 
+parallel
+Tensor 
+parallel9Classical Distributed Training: Parameter Server
+Data
+worker worker worker worker
+local grad local grad local grad local grad
+push (worker to server)partition
+Parameter server
+aggregate grads, update parameterspull
+1
+2
+3
+ 3
+ 3
+ 3
+4
+5•Overview of large -scale model training
+•Multi -GPU communication
+•Data Parallel Training via AllReduce
+10Outline
+•NCCL (Nvidia Collective Communication Library)
+oprovides inter -GPU communication APIs
+oboth collective and point -to-point send/receive primitives
+osupports various of interconnect technologies
+•PCIe
+•NVLink
+•InfiniBand
+•IP sockets
+oOperations are tied to a CUDA stream.
+11Multi -GPU Communication•Broadcast
+•Reduce
+•ReduceScatter
+•AllGather
+•AllReduce
+12NCCL Primitives•The Broadcast operation copies an N -element buffer on the 
+root rank to all ranks (devices).
+13Broadcast
+ncclResult_t ncclBroadcast (const void* sendbuff , void* recvbuff , 
+size_t count ,ncclDataType_t datatype , int root ,ncclComm_t comm , cudaStream_t stream )•Compute reduction (max, min, sum) across devices and 
+write on one rank (device)
+14Reduce
+ncclResult_t ncclReduce (const void* sendbuff , void* recvbuff , 
+size_t count ,ncclDataType_t datatype ,ncclRedOp_t op, int root ,ncclComm_t comm , 
+cudaStream_t stream )
+•Compute reduction (sum, min, max) across devices and 
+writing the result in the receive buffers of every rank.
+15AllReduce  (=Reduce & Broadcast) 
+ncclResult_t ncclAllReduce (const void* sendbuff , void* recvbuff , size_t count , ncclDataType_t  
+datatype , ncclRedOp_t op, ncclComm_t comm , cudaStream_t stream )
+•Compute reduction (sum, min, max) and writing parts of 
+results scattered in ranks
+16ReduceScatter
+ncclResult_t ncclReduceScatter (const void* sendbuff , void* recvbuff , size_t recvcount , 
+ncclDataType_t datatype , ncclRedOp_t op, ncclComm_t comm , cudaStream_t stream )
+•gathers N values from k ranks into an output of size k*N, 
+and distributes that result to all ranks (devices).
+17AllGather
+ncclResult_t ncclAllGather (const void* sendbuff , void* recvbuff , size_t sendcount , 
+ncclDataType_t datatype , ncclComm_t comm , cudaStream_t stream )
+AllReduce  = ReduceScatter  & AllGather•device memory local to the CUDA device
+•host memory registered using cudaHostRegister  or 
+cudaGetDevicePointer
+•managed and unified memory.
+18Data Pointers in CUDAncclGroupStart (); 
+ncclSend (sendbuff , sendcount , sendtype , peer, comm, stream); 
+ncclRecv (recvbuff , recvcount , recvtype , peer, comm, stream); 
+ncclGroupEnd ();
+19Point -to-Point Communication•NCCL uses rings to move data across all GPUs and 
+perform reductions. 
+20How Reduce is Implemented?
+21Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidth22Broadcast with unidirectional ring
+Step 1: t = N/B 
+N=bytes to transfer
+B=bandwidth23Broadcast with unidirectional ring
+Step 1: t = N/B 
+Step 2: t = N/B 
+N=bytes to transfer
+B=bandwidth24Broadcast with unidirectional ring
+Step 1: t = N/B 
+Step 2: t = N/B 
+Step 3: t = N/B
+total time=(K -1) N/B  
+N=bytes to transfer
+B=bandwidth25Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidth26Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidthStep 1: t = N/SB break data into S messages27Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidthStep 1: t = N/SB 
+Step 2: t = N/SB break data into S messages28Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidthStep 1: t = N/SB 
+Step 2: t = N/SB 
+Step 3: t = N/SBbreak data into S messages29Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidthStep 1: t = N/SB 
+Step 2: t = N/SB 
+Step 3: t = N/SB
+Step 4: t = N/SBbreak data into S messages30Broadcast with unidirectional ring
+N=bytes to transfer
+B=bandwidth
+Step 1: t = N/SB 
+Step 2: t = N/SB 
+Step 3: t = N/SB
+Step 4: t = N/SB
+…
+total time=(K -2+S)N/SB
+~=N/B break data into S messages//initializing  NCCL,  group  API is required  around  ncclCommInitRank  as it is 
+//called  across  multiple  GPUs  in each  thread/process  NCCLCHECK( ncclGroupStart ()); 
+for (int i=0; i<nDev ; i++) { 
+  CUDACHECK( cudaSetDevice (localRank *nDev  + i));
+  NCCLCHECK( ncclCommInitRank (comms +i, nRanks *nDev , id, myRank *nDev  + i)); 
+} 
+NCCLCHECK( ncclGroupEnd ()); 
+//calling  NCCL  communication  API. Group  API is required  when  using  
+//multiple  devices  per thread/process  
+NCCLCHECK( ncclGroupStart ()); 
+for (int i=0; i<nDev ; i++) 
+  NCCLCHECK( ncclAllReduce ((const  void *)sendbuff [i], (void *)recvbuff [i], size,  ncclFloat , ncclSum , comms[ i], s[i]));
+NCCLCHECK( ncclGroupEnd ()); 
+//synchronizing  on CUDA  stream  to complete  NCCL  communication  
+for (int i=0; i<nDev ; i++) 
+  CUDACHECK( cudaStreamSynchronize (s[i]));
+31Example•Pull: ncclBroadcast
+oParameter server to send parameters to all workers
+•Push: ncclReduce
+oworkers send grads to server and sum
+•Synchronization: 
+oworkers need to wait for server to send param
+oserver need to wait for work to send grad * N
+32Implementing Parameter Server using 
+NCCL•Overview of large -scale model training
+•Multi -GPU communication
+•Data Parallel Training via AllReduce
+33Outline
+35Data Parallel Training
+Data
+worker worker worker worker
+local grad local grad local grad local gradpartition
+1
+2
+ 2
+ 2
+ 2
+4
+AllReduce  (compute average grad)
+param update param update param update param update
+4
+ 4
+3
+4
+ 436How to Synchronize Gradients?
+•Naïve all -reduce37Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0d1d2d3a0a1a2a3
+b0b1b2b3
+c0c1c2c338Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0d1d2d3a0a0a1a2a3
+b0b1b2b3
+c0c1c2c3b1 c2d339Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0d1d2+c2d3a0a1a2a3+d3
+a0+b0b1b2b3
+c0b1+c1c2c340Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0d1c2+d2d3a0a1a2a3+d3
+a0+b0b1b2b3
+c0b1+c1c2c3a3+d3
+a0+b0b1+c1c2+d241Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0b1+c1
++d1c2+d2d3a0a1a2+c2
++d2a3+d3
+a0+b0b1b2a3+b3
++d3
+a0+b0
++c0b1+c1c2c342Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+d0b1+c1
++d1c2+d2d3a0a1a2+c2
++d2a3+d3
+a0+b0b1b2a3+b3
++d3
+a0+b0
++c0b1+c1c2c3a2+c2+d2
+a3+b3+d3a0+b0+c0b1+c1+d143Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+a0+b0
+c0+d0b1+c1
++d1c2+d2d3a0a1+b1
+c1+d1a2+c2
++d2a3+d3
+a0+b0b1a2+b2
+c2+d2a3+b3
++d3
+a0+b0
++c0b1+c1c2a3+b3
+c3+d344Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+a0+b0
+c0+d0b1+c1
++d1c2+d2d3a0a1+b1
+c1+d1a2+c2
++d2a3+d3
+a0+b0b1a2+b2
+c2+d2a3+b3
++d3
+a0+b0
++c0b1+c1c2a3+b3
+c3+d345Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+a0+b0
+c0+d0a1+b1
+c1+d1
+a2+b2
+c2+d2
+a3+b3
+c3+d346Ring AllReduce
+worker 0
+worker 1
+worker 2worker 3
+a0+b0
+c0+d0a1+b1
+c1+d1a2+b2
+c2+d2a3+b3
+c3+d3a0+b0
+c0+d0a1+b1
+c1+d1a2+b2
+c2+d2a3+b3
+c3+d3
+a0+b0
+c0+d0a1+b1
+c1+d1a2+b2
+c2+d2
+a0+b0
+c0+d0a1+b1
+c1+d1a2+b2
+c2+d2a3+b3
+c3+d3AllGather47Ring all -reduce: Implementing Scatter -reduce
+for (int i = 0; i < size - 1; i++) {
+int recv_chunk  = (rank - i - 1 + size) % size;
+int send_chunk  = (rank - i + size) % size;
+float * segment_send  = &(output[ segment_ends [send_chunk ] -
+ segment_sizes [send_chunk ]]);
+MPI_Irecv (buffer, segment_sizes [recv_chunk ],
+ datatype, recv_from , 0, MPI_COMM_WORLD, &recv_req );
+MPI_Send (segment_send , segment_sizes [send_chunk ],
+ MPI_FLOAT , send_to , 0, MPI_COMM_WORLD);
+float  *segment_update  = &(output[ segment_ends [recv_chunk ] -
+  segment_sizes [recv_chunk ]]);
+// Wait for recv to complete before reduction
+MPI_Wait (&recv_req , &recv_status );
+reduce (segment_update , buffer , segment_sizes [recv_chunk ]);
+}48Ring all -reduce: Implementing All -gather
+for (size_t  i = 0; i < size_t (size - 1); ++i) {
+int send_chunk  = (rank - i + 1 + size) % size;
+int recv_chunk  = (rank - i + size) % size;
+// Segment to send - at every iteration we send segment (r +1-i)
+float * segment_send  = &(output[ segment_ends [send_chunk ] -
+ segment_sizes [send_chunk ]]);
+// Segment to recv - at every iteration we receive segment (r -i)
+float * segment_recv  = &(output[ segment_ends [recv_chunk ] -
+ segment_sizes [recv_chunk ]]);
+MPI_Sendrecv (segment_send , segment_sizes [send_chunk ],
+datatype, send_to , 0, segment_recv ,
+segment_sizes [recv_chunk ], datatype, recv_from ,
+0, MPI_COMM_WORLD, &recv_status );
+}•Parameter Server
+oneeds to synchronize twice (parameters and local gradients)
+•AllReduce  Data Parallel
+oeach local worker needs to update parameters 
+oredundant? 
+olocal updating is much faster than transferring data across gpus
+49Parameter Server vs AllReduce  Data 
+Parallel•Overall idea: partition the data, distribute the 
+forward/backward
+•Parameter Server
+oserver to update and distribute parameters, worker to get local 
+grad
+•NCCL Multi -GPU communication
+ousing ring and batching to reduce the latency for Broadcast
+•Data Parallel Training via All Reduce 
+oEfficient Ring AllReduce  (ScatterReduce+AllGather ) 50Summary•PyTorch  Distributed: Experiences on Accelerating Data 
+Parallel Training. VLDB 2020.
+51Reading for next lecture

@@ -1,0 +1,65 @@
+LLM Inference - Pt. 1 Iterative SchedulingYiying ZhangOutline●Finishing LLM perf ●Iterative scheduling for LLM inference (Orca)6\VWHPVFKDOOHQJHVWKDWLQFUHDVHFRVWƔ6L]HRI//0SDUDPHWHUV!!VL]HRI//0GDWDż/ODPD%a*%WRVWRUHIORDWSDUDPHWHUVż[$*%WRVWRUH[$*%WRPD[LPL]HWKURXJKSXWƔ0HPRU\,2KXJHIDFWRULQODWHQF\ż)RUDVLQJOHWRNHQKDYHWRORDG*%WRFRPSXWHFRUHVż&38PHPRU\,2a *%Vż*38PHPRU\,2a *%V$*%Ɣ+LJKWKURXJKSXWUHTXLUHVPDQ\)/236ż&38FDQGRUHDOWLPHJHQHUDWLRQRIDVLQJOHVHTXHQFHż*38FDQGRUHDOWLPHJHQHUDWLRQIRUPDQ\VHTXHQFHV
+)URPWKH)ODVK$WWHQWLRQSDSHUKWWSVDU[LYRUJSGISGIWhat does “Performance” mean in LLM serving?•Not quality “performance”: in this class and in systems context in general, performance means temporal performance, not quality or accuracy
+• Time To First Token (TTFT): Queueing time + preﬁll time: How quickly users start seeing a response, i.e., response time
+•Time Per Output Token (TPOT): Time to generate each additional output token. Average TPOT x output token length is the time users see all the response after seeing the ﬁrst token •Latency: The overall request time it takes for the model to generate the full response for a user. latency = (TTFT) + (TPOT) * (the number of tokens to be generated)
+•Throughput: The number of output tokens per second an inference server can generate across all users and requestsKV Cache•KV Cache: stores Key (K) and Value (V) tensors computed at each transformer layer during inference to avoid recompilation
+•Preﬁll: store computed KVs of input sequence in KV cache
+•Each iteration in decode phase: each new token only needs to attend to cached KV states + the latest token
+ Question: what makes KV cache big?
+source: https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimizationPreﬁll vs. Decode Resource Demand•GPU has two general types of computing resources:
+•GPU kernel and GPU memory
+•Assuming with KV cache
+•Is preﬁll compute or memory bound?
+•Is decoding compute or memory bound?Model Bandwidth Utilization (MBU)•MBU = (achieved memory bandwidth) / (peak memory bandwidth) 
+•achieved memory bandwidth is ((total model parameter size + KV cache size) / TPOT)
+•Model FLOPs Utilization (MFU) = (observed throughput (TPOT)) / (peak GPU FLOPs)
+•MBU important for memory-bound computation, MFU important for compute-bound computation. Ideally, want both to be 100%
+•batch size: how many number of requests are sent to GPU for model forwarding at the same time (in parallel)
+source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices 
+source: https://huggingface.co/blog/tngtech/llm-performance-prefill-decode-concurrent-requests source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices Figure 2: Empirically observed MBU for different degrees of tensor parallelism with TensorRT-LLM on A100-40G GPUs. Requests: sequences of 512 input tokens with a batch size of 1.source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices 
+Figure 3: Empirically observed MBU for different batch sizes and tensor parallelism modes on H100-80G GPUs. Requests: sequences of 512 input tokens
+Figure 4: Time per output token per user as we scale MPT-7B across A100-40GB GPUs. The latency doesn't scale linearly with the increasing number of GPUs. Requests: sequences of 128 input and 64 output tokenssource: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices Figure 7: Throughput latency curve for the MPT-7B model. This allows users to pick a hardware conﬁguration that meets their throughput requirements under a latency constraint.Common Techniques to Improve LLM Inference Perf•KV Cache•Operator Fusion: Combining different adjacent operators•Quantization: Use fewer bits for weights and activations•Compression: Sparsity or distillation•Parallelization: Tensor parallelism across multiple devices or pipeline parallelism for larger models.•More later this quarterOutline●Finishing LLM perf ●Iterative scheduling for LLM inference (Orca)//0LQIHUHQFHEDFNJURXQG
+/HJHQGƔ<HOORZSURPSWWRNHQƔ%OXHJHQHUDWHGWRNHQƔ5HGHQGRIVHTXHQFHWRNHQ,WHUDWLYHHDFKIRUZDUGSDVVJHQHUDWHVDVLQJOHWRNHQ$XWRUHJUHVVLYHJHQHUDWLRQFRQVXPHVSURPSWWRNHQVSUHYLRXVO\JHQHUDWHGWRNHQV&RPSOHWLRQSRWHQWLDOO\GHFLGHGE\PRGHO$JHQHUDWHGWRNHQFDQEHWKHHQGRIVHTXHQFHWRNHQ+RZGRHVWH[WJHQHUDWLRQZRUN"
+6WDWLFEDWFKLQJƔ%DWFKLQJPXOWLSOHVHTXHQFHVRQ*38DND³VWDWLFEDWFKLQJ´Ɣ3UREOHP*38XWLOL]DWLRQGURSVDVVHTXHQFHVFRPSOHWH
+/HJHQGƔ<HOORZSURPSWWRNHQƔ%OXHJHQHUDWHGWRNHQƔ5HGHQGRIVHTXHQFHWRNHQsource: AnyScale&RQWLQXRXVEDWFKLQJ
+7RSVWDWLFEDWFKLQJ%RWWRPFRQWLQXRXVEDWFKLQJ/HJHQGƔ<HOORZSURPSWWRNHQƔ%OXHJHQHUDWHGWRNHQƔ5HGHQGRIVHTXHQFHWRNHQ
+source: AnyScaleSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerscheduleone iterreturnresultselectrequestsExecution EngineInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x1: I thinkx2: I loveInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Enginex1: I thinkx2: I loveiter 1Inference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Enginex1: I thinkx2: I love
+x3: A maniter 1Inference ServerOrca
+source: Orca OSDI 2022 Talkx1: I think thisx2: I love youSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x3: A maniter 1Inference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x1: I think thisx2: I love youx3: A manInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x1: I think thisx2: I love youx3: A manInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+iter 2x1: I think thisx2: I love youx3: A manInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x4: A dog is
+x5: How arex1: I think thisx2: I love youx3: A maniter 2Inference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Enginex1: I think thisisx2: I love you<EOS>x3: A manisx4: A dog isx5: How areiter 2Inference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x2: I love you<EOS>x1: I think this isx3: A man isx4: A dog isx5: How areInference ServerOrca
+source: Orca OSDI 2022 TalkSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Engine
+x1: I think this isx3: A man isx4: A dog isx5: How areInference ServerOrca
+source: Orca OSDI 2022 Talkx5: How areSolution 1: Iteration-Level Schedulingrequestsresponses
+* maximum batch size = 3Request PoolSchedulerExecution Enginex1: I think thisisx3: A man isx4: A dog isiter 3scheduleone iter
+With iteration-level scheduling, we can handle early-finished or late-arrived requests much more efficiently.Inference ServerOrca
+source: Orca OSDI 2022 TalkStatic Batching
+source: FriendliAIContinuous (Iterative) Batching
+source: FriendliAI

@@ -1,0 +1,52 @@
+11868 LLM SystemsLLM ServingLei Li
+1
+1.Architectures for LLM Applications2.Frameworks for LLM Serving
+2Today’s Topic3LLM App Stack
+https://a16z.com/emerging-architectures-for-llm-applications/4LLM App Stack
+1.Data Preprocessing / Embedding2.Prompt Construction / Retrieval3.Prompt Execution / Inference51. Data Preprocessing / Embedding
+•Data PipelinesoInclude loaders, parsers, and preprocessing.oE.g. Databricks, Airflow, and Unstructured.
+61. Data Preprocessing / Embedding
+•Embedding ModeloDifferent models have their own advantages.oOpenAI: Effective but cheapoCohere: Focus more on embeddingsoHugging Face: Open-sourceoCustomer Embedding: e.g. BERT71. Data Preprocessing / Embedding
+•Vector DatabaseoOffer optimized storage and query capabilities for the unique structure of vector embeddings.
+81. Data Preprocessing / Embedding
+•Vector DatabaseoPinecone: Fully clound-hostedochroma: Local vector managementoFaiss: by metaoWeaviate: Open-source91. Data Preprocessing / Embedding
+102. Prompt Construction / Retrieval
+•Orchestration (Prompt Optimization/Engineering)oAbstract away many of the details of prompt chainingoInterface with external APIsoRetrieve contextual data from vector databasesoMaintain memory across multiple LLM callsoOutput a prompt, or a series of prompts, to submit to an LLM112. Prompt Construction / Retrieval
+•OrchestrationoLlamaIndex: Specially designed for building search and retrieval applicationsoLangChain: A general-purpose framework for a wide variety of applications
+122. Prompt Construction / Retrieval
+133. Prompt Execution / Inference
+•LLM APIsoProprietary APIs: E.g. OpenAI and Anthropic.oOpen APIs: E.g. Hugging Face and Replicate.oChatGPT: May have unreliable latency for production.
+143. Prompt Execution / Inference
+•LLM HostingoGeneral Could : E.g. AWS, GCP, and Azure.oOpinionated Cloud: E.g. Databricks, Anyscale, and Mosaic.•LLM CacheoE.g. Redis, SQLite, and GPTCache.•ValidationoE.g. Guardrails, Rebuff, and Guidance.153. Prompt Execution / Inference•LoggingoE.g. Weights&Biases, MLflow, and PromptLayer.
+163. Prompt Execution / Inference
+•App HostingoVercel: Provide a cloud-native solutionoSteamship: end-to-end hostingoAnyscale and Modal: Host models and Python code in one place
+173. Prompt Execution / Inference
+•Can we use AI to perform any task?•AutoGPToLet an LLM-based AI agent decide what to do, while feeding its results back into the prompt.oThis allows the program to iteratively and incrementally work towards its objective.18Build App Autonomously with AI Agent
+1.Architectures for LLM Applications2.Frameworks for LLM Serving
+19Today’s Topic•In this lecture:oNVIDIA Triton + LightSeq/TensorRT-LLMoText Generation InferenceoOpenLLMoMLC LLMoLightLLM•In the later lectures:ovLLM / DeepSpeed20Frameworks for LLM Serving
+•Triton (Inference Server) from NVIDIAoAn open-source inference serving software that streamlines AI inferencing.•Triton from OpenAIoA language and compiler for writing highly efficient custom Deep-Learning primitives.
+21Triton“s”•It supports for various deep learning frameworks.oE.g. TensorFlow and PyTorch.•It optimizes inference for multiple query types.oE.g. real-time, batch, and streaming.•It can be deployed on different environmentsoE.g. public cloud and embedded devices.22NVIDIA Triton23NVIDIA Triton – Dynamic Batching•For LLM serving, Triton has to use with an inference engine, e.g., LightSeq or TensorRT-LLM.•Triton groups multiple client requests into a batch.•TensorRT-LLM conducts the inference procedure in the batched manner.24NVIDIA Triton + LightSeq / TensorRT-LLM
+LightSeq/TensorRT-LLMTriton Inference Server
+25NVIDIA Triton + FasterTransformer – Code
+Run web server using docker:26NVIDIA Triton + FasterTransformer – CodeMake queries:
+•It has optimized transformers code for inference using Flash Attention and Paged Attention.oNative support for models from HuggingFace.•It is production ready and can monitor the server load and get insights into its performance.oDistributed tracing with Open Telemetry, Prometheus metrics.•It offers a wide range of options to manage model inference.oE.g. precision adjustment and quantization.27Text Generation Inference28Text Generation Inference – Framework
+tensor-parallel29Text Generation Inference – CodeRun web server using docker:Make queries:
+•It allows users to easily create AI applications by composing LLMs with other models and services.oE.g. LangChain, LlamaIndex, and Hugging Face.•It allows users to bring their own LLM and fine-tune them.•It is an open-source platform and constantly developing.
+30OpenLLM31OpenLLM – CodeRun web server:Make queries:
+•It enables the users to develop, optimize and deploy AI models natively on consumer devices.•It can compile the model for different platforms.oE.g. C++ for the command line, JavaScript for the web, Swift for iOS, and Java/Kotlin for Android.
+32MLC LLM33MLC LLM – Framework
+34MLC LLM – Advantage of Local LLM
+35MLC LLM – CodeRun web server:Make queries:
+•It performs tokenization, model inference, and detokenization asynchronously, to improve GPU utilization.•It implements Token Attention, a token-wise's KV cache memory management algorithm.•It adopts Efficient Router scheduling implementation, which collaborates with Token Attention to manage the GPU memory of each token.36LightLLM37LightLLM – Framework
+38LightLLM – Token Attention
+39LightLLM – Token Attention
+40LightLLM – Token Attention
+41LightLLM – Token Attention
+42LightLLM – Token Attention
+43LightLLM – Efficient Router
+44LightLLM – Efficient Router
+45LightLLM – Efficient Router
+46LightLLM – Efficient Router
+47LightLLM – Performance
+48LightLLM – CodeRun web server using docker:Make queries:
+•https://a16z.com/emerging-architectures-for-llm-applications/•https://superwise.ai/blog/considerations-best-practices-for-llm-architectures/•https://huyenchip.com/2023/04/11/llm-engineering.html•https://betterprogramming.pub/frameworks-for-serving-llms-60b7f7b23407•https://developer.nvidia.com/blog/fast-and-scalable-ai-model-deployment-with-nvidia-triton-inference-server/•https://huggingface.co/docs/text-generation-inference/en/index•https://docs.databricks.com/en/workflows/index.html•https://www.kdnuggets.com/2023/06/vector-databases-important-llms.html•https://spotintelligence.com/2023/11/17/llm-orchestration-frameworks/•Yu, G. I., Jeong, J. S., Kim, G. W., Kim, S., & Chun, B. G. (2022). Orca: A distributed serving system for {Transformer-Based} generative models. In 16th USENIX Symposium on Operating Systems Design and Implementation (OSDI 22) (pp. 521-538).49References

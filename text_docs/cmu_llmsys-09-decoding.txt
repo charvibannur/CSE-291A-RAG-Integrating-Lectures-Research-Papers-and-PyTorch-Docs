@@ -1,0 +1,186 @@
+11868 LLM Systems
+Decoding
+Lei Li
+•Subword tokenization: Byte -Pair-Encoding
+oiteratively merging most frequent pairs of tokens
+•Information -theoretic vocabulary (VOLT)
+osolving entropy constrained optimal transport problem
+•Pre-tokenization through regex
+•Number treatment
+•Vocab sharing impact multilingual performance
+ohow to solve languages in stagnant quad 2Recap about Tokenization•Sequence Decoding overview
+•Beam search algorithm
+3Outlinearg𝑚𝑎𝑥
+𝑦𝑃(𝑦|x)=𝑓𝜃(𝑥,𝑦)
+•naive solution: exhaustive search
+otoo expensive O(𝑉𝑁)
+•Greedy (max) decoding
+•Sampling
+•Beam search
+o(approximate) dynamic programming4Sequence Decoding5 Input: A long time ago in a galaxyFeed Forward Network
+Multihead  Attention (masked)
+Token Embedding + Pos EmbeddingFeed Forward Network
+Multihead  Attention (masked)LinearlogitsSoftmax
+Greedy Decoding
+choose next token 
+with highest prob.
+[EOS]?yes
+output
+no•For every next token, pick the one that maximizes the 
+probability
+max 𝑝𝑥𝑡𝑥1…𝑡−1
+•equivalent to maximizing logits, no need to normalize
+6Max Decoding•Instead of argma xy𝑃(𝑦|𝑥)=𝑓𝜃(𝑥,𝑦)
+•Generate samples of translation Y from the distribution 
+P(Y|X)
+•Q: how to generate samples from a discrete distribution?Sampling•sample n values x’s from k categories, with prob. p1, p2, … 
+pk
+•Direct sampling: O( nk)
+•Binary Search: O(k + n logk)
+•Alias sampling: O(k logk + n)
+probs = torch.softmax (logits, dim= -1) 
+next_token  = torch.multinomial (probs, num_samples =1)
+8Discrete Sampling•sampling from Categorical (Softmax ℎ) is equivalent to 
+argmax 𝑥
+𝑧~Uniform 0,1
+𝑥=ℎ−log −log𝑧 
+•Theory: x follows Gumbel distribution, and argmax x follows 
+Categorical(exp ℎ𝑖
+σ𝑗=1𝑘ℎ𝑗)
+9Fast Sampling with Gumbel Max Trick
+https: // timvieira.github.io /blog/post/2014/ 08/01/ gumbel -max-trick-and-weightedreservoir -sampling/
+Stochastic Beams and Where to Find Them: The Gumbel -Top-k Trick for Sampling Sequences Without Replacement. Kool et al. ICML 201 910class GumbelSampler :
+  def __init__(self, batch_size , vocab_size , device):
+    self.batch_size  = batch_size
+    self.vocab_size  = vocab_size
+    # Pre-compute noise
+    self.noise  = self._ prepare_gumbel_noise (device)
+    
+  def _prepare_gumbel_noise (self, device):
+    # Generate noise tensor once
+    uniform_noise  = torch.rand (self.batch_size , 
+self.vocab_size , device=device)
+    return -torch.log (-torch.log (uniform_noise ))
+    
+  def sample(self, logits):
+    # Direct sampling without softmax
+    return torch.argmax (logits + self.noise , dim=-1)•Sequence Decoding overview
+•Beam search algorithm
+11Outline
+Find approximate solutions to arg𝑚𝑎𝑥
+𝑦𝑃(𝑦|x)=𝑓𝜃(𝑥,𝑦)
+1.start with empty S
+2.at each step, keep k best partial sequences
+3.expand them with one more forward generation
+4.collect new partial results and keep top -k
+12Beam SearchBeam Search
+13<BOS>I 0.4
+We 0.3
+He 0.1
+She 0.1
+They 0.01like 0.4
+love 0.4
+am 0.1
+hate 0.01
+want 0.01
+I 0.4
+We 0.3
+like 0.4
+do 0.3
+are 0.2
+can 0.01
+say 0.01I like 0.16
+I love 0.16
+We like 0.12
+We do 0.09I like 0.16
+I love 0.16singing 0.6
+song 0.2
+shouting 0.01
+going 0.01
+dancing 0.01
+singing 0.5
+dancing 0.3
+you 0.11
+going 0.01
+it 0.01I like singing 0.096
+I like song 0.032
+I love singing 0.08
+I love dancing 0.048forward by 
+network
+top-kforward by 
+network
+forward by 
+networktop-kforward by 
+network
+forward by 
+networktop-k
+decoder 
+input14best_scores = []
+add {[0], 0.0} to best_scores # 0 is for beginning of sentence token
+for iin 1 to max_length : 
+new_seqs = PriorityQueue ()
+for (candidate, s) in best_scores :
+if candidate[ -1] is EOS:
+prob = all -inf 
+prob[EOS] = 0
+else: 
+prob = using model to take candidate and compute next token probabilities ( logp)
+pick top k scores from prob, and their index 
+for each score, index in the top -k of prob:
+new_candidate = candidate.append (index)
+new_score = s + score
+if not new_seqs.full ():
+add (new_candidate , new_score ) to new_seqs
+else:
+if new_seqs.queue [0][1] < new_score :
+new_seqs.get () # pop the one with lowest score
+add (new_candidate , new_score ) to new_seqs•Relative threshold pruning
+oprune candidates with too low score from the top one
+oGiven a pruning threshold rpand an active candidate list C, a 
+candidate cand ∈C is discarded if: score(cand) ≤rp∗
+max{score(c)} 
+•Absolute threshold pruning:
+oscore(cand) ≤max{score(c)} −ap
+•Relative local threshold pruning
+15Pruning for Beam Search
+Freitag & Al -Onaizan. Beam Search Strategies for Neural Machine Translation. 2017.•Sample the first tokens
+•continue beam search for the later
+•why?
+oto improve sequence diversity
+16Combine Sample and Beam Search•https:// github.com /llmsystem /llmsys_code_examples /blob/m
+ain/decoding/ decoding.ipynb
+17Code example•https://llmsystem.github.io/llmsystem2024spring/docs/Proje
+cts
+•Proposal due: 2/26
+oYou are highly encouraged to discuss your project with TAs
+•Mid term Report: 4/1
+•Poster Project Presentation: 4/24 or 4/25 (depending on 
+room availability)
+•Final Report: next day19Project•What LLM System problem are you planning to address?
+owhat are the system challenges ?
+•What are the existing state -of-art methods on this problem? Is the 
+source code/model available?
+•Possible directions for going forward.
+•How do you evaluate the performance? what kind of workload?
+•Who is your team and how are you planning to split the workload 
+between team members?
+•A rough timeline/milestones
+•What CPU, GPU and storage infrastructure do need for this project? 
+Please estimate the amount of computation time required.   
+20Project Proposal•Introduction/Motivation: This essentially lays out the problem definition, motivation, talks about 
+why we need to work on it, the key contributions expected/presented in the work.
+•Related Work/Background: This talks about key papers/works that provide context to your 
+current work. Instead of listing down multiple past works, talk about the ones that minimally 
+differ from your work, and how.
+•Methodology: This section talks about your method, raises research questions and how you are 
+going to address them. 
+•Experiments: This section can describe your experiments and the results you obtain.
+•Analysis/Ablations: Typically, you would have multiple factors involved in your experimental 
+setting. Analysis sections help you probe deeper into the results and help piece out 
+contributions from individual modeling decisions made.
+•Conclusion/Discussion: This would list the main takeaways from your work, discuss some future 
+ideas (if any) and engage in discussion.
+•Limitations: This section lays out some known limitations of your work.
+•[final report only] Team Member Contributions List out each individual's contributions in this 
+section.
+21Project Report Requirement22Project Team Pairing

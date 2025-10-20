@@ -1,0 +1,529 @@
+Lei LiAccelerating Transformer Training and Inference
+Natural Language Supervision for Vision (CLIP)
+Language Model (BERT, T5, GPT3/4)
+Image Classiﬁcation (Vision Transformer, Swin-Transformer)
+Speech Recognition (wav2vec, HuBERT)Transformers
+Text to Image (Stable Diﬃsion)
+Transformer Models as universal architecture
+2💰
+Training Large Models Are Expensive!
+3Carbon footprint: Training GPT3 = driving a car for 146 years!
+= 1 Car Year CO2Recap Transformer Architecture
+4
+<BOS>IlikeIlikesingEncoderDecoder
+MHA + FFNMHA +FFNMHA + FFNMHA + FFNMHA + FFNMHA + FFNMHA + FFNMHA + FFNMHA + FFNMHA + FFNSoftmaxSoftmaxSoftmaxI like singing and dancing.
+Token Embedding Table我⼀和…
+MHA + FFN
+Token Embedding TableIlike you…
+我喜欢唱歌和跳舞。
+Transformer Training Stages
+5
+Model Replicas
+Data Shards
+SamplesForwardBackward
+GradientsSynchronization
+Aggregated GradientsUpdate ParametersThis Lecture Accelerated GPU Computation for Transformer Trainingfor moderate model size (< GPU memory)
+based on LightSeq libraryLightSeq: A High Performance Inference Library for Transformers. Wang et al 2021. LightSeq2: Accelerated Training for Transformer-based Models on GPUs. Wang et al 2022. TensorRT-LLM (FasterTransformer), only for inferenceComparison of Acceleration Libraries for Transformers
+7Full TransformerTrainingInferencePyTorchTensorﬂowTensorRT-LLM✔✘✔✔✔✔✘✔✔?✔*✔✔✔✘✔✔✔✔✔
+*DeepSpeed implemented Transformer Kernel in Oct 2022 p′ 
+p′ 
+p
+p
+g′ 
+g′ 
+g
+g
+LightSeq/LightSeq2 Optimization Overview
+8
+x
+x
+Dropout
+x
+x
+x
+Dropout
+Computational Graph Optimizations
+g1
+g′ 1
+p′ 1
+p1
+Copy FP32
++
+Copy FP16
+g
+p
+fp32+
+OptimizeOptimize
+∇x
+∇x
+∇w
+×
+Layer Norm
+∇x
+Reuse MemoryTrainer SpeedupMemory Management
+σ(x)
+μ(x)
+Mean
+x
+x
+μ(x2)
+Dependent Reduction RewritingOptimizeVar
+x
+μ(x)
+Mean Square
+Mean
+σ(x)
+Technique 1: Kernel Fusion
+9
+3~5μs
+=4000 cyclesKernel Fusion ExampleC = A + B
+E = C + D
+needs two kernel executions.
+If we write a custom kernel to add three matrices
+E = A + B + C
+only needs one kernel. 
+Beneﬁts: 
+•reduce overhead
+•reduce extra memory access104 load, 2 stores, 2 matrix add.3 load, 1 store, 2 matrix add.MultiHead Attention And Feed Forward Network
+11
+VxKxQx
+Dot Product
+Softmax
+Linear×
+LayerNormyi=wixi−μ(x)σ(x)+bi
++
+LinearReLU
+Linear
+LayerNorm+MHAFFNBias adding & Dropout & Residual
+Y=Y⋅Wout
+Reshape  Y
+Y=S⋅V
+Dropout
+Softmax
+S=Q⋅KT/dK
+Bias adding & Reshape Q,K,V
+Q,K,V=Y⋅(WQ,WK,WV)
+LayerNorm
+Embedding
+LayerNorm
+Y=Y⋅W1
+Bias adding & ReLU & Dropout
+Y=Y⋅W2
+Bias adding & Dropout & Residual
+Softmax
+Y=Y⋅Wemb
+Cross Entropy
+N Layers …
+Accelerate non-GEMM Operators via Fusion
+12
+Self AttentionFFNCriterion
+Custom Reduce
+cuBLAS GEMM
+Custom ElementwiseFused Embedding Forward Operator
+13
+w
+Ew
+Lookup
+E
+×
+x
+s
++
+p
+Pp
+Lookup
+P
+x
+Dropout
+y
+Mask
+Position
+Embedding
+Table
+Word
+Embedding
+Table
+WordPosition
+Scale
+(Constant)
+Fuse
+w
+Dropout(s⋅Ew+Pp)
+E
+s
+p
+P
+y
+Mask
+y=Dropout(s⋅Ew+Pp)Less IO for intermediate results Less Kernel launch overhead
+5 cuda kernel launches1 cuda kernel launchFused Embedding Backward Operator
+14
+w
+∇Ew
+Reduce Sum
+∇E
+×
+s
+∇x
+⊙
+∇y
+Mask
+w
+∇E
+s
+∇y
+Mask
+  Mask & AtomicAdds⋅∇y⊙Aggregate Gradients of same words
+Fuse∇E=ReduceSum(s⋅∇y⊙Mask)3 cuda kernel launches1 cuda kernel launchCode Example: Embedding Forward
+15
+Word Embedding
+Lookup Positional Embedding
+Lookup 
+ScaleDropout mask
+Apply dropout
+https://github.com/bytedance/lightseq/blob/master/lightseq/csrc/kernels/cuda/embedding_kernels.cuCode Example: Embedding Backward
+16Gradient clipping
+Gradient accumulationDropout mask
+Scale 
+Reduce sum
+https://github.com/bytedance/lightseq/blob/master/lightseq/csrc/kernels/cuda/embedding_kernels.cuGradient of Criterion Operator
+17Smoothed one-hot ground truthSoftmax outputα: smoothing parameter, 0< α < 1
+V: vocabulary size, length of p, q
+Gradient of Softmax
+When i  is equal to ground truth token index k:Otherwise 
+Therefore p=(1−α)y+αV⋅1q=Softmax(h)ℒ=−∑ipilog(qi)
+g=q−p=>  Fused Criterion Operator
+18
+q
+x
+ℒ
+ℒ=−∑ipilog(qi)
+p
+Forward
+SoftmaxLog & Inner  ProdFusion
+Smoothed One Hot (Constant)
+∇x
+q
+p+
+Backward∇x=q−pWith some calculations: element-wise operator
+Layer-Batched Cross Attention
+19
+Batch×Encoder
+x
+Decoder LayerDecoder LayerDecoder Layer
+×
+WL
+W2
+×
+W1
+×
+…
+…
+OriginalEncoder
+x
+Decoder LayerDecoder LayerDecoder Layer
+×
+…
+[W1,…,WL]
+Split
+ … y1yL
+LightSeq2One Big GEMM
+Technique 2: Reduce synchronization
+20Rewrite Reduction: LayerNorm Forward
+21
+σ(x)
+μ(x)
+Mean
+x
+Var
+σ(x)=1N∑i(xi−μ(x)i)2
+x
+μ(x2)
+x
+μ(x)
+Mean Square
+Mean
+σ(x)
+σ(x)=μ(x2)−μ(x)2
+RewriteTwo thread synchronizati
+One thread synchronization 
+storage: FP16
+Calculation: FP32
+yi=wixi−μ(x)σ(x)+biLayerNorm:                          rescales input for stabilityMeanStandard devRewrite Reduction: LayerNorm Backward
+22α=[xi−μ(x)]μ(x)−σ(x)mσ(x)3∇xi=wi∇yiσ(x)+α⋅∑jwj∇yj+β⋅∑jwj∇yjxjwhereβ=μ(x)−ximσ(x)3
+x
+w
+Inner Prod
+∇y
+Inner Prod
+∑wj∇yj
+∑wjxj∇yj
+σ(x)
+μ(x)
+Element -wise OP 
+∇x
+One thread synchronization 
+You will implement LayerNorm in hw3!
+Before:Rearrange:Z
+x*
+Max 
+x
+Add & SumExp 
+y
+Exp & Divide 
+yi=exi∑exjRewrite Reduction: Softmax Forward
+23Two thread synchronizations
+Z=∑iexi−x*
+{headskeysqueries
+Softmaxrow-wise normalization
+Two reduce:
+Costly!Rewrite Reduction: Softmax Forward
+24Two thread synchronizations
+Z=∑iexi−x*
+Parameters (e.g. # of blocks, warps per block) are shape dependent for maximal speedup
+{headskeysqueries
+Softmaxrow-wise normalization
+Z
+x*
+Max 
+x
+Add & SumExp 
+y
+Exp & Divide 
+yi=exi∑exj……Row1Row2column≤32…Threads1…320311…0031
+And Other Shapes …You will implement Softmax in HW3!Threads…Row1Row232<column≤64…32031132031103110311Code Example: Softmax Forward
+25Parameters tuning by using templates
+https://github.com/bytedance/lightseq/blob/master/lightseq/csrc/kernels/cuda/softmax_kernels.cuCode Example: Softmax Forward
+26Parameters tuning by using templates
+Then call with parameters in launch
+https://github.com/bytedance/lightseq/blob/master/lightseq/csrc/kernels/cuda/softmax_kernels.cuTechnique 3: Mixed-precision Calculation•Modern GPU supports half-precision (FP16) or FP8 (on H100)
+•Beneﬁts: 
+•lower memory for storing model and data ==> enlarge batch size
+•transfer data at a higher rate (with same bandwith) between GPU main memory and SMs
+•more FLOPs for FP16 (up to 8x more) compared to FP32.
+27Use low-precision for all data?•Forward / Backward could use FP16 or FP8
+•Gradient update in Optimizer (or trainer) needs FP32
+•Nvidia APEX library provides automatic mixed-precision calculation for many NN layers
+•but still miss ﬁne-grained memory optimization with mixed-precision for LLM.
+281632→copy
+1632←copy
+g′ 1g′ 2g′ 3
+p′ 1p′ 2p′ 3ModelTrainer
+backward
+& forward 
+(FP16)
+g1g2g3Gradients (FP16)
+p1p2p3Parameters (FP16)
+Update
+(FP32)Original
+Modelbackward
+& forward 
+(FP16)
+link
+workspace
+g1g2g3Gradients (FP16)
+FP16
+update
+linkworkspace
+p1p2p3Parameters (FP16)
+Trainer
+LightSeq2Calculation Precision: FP32
+Storage Precision: FP16
+Accelerated Mixed-Precision Update
+29Continuous space. Only one kernel launch
+Dotted lines: 
+no actual memory storage∇out
+∇Y=∇Dropout(∇out)
+∇Z=∇Y𝖳Wout
+∇Y=Reshape(∇Z)
+∇S=∇YV𝖳,∇V=S𝖳∇Y
+∇Y∇in∇Q∇Q∇K∇K∇S∇S∇S∇˜K∇˜Q∇˜Q∇˜V∇˜V
+∇V
+∇˜K
+∇S=∇Dropout(∇S)∇S=∇Softmax(∇S)∇K=Q𝖳∇S,∇Q=∇S𝖳K∇˜Q,∇˜K,∇˜V=Reshape(∇Q,∇K,∇V)∇Y=∇˜Q𝖳WQ+∇˜K𝖳WK+∇˜V𝖳WV∇in=∇LayerNorm(∇Y)+∇out∇in
+Technique 4: Memory Reuse GPU Memory Management for Self Attention Backward
+30B:batchsizeL:sequencelengthH:hiddenunitsB×L×H
+∇Y
+∇out
+∇Y∇Z
+B×L×H,∇out:notusedagain,reuseitsmemory
+∇Z
+∇Y
+∇Y∇V∇S
+attentions:B×L2×H
+}Bottleneck
+BLHmax{BL2N,3BLH}BLHBLHLeast Memory Allocation
+B×L×H,reusememoryfor∇Y
+Machine Translation Training: 1.4-3.5x Speedup
+31DataSetWMT14 English-German Machine TranslationModelTransformer: 24 encoder layers + 24 decoder layersHardware1 Worker with 8x A100BaselineFairSeq (PyTorch) + Apex (optimized operators)
+Encoder
+Decoder
+You and me are like the devil and holy water.Number of people serving as mentorsFor the Player who Refuses to be Played
+Du und ich, wir sind wie der Teufel und das Weihwasser.Die Anzahl von Personen, die als Mentoren dienenFür den Spieler, der sich weigert ausgespielt zu werden.
+Batched Samples
+as trainer % 
+Experiment with different batch sizes
+Transformer ModelMachine Translation Training: 1.4-3.5x Speedup
+32
+V100: 1.4-2.8xA100: 1.5-3.5x
+A100 is more eﬃcient in GEMMModel Size                   Speedup       
+33Visualization of Training on GPU
+Fairseq: 457ms
+LightSeq: 214ms
+encoder fw
+decoder fw
+decoder bw
+encoder bw
+optimize
+output projection 
+Training Speedup Breakdown
+34Time cost for each training stagesOperatorSpeedupLayerNorm4xSoftmax2.5-3.4xDropout1.1-2.5xTrainer2.3xOperator SpeedupTask: WMT14 Engish German Machine Translation (same for rest pages)
+FairseqLightseq2Scalability: 1.12-1.41x Speedup
+35Speedup on 1 to 5 workers, each has 8x A100
+Speedup of Models with different layersTraining Memory Cost: 6G less
+36Transformer BaseTransformer LargeGPT2 Training: 1.6-1.9x Speedup
+37DataSetWikiTextModelGPT2Hardware1 Worker with 8x V100/A100BaselineHugging Face (PyTorch) GPT2 Large trained on A100, 1.6-1.9x Speedup
+GPT2 Large trained on V100, 1.7-1.8x Speedup
+Wouldyoupleasecomeyoupleasecomehere
+Decoder
+Paraphrase Identification: 1.28-1.44x Speedup
+38DataSetMicrosoft Research Paraphrase CorpusModelBERTHardware1 Worker with 8x V100BaselineHugging Face (PyTorch) 
+DeepSpeed (Kernel Fusion)
+EncoderDifferentEquivalent
+For those who got surgery alone, median survival was 41 months.
+Those who only had surgery lived an average of 46 months.
+1.28x
+}}1.44x
+LibraryCriterionEmbeddingTrainer✘✘✘✔✔✔
+2LightSeq2 vs DeepSpeed Major Differences Image Classification: Vision Transformer (ViT)
+39
+Vision Transformer for Image classiﬁcation from google AI blogImage Classification: 1.2-1.7x Speedup
+40DataSetCIFAR-10ModelVision Transformer (ViT)Hardware1 Worker with 8x V100BaselineHugging Face (PyTorch)
+Encoder
+BirdCarBallBuildingPatchesVit BaseVit LargeBatch Size (#Patches)               Speedup
+Summary for Accelerating Transformer Training
+41
+Eﬃcient Parameter Update
+Memory Management
+High performance Kernels for Forward and Backward
+∇x
+∇y
+Dropout
+g
+p
+fp32+
+∇z
+∇y
+×
+Layer Norm
+∇x
+Reuse Memory
+Kernel Fusion: merge kernels other than matmul
+Algebraic Transformation: reduce sync
+Mix-precision calculation (use half precision whenever possible)
+Memory reuse (dependent on architecture)key techniquesFast Inference for TransformerNAACL 2021LightSeq: A High Performance Inference Library for Transformers Xiaohui Wang, Ying Xiong, Yang Wei, Mingxuan Wang, Lei LiTurboTransformers: An Efﬁcient GPU Serving System For Transformer Models Jiarui Fang, Yang Yu, Chengduo Zhao, Jie ZhouPPoPP 2021Inference: Beam Searchargmax_y P(Y|X)
+1.start with empty S
+2.at each step, keep k best partial sequences
+3.expand them with one more forward generation
+4.collect new partial results and keep top-k
+43Code Example# 1.compute next token log probabilitylog_token_prob = tf.nn.log_softmax(logit) # [batch_size, beam_size, vocab_size]log_seq_prob += log_token_prob # [batch_size, beam_size, vocab_size]log_seq_prob = tf.reshape(log_seq_prob, [-1, beam_size * vocab_size])# 2. compute the top k sequence probability for each batch sequencetopk_log_probs, topk_indices = tf.nn.top_k(log_seq_prob, k=K)# 3. refresh the cache (decoder key and values) based on beam idrefresh_cache(cache, topk_indices)
+44Hierarchical Auto Regressive Search (HARS) for decoding•Two calculations are needed in one step of beam search:
+•Compute the conditional probability of each token in vocab using Softmax
+•Select the top- beams by sequential probability.
+•need sorting k*V elements!
+•Key Idea for acceleration: HARS for decoding
+•retrieve and re-rank to reduce complexityk
+45HARS - Retrieve step•Divide logits into  groups.
+•Calculate the maximum of group , denoted as , marked red
+•Calculate the minimum of  in each beam, denoted as rough top-th logit .
+•Select logits larger than  and write them into GPU memory.kimimikℛℛ
+46
+HARS - Re-rank step•Re-rank (sorting) on candidate logits
+47
+HARS Decoding Example•Original logits, with Beam size = 2 and Vocab size = 8.
+482143274431551826HARS Decoding Example•For each beam, divide the eight logits into two groups.
+492143274431551826HARS Decoding Example•Calculate the maximum of each group.
+502143274431551826HARS Decoding Example•For each beam, calculate the minimum of each group’s maximum.
+512143274431551826HARS Decoding Example•For each beam, select logits larger than the minimum in previous step.
+522143274431551826HARS Decoding Example•For each beam, select logits larger than the minimum in previous step.
+5347458HARS Decoding Example•Re-rank only on ﬁve logits
+5444578Details in GPU Inference Implementation•share tensor memory across layers
+•mixed precision computation, mostly using FP16 for computation
+•Using float4 and half2 to increase bandwidth
+•No need to keep intermediate results and gradients during infernece, similar to with torch.no_grad()
+55Python API
+C++ Operator
+CUDA Kernel
+LightSeq2 KernelLightSeq Software Architecture
+56
+Softmax FW
+Softmax BW
+Dropout BW
+…
+cuBLAS
+CUB
+Encoder
+Decoder
+Softmax
+Embedding
+Trainer
+…
+Python API
+Encoder
+Decoder
+Softmax
+Embedding
+Trainer
+…
+LightSeq Model Zoo
+Transformer
+BERT
+ViT
+GPT2
+…
+Model Translator
+…
+Internal APIs
+3rd Party
+Public APIs
+API Example: HuggingFace BERT
+57from lightseq.training import LSTransformerEncoderLayer config = LSTransformerEncoderLayer.get_config(             model="bert-base",             max_batch_tokens=4096,             max_seq_len=512,             fp16=True,             local_rank=0) ls_layer = LSTransformerEncoderLayer(config) # replace the 1st Hugging Face layer with LightSeq2 bert_model.layer[0] = ls_layerStep 1: import LightSeq
+Step 2: Conﬁg and deﬁne your model/layer
+Step 3: Replace HuggingFace Layer58LightSeq + Fairseq Integrationlightseq-train DATA_SET \     --task translation \     --arch ls_transformer_wmt_en_de_big_t2t \     --optimizer ls_adam \     --criterion ls_label_smoothed_cross_entropy \     --OTHER_PARAMS
+•LightSeq can be seamlessly used with Fairseq •Training: lightseq-train，using prefix ls_59LightSeq + Fairseq Integration•LightSeq accelerated Transformer embedding / encoder / decoder、Adam and cross entropy for Fairseq •LightSeq is compatible with Fairseq cache and reorder •LightSeq is compatible with Apex and DeepSpeed together with Fairseq。deepspeed ds_fairseq.py DATA_SET \     —-user-dir fs_modules \     --deepspeed_config deepspeed_config.json \     --task translation \     --arch ls_transformer_wmt_en_de_big_t2t \     --optimizer ls_adam \     --criterion ls_label_smoothed_cross_entropy \     --OTHER_PARAMS
+GPU Occupation•LightSeq greatly reduces the proportion of kernels other than GEMM.
+60Machine Translation Inference: 14x speedup•LightSeq outperforms others in most cases, especially in large batch size.
+61GPT2 Inference: 6x speedup•LightSeq outperforms others in most cases
+62Summary
+63We optimize the training process from 3 aspects
+Eﬃcient Parameter Update
+via mixed precision
+Memory Management
+High performance Kernels for Forward and Backward
+via Fusion & Algebra trick
+∇x
+∇y
+Dropout
+g
+p
+fp32+
+∇z
+∇y
+×
+Layer Norm
+∇x
+Reuse MemoryOperators that can be reused in Other Networks:
+Dropout, LayerNorm, Softmax, Cross Entropy
+hierachical auto-regressive  search for large vocabulary
+converting sorting to parallel operations (max, ﬁlter, re-rank)Accelerating decodingOther Approaches for Acceleration
+64
+Alternative Model Structures: Linformer, Reformer
+Training Strategy: Shallow to Deep, Layer Dropout
+Eﬃcient Computation: LAMB, Quantization, Hardware Optimization
+65
+code is available at 
+https://github.com/bytedance/lightseqStay tuned for Deepseek’s FlashMLA•High-performance decoding kernel optimized for Multi-head Latent Attention (MLA) on Hopper GPUs
+•https://github.com/deepseek-ai/FlashMLA
+66Reading for Next•PyTorch Distributed: Experiences on Accelerating Data Parallel Training
+•PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel
+67

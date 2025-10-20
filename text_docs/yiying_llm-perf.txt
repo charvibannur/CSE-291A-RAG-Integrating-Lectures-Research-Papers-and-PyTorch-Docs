@@ -1,0 +1,57 @@
+Understanding LLM PerformanceYiying ZhangTool use: ƔThe agent learns to call external APIsfor extra information that is missing from the model weights (often hard to change after pre-training), including current information, code execution capability, access to proprietary information sources and more.What is LLM Agentshttps://gptpluginz.com/llm-agents/
+https://lilianweng.github.io/posts/2023-06-23-agent/
+MCP (Model Context Protocol)●Connecting (N) LLMs to (M) external tools/resources used to be a NxM problem ●MCP standardizes the LLM-tool communication into a N->1->M process ●Build with a client-server model ●MCP client: the agent that needs to call tool/data ●MCP server: a service to expose external tools and data sources
+AI Agent/Workflow Frameworks●Frameworks initially proposed to standardize AI workflows, provide some out-of-box design patterns and abstractions ●Some examples ●LangChain: Came out the earliest, probably the most popular and hardest to use ●LlamaIndex: Good RAG support ●CrewAI and Camel: multi-agent framework for more complex tasks ●But a lot of unnecessary, added complexity for agents, harder to customize ●My experience of what’s the easiest and sufficient for many tasks ●No framework (pure Python) ●No MCP (can just write your own functions or hooks) ●No A2A (no need for multi-agent)What is AI Agent Infra?●Agent testing and evaluation ○Unit + e2e test, metrics, benchmarks, human-in-the-loop ●Agent autotuning and optimization ○Automated prompt tuning, model selection, tool selection, workflow optimization ●Agent hosting ○Serverless or long-running?  ○Stateful or stateless? ●Tooling, memory, dataDemo Time: Eigent Computer-Use Agent performing a Discord summarization taskOutline●Transformer primer ●Introduction oriented for LLM infra (perf problems), not the theory ●LLM performanceSelf Attention
+source: https://jalammar.github.io/illustrated-transformer/
+Multi-headed Attention
+source: https://jalammar.github.io/illustrated-transformer/Transformer Model
+source: https://jalammar.github.io/illustrated-transformer/Inference process of LLMs
+Layer 1Layer N
+Artificialthe
+thefuture
+Layer 1Layer NLayer 1Layer N
+futureof
+11IntelligenceisInputOutput………Repeat until the sequence ●Reaches its pre-defined maximum length (e.g., 2048 tokens) ●Generates certain tokens (e.g., “<|end of sequence|>”)//0LQIHUHQFHEDFNJURXQG
+/HJHQGƔ<HOORZSURPSWWRNHQƔ%OXHJHQHUDWHGWRNHQƔ5HGHQGRIVHTXHQFHWRNHQ,WHUDWLYHHDFKIRUZDUGSDVVJHQHUDWHVDVLQJOHWRNHQ$XWRUHJUHVVLYHJHQHUDWLRQFRQVXPHVSURPSWWRNHQVSUHYLRXVO\JHQHUDWHGWRNHQV&RPSOHWLRQSRWHQWLDOO\GHFLGHGE\PRGHO$JHQHUDWHGWRNHQFDQEHWKHHQGRIVHTXHQFHWRNHQ+RZGRHVWH[WJHQHUDWLRQZRUN"
+Preﬁll and Decoding Stages•Preﬁll: processing model input (all in one forward pass)
+•Decode: generating output token, one at a time
+source: LLM Inference Serving: Survey of Recent Advances and OpportunitiesKV Cache•KV Cache: stores Key (K) and Value (V) tensors computed at each transformer layer during inference to avoid recompilation
+•Preﬁll: store computed KVs of input sequence in KV cache
+•Each iteration in decode phase: each new token only needs to attend to cached KV states + the latest token
+ Question: what makes KV cache big?
+source: https://developer.nvidia.com/blog/mastering-llm-techniques-inference-optimization[recap] What is LLM (Large Language Model)?•Language models 
+•Text to text generation (i.e., text as input and text as output)
+•that are large
+•Massive number of model parameters (weights)
+•Trained on huge amounts of data
+Source data from lifearchitect.ai, plotted by GPT-5Source data from lifearchitect.ai, plotted by GPT-5Popular LLM-powered services
+18ProgrammingDev toolsChatSales&MarketingCustomer Service
+LLM Endpoints or Hosted LLM servers
+What is LLM Infra?•LLM training
+•Pre-training (foundational model training)
+•Post-training (ﬁne-tuning, RLHF)
+•LLM serving
+•Single-GPU/CPU LLM inference
+•Distributed model serving
+•LLMOps
+•Training data collection, preparation, and synthesize
+•Experimental tracking, model registry
+•Monitoring and logging of LLM serving6\VWHPVFKDOOHQJHVWKDWLQFUHDVHFRVWƔ6L]HRI//0SDUDPHWHUV!!VL]HRI//0GDWDż/ODPD%a*%WRVWRUHIORDWSDUDPHWHUVż[$*%WRVWRUH[$*%WRPD[LPL]HWKURXJKSXWƔ0HPRU\,2KXJHIDFWRULQODWHQF\ż)RUDVLQJOHWRNHQKDYHWRORDG*%WRFRPSXWHFRUHVż&38PHPRU\,2a *%Vż*38PHPRU\,2a *%V$*%Ɣ+LJKWKURXJKSXWUHTXLUHVPDQ\)/236ż&38FDQGRUHDOWLPHJHQHUDWLRQRIDVLQJOHVHTXHQFHż*38FDQGRUHDOWLPHJHQHUDWLRQIRUPDQ\VHTXHQFHV
+)URPWKH)ODVK$WWHQWLRQSDSHUKWWSVDU[LYRUJSGISGIWhat does “Performance” mean in LLM serving?•Not quality “performance”: in this class and in systems context in general, performance means temporal performance, not quality or accuracy
+• Time To First Token (TTFT): Queueing time + reﬁll time + one token decoding: How quickly users start seeing a response, i.e., response time
+•Time Per Output Token (TPOT): Time to generate each additional output token. Average TPOT x output token length is the time users see all the response after seeing the ﬁrst token •Latency: The overall request time it takes for the model to generate the full response for a user. latency = (TTFT) + (TPOT) * (the number of tokens to be generated)
+•Throughput: The number of output tokens per second an inference server can generate across all users and requestsQuestions•In what scenario/use cases is TTFT (TPOT) more important? •What is the latency-throughput tradeoﬀ? •What are the factors that aﬀect diﬀerent LLM performance metrics?(Nvidia) GPU and CUDA Primer
+source: https://developer.nvidia.com/blog/cuda-refresher-cuda-programming-model/ 
+(Nvidia) GPU and CUDA Primer
+source: https://jonathan-hui.medium.com/ai-chips-a100-gpu-with-nvidia-ampere-architecture-3034ed685e6e Preﬁll vs. Decode Resource Demand•GPU has two general types of computing resources:
+•GPU kernel and GPU memory
+•Is preﬁll compute or memory bound?
+•Is decoding compute or memory bound?Common Techniques to Improve LLM Inference Perf•KV Cache•Operator Fusion: Combining different adjacent operators•Quantization: Use fewer bits for weights and activations•Compression: Sparsity or distillation•Parallelization: Tensor parallelism across multiple devices or pipeline parallelism for larger models.•More later this quarterModel Bandwidth Utilization (MBU)•MBU = (achieved memory bandwidth) / (peak memory bandwidth) 
+•achieved memory bandwidth is ((total model parameter size + KV cache size) / TPOT)
+•Model FLOPs Utilization (MFU) = (observed throughput (TPOT)) / (peak GPU FLOPs)
+•MBU important for  memory-bound computation, MFU important for compute-bound computation. Ideally, want both to be 100%
+•batch size: how many number of requests are sent to GPU for model forwarding at the same time (in parallel)
+source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices 
+source: https://huggingface.co/blog/tngtech/llm-performance-prefill-decode-concurrent-requests source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices Figure 2: Empirically observed MBU for different degrees of tensor parallelism with TensorRT-LLM on A100-40G GPUs. Requests: sequences of 512 input tokens with a batch size of 1.source: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices 
+Figure 3: Empirically observed MBU for different batch sizes and tensor parallelism modes on H100-80G GPUs. Requests: sequences of 512 input tokenssource: https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices Figure 7: Throughput latency curve for the MPT-7B model. This allows users to pick a hardware conﬁguration that meets their throughput requirements under a latency constraint.Backup Slide: Google’s TPU (Tensor Processing Unit)
+Source: Jouppi etal. “In-Datacenter Performance Analysis of a Tensor Processing Unit” [ISCA’17]

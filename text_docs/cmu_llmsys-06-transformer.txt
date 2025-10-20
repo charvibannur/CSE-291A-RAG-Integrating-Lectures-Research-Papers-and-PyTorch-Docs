@@ -1,0 +1,287 @@
+Transformer
+Lei Li
+•Design of a Deep Learning Framework
+oTensorflow , a computation graph defined as dataflow
+otwo stages: defining the computation graph and then executing 
+the computation (with optimization)
+▪Placeholder nodes for taking input
+▪Variable nodes for storing parameters
+▪Operation node, with input node and output for holding computed result 
+2Recap•Implementing Transformer, the backbone of LLMs
+oEncoder -decoder architecture
+oEmbedding
+oMultihead  Attention and FFN, Decoder Self -Attention
+oLayernorm
+•Training techniques and Performance of Transformer
+•Code walkthrough 
+3Today’s Topic
+Type of Language Models
+4
+Decoder
+EncoderEncoder -only
+Masked LM
+Non-autoregressiveEncoder -decoder Decoder -only
+Autoregressive
+Encoder
+ Decoder
+e.g. BERT
+RoBERTa
+ESM (for protein)e.g. T5 e.g. GPT
+LLaMA
+ProGen  (for protein)Encoder -Decoder Paradigm 
+𝑝𝜃(𝑦|𝑥)=∏
+𝑖𝑝(𝑦𝑖|𝑥,𝑦1:𝑖−1)
+conditional prob. modeled by 
+neural networks (Transformer)
+Decoder
+Encoder
+Source: 我喜欢唱歌和跳舞 。target:   
+I like singing and dancing.
+5•Conditional text generation: directly learning a function 
+mapping from source sequence to target sequence
+𝑝𝜃(𝑦|𝑥)=∏
+𝑡𝑝(𝑦𝑡|𝑥,𝑦1:𝑡−1;𝜃)
+•Previous encoder/decoder: LSTM or GRUSequence to Sequence Learning
+Sutskever et al. Sequence to Sequence Learning with Neural Networks. 2014
+RNN
+.
+RNN
+dancing
+RNN
+like
+RNN
+I
+RNN
+<eos>
+RNN
+跳舞
+RNN
+喜欢
+RNN
+我
+RNN
+<bos>
+跳舞 喜欢 我 <eos>
+Source：Target： Encoder
+6•Full context and parallel: use Attention in both encoder and 
+decoder
+•no recurrent ==> concurrent encodingMotivation for a new Architecture
+Decoder
+Encoder
+Source: 我喜欢唱歌和跳舞 。target:   
+I like singing and dancing.
+7Transformer
+<BOS>I likeI like singingEncoder Decoder
+MHA + FFNMHA 
++FFNMHA + 
+FFNMHA + 
+FFN
+MHA + 
+FFNMHA + 
+FFNMHA + 
+FFN
+MHA + 
+FFNMHA + 
+FFNMHA + 
+FFNSoftmax Softmax SoftmaxI like singing and 
+dancing.
+Token
+Embedding
+Table
+我一和…
+MHA + FFN
+Token
+Embedding
+Table
+Ilikeyou…
+我喜欢唱歌和跳舞。
+Vaswani et al. Attention is All You Need. 2017+pos emb+pos emb
+8•Token Embedding: (tokenization next lec.) 
+oShared (tied) input and output embedding from 
+lookup table
+•Positional Embedding: 
+oto distinguish words in different position, Map 
+position labels to embedding, dimension is same 
+as Tok Emb, for t -th pos, i-th dim
+𝑃𝐸t,2𝑖=sin(𝑡
+10002𝑖/𝑑)
+𝑃𝐸t,2𝑖+1=cos(𝑡
+10002𝑖/𝑑)Embedding
+9•Instead of one vector for each token
+•break into multiple heads
+•each head perform attention 
+Head 𝑖=Attention (𝑄𝑊𝑖𝑄,𝐾𝑊𝑖𝐾,𝑉𝑊𝑖𝑉)
+MultiHead (𝑄,𝐾,𝑉)
+=Concat (Head 1,Head 2,…,Head ℎ)𝑊𝑜Multi -head Attention
+Q
+Scaled Dot -Product
+Attention
+Linear
+ Linear
+ Linear
+Concat
+Linear
+h
+K V
+10sent len x sent len
+lenx dim
+Alammar, The Illustrated TransformerMulti -head Attention
+Q: why divided by sqrt(d)?Query
+Key
+ValueX are input embeddings from previous layer (num of tok * dim)
+11Multihead  Attention and FFN
+𝑉𝑥 𝐾𝑥 𝑄𝑥
+Dot Product
+Softmax
+Linear
+×
+LayerNorm
+𝑦𝑖=𝑤𝑖𝑥𝑖−𝜇(𝑥)
+𝜎(𝑥)+𝑏𝑖
++
+ LinearReLU
+Linear
+LayerNorm+ MHA FFN
+(𝑄𝑥)𝑇×𝐾𝑥/𝑑𝑘Attention (𝑄,𝐾,𝑉,𝑥)=Softmax ((𝑄𝑥)𝑇𝐾𝑥
+𝑑)⋅(𝑉𝑥)𝑇FFN (𝑥)=𝑚𝑎𝑥 (0,𝑥⋅𝑊1+𝑏1)⋅𝑊2+𝑏2
+Residual
+Conn
+12•Maskout right side before softmax ( -inf)Decoder Self -Attention
+MatMul
+Scale
+Mask (opt.)
+SoftMax
+MatMul
+Q K VScaled Dot -Product Attention
+13•Residual Connection
+•Make it zero mean and unit 
+variance within layer
+•Post-norm 
+•Pre-normResidual Connection and Layer 
+Normalization
+14•on Canvas
+15Quiz 3•Implementing Transformer, the backbone of LLMs
+oEncoder -decoder architecture
+oEmbedding
+oMultihead  Attention and FFN, Decoder Self -Attention
+oLayernorm
+•Training techniques and Performance of Transformer
+•Code walkthrough 
+16Today ’s Topic
+•C layers of encoder (=6)
+•D layers of decoder (=6)
+•Token Embedding: 512 
+(base), 1024 (large)
+•FFN dim=2048Transformer in Original Paper
+Multi -Head
+Attention
+Add & Norm
+Input
+Embedding
+InputsFeed Forward
+Add & Norm
+Output
+Embedding
+Feed Forward
+Add & Norm
+Multi -Head
+Attention
+Add & Norm
+Add & Norm
+Masked
+Multi -Head
+Attention
+Linear
+Softmax
+Output
+Proba
+bilities
+Output
+s
+(shifted 
+right)MatMul
+Scale
+Mask (opt.)
+SoftMax
+MatMul
+Q K VScaled Dot -Product 
+Attention
+Q
+Scaled Dot -Product
+Attention
+Linear
+ Linear
+ Linear
+Concat
+Linear
+h
+K VMulti-Head 
+Attention
+17𝑃(𝑌|𝑋)=∏𝑃(𝑦𝑡|𝑦<𝑡,𝑥)
+•Training loss: Cross -Entropy
+𝑙=−∑
+𝑛∑
+𝑡log𝑓𝜃(𝑥𝑛,𝑦𝑛,1,…,𝑦𝑛,𝑡−1)
+•Teacher -forcing during training.
+•pretend to know groundtruth  for 
+prefixTraining Transformer
+Decoder
+Encoder
+Source: 我喜欢唱歌和跳舞 。target:   
+I like singing and dancing.
+18•Dropout
+oApplied to before residual
+oand to embedding, pos emb.
+op=0.1 ~ 0.3
+•Label smoothing
+o0.1 probability assigned to non -truth
+•Vocabulary: 
+oEn-De: 37K using BPE
+oEn-Fr: 32k word -piece (similar to BPE)Training Transformer for MT
+19•Assume 𝑦∈𝑅𝑛 is the one -hot encoding of label
+•Approximating 0/1 values with softmax  is hard
+•The smoothed version
+oCommonly use Label Smoothing
+𝑦𝑖={1if belongs  to class  𝑖
+0 otherwise
+𝑦𝑖={1−𝜖 ifbelongs toclass  𝑖
+𝜖/(𝑛−1) otherwise
+𝜖=0.1
+20•Batch
+ogroup by approximate sentence length
+ostill need shufflingHardware  
+oone machine with 8 GPUs (in 2017 paper)
+obase model: 100k steps ( 12 hours)
+olarge model: 300k steps ( 3.5 days)
+•Adam Optimizer
+oincrease learning rate during warmup, then decrease
+o𝜂=1
+𝑑𝑚𝑖𝑛 (1
+𝑡,𝑡
+𝑡03)Training
+21𝑚𝑡+1=𝛽1𝑚𝑡−(1−𝛽1)𝛻ℓ(𝑥𝑡)
+𝑣𝑡+1=𝛽2𝑣𝑡+(1−𝛽2)(𝛻ℓ(𝑥𝑡))2
+ෝ𝑚𝑡+1=𝑚𝑡+1
+1−𝛽1𝑡+1
+ො𝑣𝑡+1=𝑣𝑡+1
+1−𝛽2𝑡+1
+𝑥𝑡+1=𝑥𝑡−𝜂
+ො𝑣𝑡+1+𝜖ෝ𝑚𝑡+1ADAM•A single model obtained by averaging the last 5 
+checkpoints, which were written at 10 -minute interval 
+(base)
+•decoding length: within source length + 50
+omore on decoding in next lectureModel Average
+23•Sequence -to-sequence encoder -decoder framework for 
+conditional generation, including Machine Translation
+•Key components in Transformer ( why each?)
+oPositional Embedding (to distinguish tokens at different pos)
+oMultihead  attention
+oResidual connection
+olayer norm
+24Summaryhttps:// nlp.seas.harvard.edu /annotated -transformer/
+25Code Go -through•Neural Machine Translation of Rare Words with Subword  
+Units. Sennrich  et al. 2016 .
+•SentencePiece : A simple and language independent 
+subword  tokenizer and detokenizer  for Neural Text 
+Processing. Kudo and Richardson. 2018
+26Reading for Next Class

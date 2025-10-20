@@ -1,0 +1,71 @@
+torch.utils.bottleneck
+Created On: Mar 23, 2018 | Last Updated On: Sep 28, 2022
+torch.utils.bottleneck is a tool that can be used as an initial step for debugging bottlenecks in your
+program. It summarizes runs of your script with the Python profiler and PyTorchʼs autograd profiler
+Run it on the command line with
+where [args] are any number of arguments to script.py, or run python -m
+torch.utils.bottleneck  -h for more usage instructions.
+Because your script will be profiled, please ensure that it exits in a finite amount of time.
+Due to the asynchronous nature of CUDA kernels, when running against CUDA code, the
+cProfile output and CPU-mode autograd profilers may not show correct timings: the
+reported CPU time reports the amount of time used to launch the kernels but does not
+include the time the kernel spent executing on a GPU unless the operation does a
+synchronize. Ops that do synchronize appear to be extremely expensive under regular
+CPU-mode profilers. In these case where timings are incorrect, the CUDA-mode autograd
+profiler may be helpful.python  -m  torch .utils .bottleneck  /path /to /source /script .py  [args]
+Warning ⚠
+Warning ⚠
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.bottleneck — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/bottleneck.html 1/3To decide which (CPU-only-mode or CUDA-mode) autograd profiler output to look at, you
+should first check if your script is CPU-bound (“CPU total time is much greater than CUDA
+total time”). If it is CPU-bound, looking at the results of the CPU-mode autograd profiler
+will help. If on the other hand your script spends most of its time executing on the GPU,
+then it makes sense to start looking for responsible CUDA operators in the output of the
+CUDA-mode autograd profiler.
+Of course the reality is much more complicated and your script might not be in one of
+those two extremes depending on the part of the model youʼre evaluating. If the profiler
+outputs donʼt help, you could try looking at the result of
+torch.autograd.profiler.emit_nvtx()  with nvprof . However, please take into
+account that the NVTX overhead is very high and often gives a heavily skewed timeline.
+Similarly, Intel® VTune™ Profiler  helps to analyze performance on Intel platforms
+further with torch.autograd.profiler.emit_itt() .
+If you are profiling CUDA code, the first profiler that bottleneck  runs (cProfile) will
+include the CUDA startup time (CUDA buffer allocation cost) in its time reporting. This
+should not matter if your bottlenecks result in code much slower than the CUDA startup
+time.
+For more complicated uses of the profilers (like in a multi-GPU case), please see
+https://docs.python.org/3/library/profile.html or torch.autograd.profiler.profile()  for more
+information.
+Previous NextRate this Page★★★★★
+Send FeedbackNote 
+Warning ⚠
+Docs
+Access comprehensive
+developer documentationTutorials
+Get in-depth tutorials for
+beginners and advancedResources
+Find development
+resources and get yourTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.bottleneck — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/bottleneck.html 2/3for PyTorch developers questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.
+© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacy
+policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.utils.bottleneck — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/bottleneck.html 3/3

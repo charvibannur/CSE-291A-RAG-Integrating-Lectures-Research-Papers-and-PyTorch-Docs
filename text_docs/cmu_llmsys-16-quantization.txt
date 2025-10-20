@@ -1,0 +1,177 @@
+11868/11968 LLM Systems
+LLM Quantization
+--Basic methods
+Lei Li
+Ack: Kath Choi, Aashiq  Muhamed, Zhen Wu, Hongyi  Jin, Wayne Wang•Pipeline Parallelism
+osplit by layers (horizonal split) 
+oeliminate the bubbles (idle)
+ointerleaving forward/backward
+•Tensor Parallelism
+oSplit the matrix computation
+2Recap of Model Parallel Training•Low precision numbers in computer
+•Basic Quantization Methods
+3Today’s TopicLlama -70B
+ 39.3M H100 -80GB GPU hours to train
+ requires 140GB GPU memory for inference
+Deepseek  V3 (671GB)
+ 2.8M H800 GPU hours to train
+ requires > 400GB GPU memory for inference
+4LLM Training and Inference are Costly!
+•Use low -bit precision to store parameters and layer outputs
+•Quantization can
+oreduce memory ➔ larger  batch size
+ospeed up calculation, more operations in one cycle
+•Cons: potentially reduce accuracy
+5Model Quantization
+A White Paper on Neural Network Quantization (Nagel et al., 2021)6Precision Formats
+± 1.𝑚𝑎𝑛𝑡𝑖𝑠𝑠𝑎 ∗2𝑎−2𝑒𝑥𝑝𝑜𝑛𝑒𝑛𝑡 −1 
+Image from https:// deeprec.readthedocs.io /en/latest/BFloat16.htmlINT8 range: -128~127, Precision: integer0 7half 
+precision7BF16/FP16 Calculations are faster!
+HFMA2: Half -precision Fused Multiply -Add for 2 elements in one 
+cycle (2x speedup)
+Global Memory
+Cache Line (128 bytes for A100)warp (32 threads) load 2 bf16 per thread
+Register A Register B[a1, a2] [b1, b2]
+Register C[c1, c2]
+a1*b1 + c1
+ a2*b2 + c2Then, compute in parallel, and write back to register CPack two bf16 into 
+one 32 -bits register
+A100/A6000 or later GPUs support BF16Performs half2 vector addition in round -to-nearest -even 
+mode.
+__device__​ __half2 __hadd2(const __half2 a, const __half2 b)
+Performs half2 vector fused multiply -add in round -to-nearest -
+even mode.
+__device__​ __half2 __hfma2(const __half2 a, const __half2 b, const 
+__half2 c)
+8CUDA APIs for Half Precision•Using lower precision
+oconverting parameters from FP32 to INT8 or INT4
+operform all computation in lower prevision.
+•Reduce model accuracy:
+oLoss of Precision ➔ accumulate quantization noise
+oRange mismatch ➔ values are clipped and lead to information 
+loss
+oQuantization error ➔ rounding errors 
+9Direct Quantization Approach•Absmax  quant •Zero -point quant
+10Quantize a number
+Code implementation for quant(.)
+11import  torch 
+def absmax_quantize (X): 
+# Calculate scale  
+scale = 127 / torch .max(torch .abs(X)) 
+# Quantize  
+X_quant  = (scale * X).round () 
+# Dequantize  
+X_dequant  = X_quant  / scale 
+return  X_quant .to(torch .int8), X_dequantdef zeropoint_quantize (X): 
+# Calculate value range (denominator)  
+x_range  = torch .max(X) - torch .min(X) 
+x_range  = 1 if x_range  == 0 else x_range  
+# Calculate scale  
+scale = 255 / x_range  
+# Shift by zero -point  
+zeropoint  = (-scale * torch .min(X) - 128).round () 
+# Scale and round the inputs  
+X_quant  = torch .clip((X * scale + zeropoint ).round (), -128, 
+127) 
+# Dequantize  
+X_dequant  = (X_quant  - zeropoint ) / scale 
+return  X_quant .to(torch .int8), X_dequanthttps://colab.research.google.com/drive/1DPr4mUQ92Cc -
+xf4GgAaB6dFcFnWIvqYi?usp=sharing  
+12Direct Quantization Colab13Today’s Topic
+•Low precision numbers in computer
+•Basic Quantization Methods
+Model Quantization Approaches
+14Quantization during training
+post trainingexpensive re -training / finetuning
+Model Quantization Approaches
+15Quantization   during training
+post trainingpreserve accuracy
+scale to large 
+parametersBRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)
+OBQ (Frantar et al., 2022)
+ZeroQuant (Yao et al., 2022)
+LLM.int8() (Dettmers et al., 2022)Model Quantization Approaches
+16Quantization  during training
+post trainingpreserve 
+accuracy
+(by quantizing each 
+individual / consecutive 
+layers)
+scale to large 
+parametersBRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)
+OBQ (Frantar et al., 2022)
+ZeroQuant (Yao et al., 2022)
+LLM.int8() (Dettmers et al., 2022)hard to scale to large 
+parameters (billions)•Find the quantized matrix ෡𝑊 that minimizes the linear layer’s 
+output. 
+•Performs quantization layer -by-layer linear projection
+argmin
+෡𝑊𝑊𝑋 −෡𝑊𝑋22
+W: linear projection weights (e.g. in FFN and attention)
+X: layer input
+•Limitation: could still lead to accumulation of quantization 
+error 
+17Basic Approach: Layer -Wise Quantization(෢∆𝑤,෢∆𝑥,෠𝑉)=argmin
+∆𝑤 ∆𝑥,𝑉𝑊𝑋 −𝑄∆𝑤(𝑊+𝑉)∙𝑄∆𝑥(𝑋)2•minimize the error between the quantized / full -precision 
+layer outputs for each layer
+•adding continuous V to W and quantize
+18AdaQuant
+quantized results
+Hubara  et al. Improving Post Training Neural Quantization: Layer -wise Calibration and Integer Programming. 2020.the quantization step size ∆𝑤 and ∆𝑥 can be set or learned.MobileNet -v2 Float Model Direct Quantized 
+ModelQuantized Model 
+with ADAQUANT
+Model Size 8.4 MB 2.3 MB 2.4 MB
+P rec@1 65.4 % 1.7 % 52.3 %
+P rec@5 85.7 % 5.6 % 75.7 %
+19Is Quantization Accurate?20Why is Quantizing LLMs Difficult?
+Quantization  during training
+post trainingpreserve accuracy
+scale to large 
+parameters
+(by rounding weights to the 
+nearest quantization level)BRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)
+OBQ (Frantar et al., 2022)
+ZeroQuant (Yao et al., 2022)
+LLM.int8() (Dettmers et al., 2022)accuracy loss when lower -bit 
+precision (ex. 3, 4 bits per 
+parameter)•Layer -by-layer knowledge distillation 
+oUse the original model as Teacher
+othe quantized model is student
+21ZeroQuant
+ℒ𝐿𝐾𝐷 ,𝑘=𝐿𝑘∙𝐿𝑘−1∙𝐿𝑘−2∙⋯∙𝐿1𝑋−෠𝐿𝑘∙𝐿𝑘−1∙𝐿𝑘−2∙⋯∙𝐿1𝑋2
+Layer Lk-1
+Teacher Layer L k
+ Student Layer ෡𝐿𝑘
+Distillation LossUpdate quantization 
+scheme for Lk
+Yao et al. ZeroQuant : Efficient and Affordable Post -Training Quantization for Large -Scale Transformers. Neurips  2022.•Quantization -Optimized Transformer Kernels (fusion)
+•The scalability is verified up to 20B models (GPT -NeoX20B)
+•At 1.3B scale, computation time is ~3 hours
+obut slower than GPTQ (x100 larger in ~4 hours)
+•integrated in Deepspeed
+22ZeroQuant
+Yao et al. ZeroQuant : Efficient and Affordable Post -Training Quantization for Large -Scale Transformers. Neurips  2022.•Using 8 -bit quantization for 
+matrix multiplications
+•But, extreme outliers in 
+features (activation values)
+oneed for wider numerical ranges 
+oQuantize all parameters without 
+distinguishing them separately 
+can result in accuracy 
+degradation
+23LLM.int8()
+LLM.int8(): 8 -bit Matrix Multiplication for Transformers at Scale. Dettmers  et al. Neurips  2022.•Keep outliers in higher precision (FP16) while quantizing the rest (8bit)
+•Outliers: large magnitude (>= 6.0) , affects >= 25% layers, and affects 
+>= 6% sequence dimensions
+24LLM.int8()
+LLM.int8(): 8 -bit Matrix Multiplication for Transformers at Scale. Dettmers  et al. Neurips  2022.•low-bit number representation in computer
+oBF16: 16 -bit half precision floating point numbers, better for ML
+oint8
+•Direct quantization
+oabsmax : linearly scale according to max abs value
+ozero-point: finding zero -point and scale
+•Layer -wise quantization approaches
+oAdaQuant
+oKD: ZeroQuant
+oLLM.int8()25Summary•Scaling Quantization for large models: GPTQ
+26Next

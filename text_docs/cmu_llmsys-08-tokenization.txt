@@ -1,0 +1,379 @@
+11868 LLM Systems
+Tokenization
+Lei Li
+•Pretraining: Mask -labeled recovery of random spans + next 
+token prediction
+•Multitask supervised fine -tuning with instruction templates
+•Relative position instead of absolute position: Rotary 
+positional embedding
+•Smooth activation: SwishGLU
+•Sparse attention patterns
+2Recap – Key Ideas in Modern Pre -trained 
+LLMs•Subword  tokenization: Byte -Pair-Encoding 
+oCode walk through
+•Information -theoretic vocabulary (VOLT)
+•Practical Considerations in LLM
+•Vocabulary sharing and impact on multilingual performance
+•Tokenizer -free model (BLT)
+3OutlineMany words don’t map to one token: indivisible.
+tokenize rTokenizer – split text into basic units
+embedding table lookup
+4•Word -level Tokenization
+oBreak by space and punctuation.
+oEnglish, French, German, Spanish
+oSpecial treatment: numbers replaced by special token [number]
+oHow large is the Vocabulary? Cut -off by frequency, the rest 
+replaced by [UNK]Simple Tokenization – Word -level
+The  most  eager  is  Oregon  which  is  enlisting  5,000  drivers  in  the  country’s  biggest  experiment. 
+5from collections import defaultdict
+def build_word_dict (file_path ):
+    word_dict  = defaultdict (int)
+    with open( file_path , 'r', encoding='utf -8') as file:
+        for line in file:
+            words = line.split ()  # Split by spaces
+            for word in words:
+                word_dict [word] += 1
+    
+    return word_dict
+6Vocabulary – simple exampleHow many words?
+Bob’s handyman isado-it-yourself kinda guy, isn’the?What is a word?
+Clitic
+noun -noun 
+compound
+multi -word 
+expression
+contraction
+7•Orthographic definition
+ostrings separated by white spaces
+ospoken language: units corresponding to written word separated 
+by pause 
+oproblem: Bob’s handy man  is a do-it-yourself  kinda  guy, isn’t he?
+•What about languages that do not use white spaces?
+他昨天晚上去看了消失的她
+he yesterday night watched lost in starsWords
+8•Easy to implement
+•Cons:
+oOut-of-vocabulary (OOV) or unknown tokens, e.g. Covid
+oTradeoff between parameters size and unknown chances. 
+▪Smaller vocab => fewer parameters to learn, easier to generate (deciding 
+one word from smaller dictionary), more OOV
+▪Larger vocab => more parameters to learn, harder to generate, less OOV
+oHard for certain languages with continuous script: Japanese, 
+Chinese, Korean, Khmer, etc. Need separate word segmentation 
+tool (can be neural networks)Pros and Cons of Word -level Tokenization
+9•Each letter and punctuation is a token
+•Pros:
+oVery small vocabulary (except for some languages, e.g. Chinese)
+oNo Out -of-Vocabulary token
+•Cons:
+oA sentence can be longer sequence
+oTokens do not representing semantic meaningCharacter -level Tokenization
+T
+ h
+ e
+ m
+ o
+ s
+ t
+ e
+ a
+ g
+ e
+ r
+ i
+ s
+ O
+ r
+ e
+ g
+ …
+10•Goal:
+omoderate size vocabulary
+ono OOV
+•Idea: 
+orepresent rare words (OOV) by sequence of subwords
+•Byte Pair Encoding (BPE)
+onot necessarily semantic meaningful
+oOriginally for data compressionSubword -level Tokenization
+The  most  eager  is  Oregon  which  is  enlisting  5,000  driver s  in  the  country ’s  big g estexperiment. 
+Philip Gage. A New Algorithm for Data Compression, 1994
+111.Initialize vocabulary with all characters as tokens (also add 
+end-of-word symbol) and frequencies
+2.Loop until vocabulary size reaches capacity
+1)Count successive pairs of tokens in corpus
+2)Rank and select the top frequent pair
+3)Combine the pair to form a new token, add to vocabulary
+3.Output final vocabularyByte Pair Encoding (BPE) for Text
+Building Vocabulary
+Rico Sennrich et al. Neural Machine Translation of Rare Words with Subword Units. 2016121.starting from chars
+2.repeatedly, merge most frequent pairs to form new tokens
+3.until reaching a fixed size. Byte-Pair-Encoding Tokenization
+cat 90
+catch 50
+rat 80
+rattle 40freq. raw word a
+c
+e
+h
+l
+t
+ata
+c
+e
+h
+l
+t
+at
+cata
+c
+e
+h
+l
+t
+at
+cat
+rata
+c
+e
+h
+l
+t
+at
+cat
+rat
+catc
+Neural Machine Translation of Rare Words with Subword Units. Sennrich et al. ACL 2016merge(
+‘a’, ’t’)merge
+(‘c’, ’at’)merge
+(‘r’, ’at’)merge
+(‘cat’, ’c’)a
+c
+e
+h
+l
+t
+13•Split text by space or other delimiters 
+•Repeat
+ogreedy find the longest prefix that matches a token in BPE 
+dictionary
+osplit and process the remaining parts until no more text left
+14BPE Tokenization•https://github.com/llmsystem/llmsys_code_examples/blob/m
+ain/tokenization/tokenization.ipynb  
+15Code Example•Subword  tokenization: Byte -Pair-Encoding 
+oCode walk through
+•Information -theoretic vocabulary (VOLT)
+•Practical Considerations in LLM
+•Vocabulary sharing and impact on multilingual performance
+•Tokenizer -free model (BLT)
+16Outline
+•Compression
+oaverage number of bytes per token
+𝐵𝑃𝑇=#utf8bytes
+#tokens
+onormalized sequence length
+𝑁𝑆𝐿=#𝑡𝑜𝑘𝑒𝑛𝑠
+#𝑡𝑜𝑘𝑒𝑛𝑠𝑖𝑛𝐿𝐿𝑎𝑀𝐴
+onormalized entropy (next)
+17Measuring VocabularyFind Optimal Vocabulary
+Normalized Entropy
+Which one leads to better NLG/MT performance? 
+Repeated full training and testing are required to find the optimal vocabulary!(BPE -
+Search)Numerous possible vocabularies at the sub -word level. 
+Size 
+Vocab 
+1k tokens
+V ocab 
+10k tokens
+V ocab 
+30k tokens
+Xu, Zhou, Gan, Zheng, Li. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a.
+18•Normalized Entropy ℋ𝑣=−1
+𝑙𝑣σ𝑖∈𝑣𝑃𝑖log𝑃(𝑖)
+𝑙𝑣: average number of chars for v’s all tokens
+•It measures semantic -information -per-char
+oSmaller is favorable. Less ambiguity and easy to generate
+Token count
+a 200
+e 90
+c 30
+t 30
+s 90Token count
+a 100
+aes 90
+cat 30
+ℋ𝑣=0.14 ℋ𝑣=1.37
+token prob.VOLT: Using entropy to learn vocabulary
+19•Value: Normalized Entropy 
+•Cost: Size 
+•Marginal Utility of information for Vocabulary (MUV)
+o𝑀𝑣𝑘→𝑣𝑘+𝑚=−𝐻(𝑣𝑘)−𝐻(𝑣𝑘+𝑚)
+𝑚
+oNegative gradients  of normalized entropy to size
+oHow much value each token bringsMUV: Utility of Information for Adding 
+Tokens
+Xu, Zhou, Gan, Zheng, LeiLi. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a20•Cost -effective point in MUV curve 
+omaximum MUV => best BLEUMUV is good indicator for MT performance 
+Xu, Zhou, Gan, Zheng, LeiLi. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a21•MUV and BLEU are correlated on two -thirds of tasks
+•A good coarse -grained evaluation metricMUV Indicates MT Performance
+MUVMUV
+Xu, Zhou, Gan, Zheng, LeiLi. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a22•Transport character occurrences to token occurrences
+•Maximizing MUV for vocabulary
+o𝑚𝑎𝑥−(𝐻(𝑉𝑡+1)−𝐻(𝑉𝑡))
+•Instead, maximizing the lower bound ==> Optimal Transport
+o𝑚𝑎𝑥
+𝑡(𝑚𝑎𝑥𝐻(𝑉𝑡)−𝑚𝑎𝑥𝐻(𝑉𝑡+1))VOLT: Vocabulary Building via 
+Transportation
+all candidate tokens (e.g. 100k)
+Xu, Zhou, Gan, Zheng, LeiLi. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a23•The vocabulary with the maximum MUV
+oMaximum gap between IPC of a vocabulary (with size t) 
+and that of a smaller vocabulary (with size <t)
+o𝑚𝑎𝑥−(𝐻(𝑉𝑡+1)−𝐻(𝑉𝑡))
+•Intractable, instead to maximize lower -bound
+•==> 𝑚𝑎𝑥
+𝑡(𝑚𝑎𝑥𝐻(𝑉𝑡)−𝑚𝑎𝑥𝐻(𝑉𝑡+1))
+•Finding 𝑚𝑎𝑥
+𝑣𝐻(𝑣)==> Optimal TransportReducing MUV Optimization to OT
+Xu, Zhou, Gan, Zheng, Li. V ocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021.24•Entropy -regularized Optimal Transport
+•Sinkhorn’s  algorithm (from [ Sinkhorn  1967])VOLT: Finding the Optimal Vocabulary
+Pa,a Pa,ab Pa,bc
+Pb,a Pb,ab Pb,bc
+Pc,a Pc,ab Pc,bca
+c
+Cost matrix DTransportation matrix 𝑃
+babc ab
+0 ∞
+∞
+∞ ∞a
+cbabc ab𝑚𝑖𝑛
+𝑃∈ℝ𝑚×𝑛⟨𝐷,𝑃⟩−𝐻(𝑃)
+∀𝑖∈Char,σ
+𝑗∈𝑉𝑛𝑃𝑖,𝑗=𝑃̂
+(𝑖)
+∀𝑗∈𝑉𝑛,|σ
+𝑖∈Char𝑃𝑖,𝑗−𝑃̂
+(𝑗)|=𝜖subject to
+ln2ln2
+ln2
+ln2TokChar
+TokChar
+Xu, Zhou, Gan, Zheng, LeiLi. Vocabulary Learning via Optimal Transport for Neural Machine Translation. ACL 2021a25•VOLT uses a greedy strategy to encode text with a 
+constructed sub -word level vocabulary similar to BPE.
+•The vocabulary includes all basic characters.
+oTo encode text, it first splits sentences into character -level tokens. 
+oThen, we merge two consecutive tokens into one token if the 
+merged one is in the vocabulary solved by OT. 
+oThis process keeps running until no tokens can be merged. 
+oOut-of-vocabulary tokens will be split into smaller tokens. Encoding and Decoding with VOLT
+26•Subword  tokenization: Byte -Pair-Encoding 
+oCode walk through
+•Information -theoretic vocabulary (VOLT)
+•Practical Considerations in LLM
+•Vocabulary sharing and impact on multilingual performance
+•Tokenizer -free model (BLT)
+27Outline
+•deduplication
+•sentencepiece
+•Code (programming languages)
+•Numbers
+•multilingual
+28Practical Consideration in LLMs•LLaMA  3 deduplicate at 
+ourl level dedup
+odocument level dedup  using minHash
+oline level dedup  using SHA -1 64 bit hash code for every 30m 
+docs
+▪to remove boilerplate, e.g. navigation menu, cookie warning, contact info
+•Filter
+on-gram repeats in one line
+o“dirty word ” counting
+otoken distribution KL divergence too different from corpus29Corpus Deduplication and Filtering•BBPE: byte -level BPE (universal for all languages)
+•Wordpiece : 
+olike BPE
+obut instead of merge with most frequent pairs, merge a and b, if 
+p(b|a) will be maximized
+•SentencePiece :
+oUniform way to treat space, punctuation 
+oUse the raw sentence, replacing space ‘ ’ with _ (U+ 2581 )
+oThen split character and do BPEMore Subword  Tokenization
+Kudo and Richardson, SentencePiece , 2018 
+3031Handling Code: Pre -tokenization
+Using regular expression to split the sequences 
+example: .append  => a single token
+Dagan et al. Getting the most out of your tokenizer for pre -training and domain adaptation. ICML 2024 . 32Handling numbers: Enable math in LLM
+xVal: A Continuous Numerical Tokenization for Scientific Language Models. Golkar  et al 2023.•32k ( LLaMA  2) ➔ 128k tokens ( LLaMA  3.1)
+o100k from openAI’s  tiktoken  (from original 200k)
+o28k allocated to multilingual
+33LLaMA3’s multilingual vocabulary
+https://www.icodeformybhasa.com/p/exploring -multilingual -aspects -and •combining documents from multiple ( 176 in LLaMA 3) 
+languages, about 8% of total text, then apply BPE on the 
+joint corpus
+•obtain the same amount of BPE token for each language 
+and then merge. 
+•allocating the capacity of each language by balancing the 
+average log probability (ALP)
+34How to construct multilingual vocabulary?
+Zheng et al. Allocating large vocabulary capacity for crosslingual  language model pre -training. EMNLP 2021.
+Liang et al. XLM -V: Overcoming the V ocabulary Bottleneck in  Multilingual Masked Language Models. EMNLP2023.https://belladoreai.github.io/llama -tokenizer -js/example -
+demo/build/
+https://koala.sh/tools/free -gpt-tokenizer
+35Demo•Subword  tokenization: Byte -Pair-Encoding 
+oCode walk through
+•Information -theoretic vocabulary (VOLT)
+•Practical Considerations in LLM
+•Vocabulary sharing and impact on multilingual performance
+•Tokenizer -free model (BLT)
+36Outline
+37Vocabulary Sharing
+English: television       Spanish: televisión
+French: television         Italian: television
+Dutch: televisie             Portuguese: televisão
+Swedish: television Finnish: televisio•Construct a small instruction -finetuning dataset using 10k 
+bilingual parallel data
+•Finetune LLaMA -7B
+•Examine the translation performance of
+oThe supervision bilingual direction (bilingual)
+oAll other directions (multilingual)
+38Embedding Finetuning for LLM
+How Vocabulary Sharing Facilitates Multilingualism in LLaMA ? Yuan et al, ACL 
+202439Does embedding FT promote bilingual & 
+multilingual translation performance? 
+QuadrantPerformance
+Case Languages
+Bilingual Multilingual
+Reciprocal ↑ ↑ cs, da, fr, de
+Altruistic ↓ ↑ ar, vi, zh, ko
+Stagnant ↓ ↓ Km, lo, gu, te
+Selfish ↑ ↓ hi
+How V ocabulary Sharing Facilitates Multilingualism in LLaMA ? Y uan et al, ACL 2024Fine-tuning 
+on bilingual 
+data does 
+not always 
+bring 
+benefits to 
+supervised 
+direction!
+40
+ar, vi, zh, ko
+How Vocabulary Sharing Facilitates Multilingualism in LLaMA ? Yuan et al, ACL 
+2024•Byte-BPE (BBPE) produces longer byte level token 
+sequence than the number of characters
+•饕 [tāo] (gluttonous) ➔ three tokens [227, 234, 260]
+•Implication for improvement:
+oshortening: remove the common prefix 227
+41Stagnant Quadrant – Over -tokenization
+How V ocabulary Sharing Facilitates Multilingualism in LLaMA ? Y uan et al, ACL 202442Stagnant Quadrant: expanding vocab
+  
+shortening 
+05101520
+en→km en→lo en→gu en→te
+Full Tuning Extend Vocab Shorten
+How V ocabulary Sharing Facilitates Multilingualism in LLaMA ? Y uan et al, ACL 202443Tokenizer -free Model – Byte Latent 
+Transformer
+Pagnoni  et al. Byte Latent Transformer: Patches Scale Better Than Tokens. 2024.•Subword  tokenization: Byte -Pair-Encoding
+oiteratively merging most frequent pairs of tokens
+•Information -theoretic vocabulary (VOLT)
+osolving entropy constrained optimal transport problem
+•Pre-tokenization through regex
+•Number treatment
+•Vocab sharing impact multilingual performance
+ohow to solve languages in stagnant quad 44Summaryhttps://canvas.cmu.edu/courses/44373/quizzes/140013  
+45Quiz 5

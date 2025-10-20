@@ -1,0 +1,75 @@
+torch.fft
+Created On: Aug 06, 2020 | Last Updated On: Jun 13, 2025
+Discrete Fourier transforms and related functions.
+Fast Fourier Transforms
+fftComputes the one dimensional discrete Fourier transform of input.
+ifftComputes the one dimensional inverse discrete Fourier transform of input.
+fft2Computes the 2 dimensional discrete Fourier transform of input.
+ifft2Computes the 2 dimensional inverse discrete Fourier transform of input.
+fftnComputes the N dimensional discrete Fourier transform of input.
+ifftnComputes the N dimensional inverse discrete Fourier transform of input.
+rfftComputes the one dimensional Fourier transform of real-valued input.
+irfftComputes the inverse of rfft().
+rfft2Computes the 2-dimensional discrete Fourier transform of real input.
+irfft2Computes the inverse of rfft2().
+Computes the N-dimensional discrete Fourier transform of real input.To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.fft — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/fft.html 1/4rfftn
+irfftnComputes the inverse of rfftn().
+hfftComputes the one dimensional discrete Fourier transform of a Hermitian symmetric
+input signal.
+ihfftComputes the inverse of hfft().
+hfft2Computes the 2-dimensional discrete Fourier transform of a Hermitian symmetric
+input signal.
+ihfft2Computes the 2-dimensional inverse discrete Fourier transform of real input.
+hfftnComputes the n-dimensional discrete Fourier transform of a Hermitian symmetric
+input signal.
+ihfftnComputes the N-dimensional inverse discrete Fourier transform of real input.
+Helper Functions
+fftfreqComputes the discrete Fourier Transform sample frequencies for a signal of size
+n.
+rfftfreqComputes the sample frequencies for rfft() with a signal of size n.
+fftshiftReorders n-dimensional FFT data, as provided by fftn(), to have negative
+frequency terms first.
+ifftshiftInverse of fftshift().
+Rate this Page★★★★★
+Send FeedbackTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.fft — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/fft.html 2/4Previous
+Custom BackendsNext
+torch.fft.fft
+© Copyright PyTorch Contributors.
+Built with the PyData Sphinx Theme 0.15.4.
+Docs
+Access comprehensive
+developer documentation
+for PyTorchTutorials
+Get in-depth tutorials for
+beginners and advanced
+developersResources
+Find development
+resources and get your
+questions answered
+View Docs View Tutorials View Resources
+Stay in touch for updates, event info, and the latest news
+First Name* Last Name* Email*
+Select Country* SUBMIT
+By submitting this form, I consent to receive marketing emails from the LF and its projects
+regarding their events, training, research, developments, and related announcements. I understand
+that I can unsubscribe at any time using the links in the footers of the emails I receive. Privacy
+Policy.
+© PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has
+registered trademarks and uses trademarks. For more information, including terms of use, privacyTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.fft — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/fft.html 3/4policy, and trademark usage, please see our Policies page. Trademark Usage. Privacy Policy.
+To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or
+navigating, you agree to allow our usage of cookies. As the current maintainers of this site,
+Facebookʼs Cookies Policy applies. Learn more, including about available controls: Cookies
+Policy.10/10/25, 3:03 PM torch.fft — PyTorch 2.8 documentation
+https://docs.pytorch.org/docs/stable/fft.html 4/4

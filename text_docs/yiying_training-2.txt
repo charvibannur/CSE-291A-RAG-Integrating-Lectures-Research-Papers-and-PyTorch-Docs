@@ -1,0 +1,84 @@
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+HLAT: High-quality Large Language Model Pre-trained on AWS TrainiumHaozhengFan, Hao Zhou, GuangtaiHuang, Parameswaran Raman, XinweiFu, Gaurav Gupta, Dhananjay Ram, YidaWang, Luke Huan AWS AI LabsPaper: https://arxiv.org/abs/2404.10630Scripts (internal): https://github.com/awslabs/HLAT© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Background
+2•LLM is a major breakthrough for AGI, and pretraining is crucial•LLMs trained on different chips•Nvidia GPU: GPT, Llama, Mistral, …•TPU: Gemini, T5, Open Llama, …•AMD GPU: OLMo (from allenai), …•Distributed training frameworks•GPU: Deepspeed, FSDP , Nemo, SageMaker (Rubik), …•TPU: Jax, EasyLM, Tensorflow, …•Trn: Neuronx-Distributed, Neuron NeMo, …•There is no paper or open sourced LLM trained on AWS Trainium© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Contributions
+3•We pre-train HLAT (High-quality LLM pre-trained on AWS Trainium), a 7B model over 1.8T tokens on 64 trn1.32xlarge instances. •We are currently training 70B model.•HLAT provides comparable performance with 7B models trained on GPU (LLaMA-1, LLaMA-2) and TPU (OpenLLaMA-1, OpenLLaMA-2). •We provide some best practices of pre-training process, e.g., different sharding strategies, training precisions, and fault tolerance mechanism, on AWS Trainium.•We design a novel dataloader which performs both tokenization and example packing during training.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Background: distributed training on Trainium
+4•AWS Trainium•Trn1.32xlarge contains 16 Trn accelerators, and 32 Neuron Cores•16GB memory per Neuron Core•3040 TFLOPS in FP16/BF1•Cost $21.50 vs. p4d.24xlarge $32.77•Neuron Distributed Training Library (NDTL, also called NeuronX-distributed)•Tensor, pipeline, data, and sequence parallelism•Zero-1 optimizer•Multiple training precision configurations•Automatic fault recovery•…© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Training Setups
+5© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+HLAT Model Architecture
+6•HLAT adopts the decoder-only transformer architecture and applies same modifications used in LLaMA 7B•pre-normalization with RMSNorm•SwiGLU activation function•Rotary Embeddings•4K sequence length•Dataset•We use public datasets and train for 1.8T tokens© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Training Hyperparameters
+7•Cosine learning rate scheduler •Maximum learning rate of 3𝑒−4.•Minimum learning rate of 3𝑒−5.•Linear warmup of 2000 steps.•AdamW optimizer with 𝛽=[0.9,0.95].•Weight decay value of 0.1 for all parameters, including normalization weights.•Gradient-norm clipping of 1.0.•1.8 trillion tokens, ~450k steps© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Orchestration
+8•For model training, we utilize a cluster with 64 trn1.32xlarge instances (nodes) with totaling to 1024 AWS Trainium accelerators.•We manage the cluster orchestration using Amazon EKS, a fully-managed Kubernetes service. Amazon EKS simplifies the deployment of Kubernetes both on AWS and on-premises environments.•We utilize pre-flight burn-in tests and regular health check (nccom) to improve cluster stability•Neuron Persistent Cache on Local Worker:•All instances share a same file system using Amazon FSx for storing data, checkpoints, logs, etc. •FSx may cause communication bottleneck because those cached graphs are frequently accessed •We store Neuron Persistent Caches in file system of each local worker. © 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Training Efficiency Optimization
+9•Model Parallelism: shard the model into 8 TP/SP degrees•Selective Activation Checkpoint: increases throughput at the cost of minimum memory overhead•BF16 with Stochastic Rounding: AWS Trainium features BF16 with stochastic rounding (SR)•Coalescing Layers with Same Inputs: Coalesced linear layers with the same inputs•Constant Attention Mask: As a decoder-only model, HLAT pretraining uses a constant attention mask (lower-triangular) matrix.•Asynchronous Execution: We use NEURON_RT_ASYNC_EXEC_MAX_INFLIGHT_REQUESTS=3•Compiler Optimization:•compiler flag --distribution-strategy=llm-training. •Compiler flag --model-type=transformer•NEURON_FUSE_SOFTMAX=1© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Training Process
+10© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Training Curves
+11© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+12Hardware and System StabilityThe pre-training process can be interrupted due to•hardware failures•communication timeouts•system upgrades•run out of disk spaceFault recovery automatically restarts training from latest saved checkpoints without manual intervention© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Performance Evaluation
+13© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Evaluation Datasets
+14•MMLU (Massive Multitask Language Understanding)•BIG-Bench Hard (BBH)•Commonsense Reasoning•PIQA, HellaSwag, WinoGrande, ARC easy and challenge, and OpenBookQA.•World Knowledge•NaturalQuestions, TriviaQA•Reading Comprehension: BoolQ•Math: GSM8K•Coding: HumanEval© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Performance vs Opensource models
+15
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Performance vs Opensource models, cont’d
+16•On MMLU tasks, HLAT performs better than OpenLLaMA-1 and LLaMA-1, and is worse then LLaMA-2.•May due to the difference in training datasets.•On BBH, Commonsense Reasoning, and World Knowledge tasks, HLAT performs similar as OpenLLaMA-1 and OpenLLaMA-2 models.•HLAT excels in 19/29 tasks as compared with OpenLLaMA-1, and 15/29 tasks compared with OpenLLaMA-2.•On Math problems (GSM8K), HLAT performs significantly better than OpenLLaMA-1 and OpenLLaMA-2.•HLAT has a big improvement of Math ability in later training stage.•On Coding problems, HLAT performs better than OpenLLaMA-1, comparable with LLaMA-1, and worse than OpenLLaMA-2 and LLaMA-2.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Intermediate Performance
+17
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Intermediate Performance, cont’d
+18•For Commonsense Reasoning, the model accuracy improves quickly at beginning of training, and starts to saturate at later training stages. This is similar as the trends observed in other LLM model trainings•For Math task (GSM8K), the learning curve shows an exponentially increasing trend. It increase very gradually for the initial ~1 trillion tokens and begins to improve significantly during the later stages of training•For World Knowledge task, the performance increases almost linearly with number of training tokens•May related to close-book testing problem•Those observations indicate the necessity of a set of evaluation tasks covering a wide range of domains for LLM pre-training.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Truthfulness and Bias
+19
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Cost and Scalability•On 64 nodes, training HLAT-7B model costs about 54% of the GPU baseline.
+20•Plot shows normalized CPT for HLAT 7B and 70B models on AWS Trainium with various number of nodes. •CPT refers to cost per 4-million tokens•CPT of GPU baseline is normalized to 100%. •70B models ran into out-of-memory on 4 nodes.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Limitation and Best Practices
+21© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Limitation
+22•HLAT suffers a set of limitations such as hallucinations, potential non-factual generations, biases, and toxicity.•Usage of publicly available datasets•Not went through a supervised finetuning and human preference alignment•Training stops after 1.8T tokens•As is suggested by intermediate checkpoint performance, HLAT may be able to further improve on certain tasks, such as math and world knowledge, with more training tokens•Neuron Distributed Training Library•TP degree is limited to 8 and 32•Pre-compilation takes time, needs re-compilation if dimension changes© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Best Practices
+23•Parallelism: To achieve the highest training throughput, parallelism configuration needs to be jointly optimized with choice of activation checkpointing method, gradient accumulation steps, and training precision. •Training Precision: BF16 with SR may has drifting issues. Using master weights can alleviate the problem, but incurs higher memory usage. •Choice of 𝛽2 : 𝛽!=0.99 may cause numerical instability for BF16 due to limited precision. 𝛽!=0.95 alleviates the problem.  •Weight decay: applying weight decay on normalization layers or not does not affect much performance.•Dataloader: Nemo dataloader tends to overfit due to repetition within sequence.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Best Practices
+24•Parallelism: To achieve the highest training throughput, parallelism configuration needs to be jointly optimized with choice of activation checkpointing method, gradient accumulation steps, and training precision. •Training Precision: BF16 with SR may has drifting issues. Using master weights can alleviate the problem, but incurs higher memory usage. •Choice of 𝛽2 : 𝛽!=0.99 may cause numerical instability for BF16 due to limited precision. 𝛽!=0.95 alleviates the problem.  •Weight decay: applying weight decay on normalization layers or not does not affect much performance.•Dataloader: Nemo dataloader tends to overfit due to repetition within sequence.© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Learnings and Next Steps
+25© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+SR causes large loss variance
+26
+•Blue: SR/BF16•Orange: SR/master_weights•Green: RNE/master_weights•Red: RNE/master_weights/Fix TP Drift© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Gradient instability can indicate bad precision setting
+27•Gradient norm increases fast is bad•Loss decreases slow is bad
+•Black: SR/BF16•Blue: RNE•Red: RNE/FP32 operators/FP32 cc•Yellow: RNE/GPU-compatible precision© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Train loss goes to zero indicates something is wrong
+28•Turns out to have bug in constant attention mask•black: baseline with information leak•Red/Yellow: Fix information leak•Take away: Information leak is not visible until 10k steps
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Bad initialization causes divergence 
+29•Turns out to have bug in constant attention mask and gradient all-reduce•Green / Black: Baseline. Divergent at 22k/23k steps•Yellow: Enabled scaled initialization. Convergent.
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Some bugs are hard to observe from loss curve
+30•We had a bug in gradient all-reduce (dark orange)•Pink is after bug fix
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Next Steps
+31•Training with GPU-compatible precision on Trainium•Use RNE and mixed precision•Generate best model quality with moderate throughput•ETA mid Apr•Llama2 70B pretraining•Train Llama2 70B on 1T+ tokens from a mixture of public datasets•Compare evaluation results with open sourced LLM checkpoints•ETA mid June•Aspirational research topics on stochastic rounding•A potential option for decent model quality with best throughput•Needs experiments to verify the model quality© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Thank you!Contact: Haozheng Fan (fanhaozh@), Yida Wang (wangyida@), Hao Zhou (zhuha@), Luke Huan (lukehuan@) © 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Appendix
+33© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+All intermediate performance
+34
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Coalescing Layers with Same Inputs
+35Coalescing Layers with Same Inputs: Coalesced linear layers with the same inputs•q_proj, k_proj, v_proj: we merge them into qkv_proj
+•gate_proj, up_proj: we merge them into gate_up_proj
+© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Scaling Efficiency
+36
+The scaling efficiency for Llama2 7b:•87% on 32 nodes. MFU = 33.5%•72% on 64 nodes. MFU = 27.9%© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
+Observations on training precision for 70B (preliminary)
+37•Pure BF16 (without stochastic rounding) is usually bad (gradient can be unstable and explode)•This is observed for both 7B and 70B training. •Using master weights usually has better accuracy with little throughput impact•But requires more memory, so may run into OOM issue•Always use Zero-1 with master weights•Using FP32 for certain operations can improve accuracy•E.g. gradient accumulation and all-reduce, softmax & cross-entropy calculation•Negatively impact throughput and memory footprint•Stochastic rounding may cause drift when parallelism dimension is large•Can be partially mitigated with zero-1

@@ -1,0 +1,11 @@
+ChromaDB
+sentence-transformers
+pandas
+numpy
+scikit-learn
+tqdm
+jupyter
+matplotlib
+seaborn
+nltk
+spacy

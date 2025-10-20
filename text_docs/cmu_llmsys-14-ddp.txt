@@ -1,0 +1,198 @@
+11868/11968 LLM Systems
+Distributed Data Parallel 
+Training
+Lei Li
+1
+•Overall idea: partition the data, distribute the 
+forward/backward
+•Parameter Server
+oserver to update and distribute parameters, worker to get local 
+grad
+•NCCL Multi -GPU communication
+ousing ring and batching to reduce the latency for Broadcast
+•Data Parallel via All Reduce 
+oEfficient Ring AllReduce  (ScatterReduce+AllGather ) 2Recap•Broadcast
+•Reduce
+•ReduceScatter
+•AllGather
+•AllReduce
+3NCCL Primitives4Data Parallel Training
+Data
+worker worker worker worker
+local grad local grad local grad local gradpartition
+1
+2
+ 2
+ 2
+ 2
+4
+AllReduce  (compute average grad)
+param update param update param update param update
+4
+ 4
+3
+4
+ 4•Distributed Data Parallel Training
+•Design and implementation of Distributed Data Parallel 
+•Code walkthrough:
+oUsing DDP in PyTorch  
+5Outline•Same as Data Parallel
+•multiple nodes, each with multiple 
+GPUs
+oCreate replicas of a model on multiple 
+nodes 
+oEach model performs the forward pass 
+and the backward pass independently
+oGather average gradients across nodes
+oOptimizers run locally (identical)
+6Distributed Data Parallel
+node 0
+ node 1
+node 2
+ node 3PyTorch  Distributed: Experiences on Accelerating 
+Data Parallel Training. VLDB 2020. 
+Shen Li, Yanli  Zhao, Rohan Varma, Omkar Salpekar ,Pieter Noordhuis ,Teng 
+Li,Adam Paszke ,Jeff Smith, Brian Vaughan, Pritam Damania ,Soumith  
+Chintala
+7•Non-intrusive:  Developers should be able to reuse the local 
+training script with minimal modifications. 
+•Interceptive: The API needs to allow the implementation to 
+intercept various signals and trigger appropriate algorithms 
+promptly. The API must expose as many optimization 
+opportunities as possible to the internal implementation. 
+8Design Goal of DDP
+Li et al. PyTorch  Distributed: Experiences on Accelerating Data Parallel Training, VLDB 2020.•World size
+ototal number of 
+processes W
+•Global rank
+oglobal process id
+•Local rank
+olocal process id
+9Setting up the Distributed Process
+node 0train.py
+global rank 0
+local rank 0global rank 1
+local rank 1
+node 1train.py
+global rank 2
+local rank 0global rank 3
+local rank 1The launch.py  (torch/distributed/ launch.py ) will pass world size, 
+global rank, master address, master port via env vars, and local 
+rank as a commandline  parameter to every instance
+if __name__  == "__main__" : 
+  parser  = argparse .ArgumentParser ()
+  parser .add_argument ("--local_rank ", type=int , default=0 )
+  parser .add_argument ("--local_world_size ", type=int , default=1 ) args  = 
+parser .parse_args ()
+  local_proc (args .local_world_size , args .local_rank )
+10Launch Distributed Processes
+Env Vars: "MASTER_ADDR" , "MASTER_PORT" , "RANK" , "WORLD_SIZE"def local_proc (local_world_size , local_rank ):
+  dist.init_process_group (backend=" nccl")
+  local_train (local_world_size , local_rank )
+  dist.destroy_process_group ()
+11Launching Local Process 
+start process 
+group
+tear down 
+process groupdef demo_basic (local_world_size , local_rank ):
+  n = torch.cuda.device_count () // local_world_size
+  device_ids  = list(range( local_rank  * n, ( local_rank  + 1) * n))
+  model = MyModel ().cuda (device_ids [0])
+  ddp_model  = DDP(model, device_ids )
+  loss_fn  = nn.MSELoss ()
+  optimizer = optim.SGD (ddp_model.parameters (), lr=0.001)
+  optimizer.zero_grad ()
+  outputs = ddp_model (torch.randn (20, 10))
+  labels = torch.randn (20, 5).to( device_ids [0])
+  loss_fn (outputs, labels).backward()
+  optimizer.step ()
+12•Naïve solution: synchronize ( AllReduce ) gradients after the 
+entire  backward pass finishes
+oWhat can be improved?
+13How to Implement Distributed Data Parallel•Naïve solution: synchronize gradients 
+after the entire  backward pass finishes
+oWe can overlap gradient computation and 
+synchronization!
+•But how often should we synchronize? 
+Per parameter?
+oToo much synchronization slows down 
+execution
+14Implementing Distributed Data Parallel
+15Gradient Bucketing
+Asynchronously allreduce  when a bucket of parameter grads are 
+ready. •Bucket size can be configured 
+by setting 
+thebucket_cap_mb argument 
+in DDP constructor. 
+•The mapping from parameter 
+gradients to buckets is 
+determined at the construction 
+time, based on the bucket size 
+limit and parameter sizes.
+16Gradient Bucketing
+•Model parameters are 
+allocated into buckets in 
+(roughly) the reverse order 
+ofModel.parameters ()from the 
+given model. 
+•DDP expects gradients to 
+become ready during the 
+backward pass in 
+approximately that order.
+17Gradient Bucketing
+•When gradients in one bucket 
+are all ready, the Reducer kicks 
+off an asynchronous allReduce  
+on that bucket to calculate 
+average of gradients across all 
+processes.
+•Overlapping computation 
+(backward) with 
+communication ( AllReduce )
+18Gradient Bucketing
+19Gradient Reduction
+20DDP Implementation
+// The function ` autograd_hook ` is called after the gradient for a
+// model parameter has been accumulated into its gradient tensor.
+// This function is only to be called from the autograd  thread.
+void  Reducer ::autograd_hook (size_t  index ) {
+ mark_variable_ready (index);
+}
+void  Reducer ::mark_variable_ready (size_t  variable_index ) {
+ const  auto & bucket_index  = variable_locators _[variable_index ];
+auto & bucket = buckets_ [bucket_index .bucket_index ];
+if (--bucket .pending  == 0) {
+ mark_bucket_ready (bucket_index .bucket_index );
+}
+}
+void  Reducer ::mark_bucket_ready (size_t  bucket_index ) {
+for (; next_bucket _ < buckets_ .size() && buckets_ [next_bucket _].pending  == 0; next_bucket _++) {
+num_buckets_ready _++; 
+auto & bucket = buckets_ [next_bucket _];
+all_reduce_bucket (bucket);
+}
+}
+void  Reducer ::all_reduce_bucket (Bucket & bucket ) {
+ auto  variables_for_bucket  = get_variables_for_bucket (next_bucket _, bucket);
+ const  auto & tensor = bucket .gradients ;
+ GradBucket  grad_bucket (next_bucket _, buckets_ .size(), tensor, bucket .offsets , 
+ bucket .lengths , bucket .sizes_vec , variables_for_bucket );
+bucket .future_work  = run_comm_hook (grad_bucket );
+}21DDP Scalability
+DDP Reduces Latency by Overlapping 
+Communication and Computation
+22
+bwd & 
+commhttps://github.com/llmsystem/llmsys_code_examples/tree/mai
+n/ddp_example  
+23Code walkthrough•Data Parallel via All Reduce
+•Distributed Data Parallel Training
+ogradient bucketing
+ooverlay backward and AllReduce  communication
+30Summary•Huang et al. GPipe : Efficient Training of Giant Neural 
+Networks using Pipeline Parallelism. 2018
+•Shoeybi  et al. Megatron -LM: Training Multi -Billion 
+Parameter Language Models Using Model Parallelism. 2019
+•Narayanan et al. Efficient Large -Scale Language Model 
+Training on GPU Clusters Using Megatron -LM, SC 2021
+31Reading for next lecture

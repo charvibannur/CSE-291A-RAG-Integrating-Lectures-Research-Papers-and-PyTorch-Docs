@@ -1,0 +1,786 @@
+Progressive Sparse Attention: Algorithm and System
+Co-design for Efficient Attention in LLM Serving
+Qihui Zhou
+The Chinese University of Hong Kong
+qhzhou@cse.cuhk.edu.hkPeiqi Yin
+The Chinese University of Hong Kong
+pqyin@cse.cuhk.edu.hk
+Pengfei Zuo∗
+Huawei Cloud
+pengfei.zuo@huawei.comJames Cheng
+The Chinese University of Hong Kong
+jcheng@cse.cuhk.edu.hk
+Abstract
+Processing long contexts has become a critical capability for modern large language
+models (LLMs). However, serving long-context LLMs comes with significant in-
+ference costs due to the high memory overhead of the key-value (KV) cache.
+Existing work leverages dynamic sparse attention algorithms (DSAes) to mitigate
+the KV cache overhead, but these algorithms rely on top- kKV cache selection,
+which results in a trade-off between accuracy and efficiency. A larger kimproves
+accuracy but decreases efficiency, while a smaller kboosts efficiency but compro-
+mises accuracy. To overcome this trade-off, this paper presents PSA, a Progressive
+Sparse Attention mechanism that integrates algorithmic innovations with system
+co-design to achieve both high inference accuracy and improved efficiency in LLM
+serving. The PSA algorithm adaptively adjusts the KV cache budget of different
+tokens and layers according to their real attention weight distributions, rather than
+relying on a fixed budget k. This enables high accuracy while minimizing KV
+cache usage. To further enhance execution efficiency, we introduce a pipelined
+iteration scheme that reduces CPU-GPU interleaving and synchronization over-
+head during PSA computation. Additionally, we implement unified GPU memory
+management that optimizes PSA’s memory utilization by accounting for uneven
+memory requirements across different model layers. Extensive experimental results
+demonstrate that PSA reduces KV cache usage for attention computation by up to
+2.4×and 8.8 ×, and increases end-to-end serving throughput by up to 1.4 ×and
+2.0×, compared to state-of-the-art DSAes and systems without sparse attention,
+respectively.
+1 Introduction
+In recent years, the rapid advancement of large language models (LLMs) has reshaped our daily
+lives. As the demand for long-context applications, such as sophisticated reasoning [ 5,42,46] and
+document analysis [ 4,21], continues to grow, the ability of LLMs to process long sequences has
+become increasingly critical. Numerous corporations and organizations have responded by developing
+and releasing long-context LLMs, such as DeepSeek [ 12], Gemini [ 32], Llama [ 28], and LWM [ 26].
+However, serving long-context LLMs has extremely high inference cost due to the substantial
+memory footprint of the key-value (KV) cache. During the processing of long sequences, these
+models generate the KV cache that is not static like the model weights but grows linearly with the
+sequence length, often surpassing the size of the model weights. For instance, the Llama-3.1 8B
+∗Pengfei Zuo is the corresponding author.arXiv:2503.00392v1  [cs.LG]  1 Mar 2025model, when operating with a 128K context length, requires up to 62 GB of memory to store the KV
+cache of a single request while the size of the model weights is only 16 GB. The giant KV cache
+places a significant burden on the limited GPU memory, leading to small inference batch size and
+low throughput.
+To reduce the inference cost of long-context LLMs, previous works [ 7,22,24,27,36,39,40,45] have
+explored methods to compress the KV cache required during generation. They have demonstrated
+that a small portion of critical tokens largely determines the generated token, and the criticalities
+of the tokens vary with different query tokens. Specifically, during self-attention computation, the
+attention scores (referred to QTKin this paper) of these critical tokens are significantly larger than
+those of other tokens. As a result, the attention computation for each query token can be accurately
+approximated by involving only the KV cache of its critical tokens.
+Based on the observation, dynamic sparse attention algorithms (DSAes) [ 7,36,39] for KV cache
+have been proposed to conduct the attention process in a select-then-compute manner. To be specific,
+DSAes manage the KV cache at the block level, where each block contains consecutive tokens. For
+each KV block, DSAes maintain small metadata derived from the token keys to represent the tokens
+in the block. During inference, DSAes first estimate the criticalities of all KV blocks using their
+metadata and the query token. They then select the top- kmost critical KV blocks to perform the
+approximate attention. The value of kis predefined to balance efficiency and accuracy (e.g., 64, 128).
+By offloading non-critical KV blocks to host memory and loading only the selected KV blocks into
+GPUs, DSAes significantly reduce the GPU memory consumption, thereby enabling the efficient
+processing of long sequences.
+Despite the theoretical potential of DSAes in reducing the computation and memory consumption of
+long-context LLM serving, we have found that existing DSAes face a dilemma: they tend to either
+produce low accuracy or achieve low KV cache reduction. The underlying issue lies in the reliance
+on top- kselection, which assigns a uniform KV cache budget to each query token during attention
+computation. However, the sequence lengths of different requests are different and the attention
+weight ( Softmax (QTK/√
+d)) distributions of query tokens are diverse. As a result, it is hardly
+possible for developers to manually set a uniform budget that meets the accuracy requirements for
+all requests. While utilizing a larger budget can help mitigate accuracy loss, this strategy inevitably
+leads to low KV cache reduction, thereby sacrificing the efficiency of DSAes.
+To break the dilemma, this paper proposes PSA, a progressive dynamic sparse attention mechanism
+that integrates algorithmic innovations with system optimizations to achieve both high inference
+accuracy and improved performance. The core idea of PSA is the use of a threshold-based selection
+scheme rather than the conventional top- kselection. The threshold is defined as the minimum
+accumulated attention weight required for each layer of a query token, e.g., 95%, and is configured
+by the LLM serving provider. Leveraging the weight threshold, PSA is able to minimize KV cache
+usage for each layer of a query token while retaining high accuracy across various attention weight
+distributions through progressive attention computation. Specifically, PSA performs attention at a
+fine-grained KV block level. For each layer of a query token, PSA first estimates the criticalities of
+all KV blocks within that layer. Then, starting from the most critical blocks, PSA computes partial
+attention results and continuously monitors the accumulated attention weights. PSA continues until
+the accumulated attention weights exceed the predefined threshold.
+However, fine-grained attention computation at the KV block level in practical LLM serving systems
+is inefficient due to excessive CPU-GPU interleaving and synchronization overhead. To address
+this, we introduce pipelined iteration execution for PSA, which utilizes separate threads and CUDA
+streams to overlap KV block loading from CPU host memory with attention computation on GPUs.
+Additionally, a verifying GPU kernel eliminates unnecessary CPU-GPU synchronization by directly
+monitoring accumulated attention weights and notifying the CPU asynchronously when the predefined
+threshold is met. These optimizations enhance GPU utilization and improve PSA efficiency.
+In addition, PSA is incompatible with the KV cache management in modern LLM serving systems,
+which is typically performed in a layer-wise manner. Specifically, each model layer receives equal
+GPU memory capacity for the KV cache and operates in isolation from other layers. However,
+we have observed that the attention weight skewness of different layers varies significantly, i.e.,
+layers with low skewness access far more KV blocks during attention than those with high skewness,
+resulting in lower KV block cache hit ratios. To improve GPU memory utilization and the overall
+2cache hit ratio, we propose a unified KV cache management strategy that merges the GPU memory
+of all layers into a unified KV block pool.
+We implement PSA in vllm [ 20] and evaluate it using two representative long-context LLMs on the
+LongBench [ 3] dataset. Extensive experimental results demonstrate that PSA reduces the amount of
+accessed KV cache by up to 2.4 ×while maintaining the same accuracy requirement, compared to
+existing DSAes. In addition, PSA increases serving throughput by up to 1.4 ×. The source code of
+PSA is released at Github2. To summarize, this paper makes the following contributions:
+•We provide a comprehensive analysis of existing DSAes in long-context LLM serving and
+identify the limitations of the top- kKV cache selection strategy.
+•We introduce PSA , an efficient progressive sparse attention mechanism that addresses the
+limitations of existing DSAes by combining the algorithmic innovation of PSA with system
+optimizations, such as pipelined iteration execution and unified GPU memory management,
+to enhance performance.
+•We implement PSA on a modern LLM serving system and demonstrate its superior perfor-
+mance over state-of-the-art DSAes in terms of both accuracy and efficiency.
+2 Background and Motivation
+In this section, we first introduce the fundamentals of generative LLM inference ( §2.1) and then
+investigate existing dynamic sparse attention algorithms ( §2.2). Finally, we analyze the issues of the
+top-kKV cache selection strategy employed by existing algorithms ( §2.3).
+2.1 Generative LLM Inference Basics
+Transformer Architecture. The transformer has emerged as the standard model for generative LLM
+inference, widely adopted in popular LLMs such as GPTs [ 29] and Llamas [ 28]. These LLMs are
+typically composed of a chain of transformer layers, each containing two modules: self-attention
+and feed-forward network (FFN). During inference, the input query token list X= [x1, x2, ...x Nq]
+for each layer is first multiplied by three weight matrices Wq,Wk, and Wvto generate query
+(Q∈RNq×d), key ( K∈RNkv×d), and value ( V∈RNkv×d) matrices, where Nqis the number of
+query tokens, Nkvis the number of KVs, and dis the hidden dimension. The self-attention is then
+conducted using the Q,K, andVas follows:
+S=Q·KT
+√
+d, P =softmax (S), O =P·V
+Here, Prepresents the attention weights , with Pi,jindicating the importance ofKjto query token
+i. The attention output Ois then fed into the FFN module, which comprises two consecutive linear
+projections with a non-linear activation operation between them. The output of the FFN serves as the
+input of the next transformer layer.
+Auto-regressive Generation. In generative LLM inference, the processing of each request involves
+two key phases: the prefill phase andthe decoding phase . The prefill phase processes the tokens of an
+input prompt in parallel and produces the first output token, whose latency is called time-to-first-token
+(TTFT). Taking the first output token as input, the LLMs generate the next new token during the
+decoding phase. This newly generated token then serves as the input token for the next iteration,
+resulting in an auto-regressive process for token generation. This generation process continues until
+the special stopping token EOS is generated or the number of output tokens reaches a predefined
+maximum limit. The latency taken to generate each output token in the decoding phase is called
+time-between-token (TBT).
+KV Cache. During the generation of new tokens, the key and value vectors of all previous tokens are
+required for the self-attention computation. As a result, they are generally cached in GPU memory to
+avoid repeated computation, which are referred to as KV cache. Since the size of the KV cache grows
+with the execution of decoding, existing LLM serving systems generally employ PagedAttention [ 20]
+2https://github.com/ASISys/PSAttention
+3Top-KKV Cache
+Block 1
+Block 2
+Block N………Metadata
+Query Token⊙
+⊙⊙Score
+98.2✔
+7.3 ✖
+23.4✔…Estimate Importance
+…Approximate Attention
+✖Figure 1: The workflow of the dynamic selection algorithm.
+to divide GPU memory into fixed-size blocks and store the KV cache in multiple discontinuous
+memory blocks to avoid memory fragmentation.
+2.2 Dynamic Sparse Attention
+KV Cache Eviction. Due to the auto-regressive nature of LLMs, generating each token necessitates
+loading the entire KV cache from GPU HBM to on-chip SRAM. For long-context LLM serving, the
+large size of the KV cache results in significant time and space overheads. Despite the large size of
+the KV cache, recent works [ 40,45] have observed that the attention computation of LLM is highly
+sparse, with only a small portion of tokens contributing to the majority of attention weights. Based on
+this observation, several KV cache eviction algorithms [ 15,24,27,40,45] have been proposed which
+statically discard the KV cache of unimportant tokens to maintain a smaller KV cache size. However,
+these eviction methods determine which tokens to discard based on historical information or current
+query tokens, but the discarded tokens might be important for future tokens [ 36], potentially leading
+to the loss of important information.
+KV Cache Selection. To prevent information loss, dynamic sparse attention algorithms (DSAes) [ 7,
+36,39] have been proposed. Figure 1 illustrates the general workflow of existing DSAes. Instead
+of permanently discarding unimportant tokens, they retain all KV cache and dynamically select a
+small portion of the critical KV cache for each query token for attention computation. Since not
+all KV cache is required for attention computation, DSAes allow the KV cache to be offloaded to
+host memory and load only the selected KV blocks into GPUs each time to reduce GPU memory
+consumption. To speed up the selection process, inspired by the block-level memory allocation of the
+KV cache in PagedAttention [ 20], DSAes divide the KV cache into blocks and select the KV cache at
+the block level. For each KV block, DSAes construct metadata vectors to represent the tokens within
+it. Different DSAes propose various metadata construction methods, ranging from simply calculating
+the mean values of the token keys to finding the bounding cuboid of the token keys. Regardless of
+the methods, the size of metadata is much smaller than the KV block. To estimate the importance
+of KV blocks to query tokens, DSAes compute dot products between the metadata vectors and the
+query tokens to obtain approximate attention scores for all blocks. DSAes then select the top- kmost
+critical KV blocks to perform the approximate attention.
+We notice that there are recent works [ 22,38] that propose to select KV cache at the granularity of
+token instead of blocks. Although such token-level selection can identify important tokens more
+accurately in theory, it is overly granular and incurs significant runtime overhead. Firstly, the
+identification of important tokens is costly in terms of both memory and computation. Existing token-
+level DSAes require the keys of all previous tokens to compute attention scores and then identify
+the important tokens, making the selection process slow when the context is lengthy. Secondly,
+token-level selection leads to significant overhead in GPU cache management due to the increased
+number of cache slots required for KV cache eviction and loading. In contrast, block-level selection
+achieves a balance between accuracy and performance overhead, as a result of which, we focus on
+block-level DSAs in this work.
+41 10 100 1000
+KV Block budget020406080100CDF (%)L1
+L4
+L9
+L14
+L32(a) QMSum
+1 10 100 1000
+KV Block budget020406080100CDF (%)L1
+L4
+L9
+L14
+L32 (b) GovReport
+Figure 2: The CDF of the numbers of query tokens that achieve 0.95 out of 1 total attention weights
+under varying block budgets. (The block size is set to 32. The model used is LWM-Text-7B [26].)
+2.3 The Dilemma of the Top- kSelection
+Existing DSAes rely on top- kselection, where the same KV cache budget (i.e., the kvalue) is
+applied across all layers and query tokens during attention computation. To achieve high inference
+accuracy, the top- kKV blocks selected by DSAes should have a sufficiently high cumulative attention
+weight with the query token (e.g., 95%). However, we observe that the fixed top- kselection fails to
+consistently achieve this due to variability in sparsity across tokens and layers.
+1) Attention sparsity varies across tokens. We evaluate the sparsity variation using two popular
+datasets QMSum [ 47] and GovReport [ 18] from LongBench [ 3], as shown in Figure 2. It is observed
+that the number of KV blocks needed to achieve 95% accumulated attention weight varies significantly
+across query tokens. For example, in Layer 32 (L32) of GovReport, 20% of query tokens require
+fewer than 50 KV blocks, 60% need between 50-100 KV blocks, and the remaining 20% need more
+than 100 KV blocks.
+2) Attention sparsity also varies across layers. We also observe that the number of KV blocks
+needed to achieve the same accumulated attention weight varies significantly across layers. For
+example, in Layer 9 (L9) of QMSum, 80% of query tokens require fewer than 50 KV blocks, while
+in Layer 1 (L14), the number decreases to 40%.
+As a result, it is hardly possible to set a uniform KV block budget that can satisfy the accuracy
+requirements of all tokens. A small kvalue may lead to insufficient attention weight for most tokens,
+resulting in low accuracy, while a large kvalue risks over-selecting KV blocks, harming performance.
+3 The PSA Methodology
+In this section, we present PSA, a progressive sparse attention mechanism that integrates algorithmic
+innovations with system optimizations to achieve both high inference accuracy and improved perfor-
+mance. We first show a high-level system overview for PSA ( §3.1) and then detail the key algorithm
+innovations and system optimizations proposed in PSA, including progressive attention kernel ( §3.2)
+and unified memory management ( §3.4).
+3.1 System Overview
+Figure 3 illustrates the overall system architecture for PSA, which comprises three key components:
+the batch scheduler, the model executor, and the KV cache manager.
+•The Batch Controller is responsible for grouping incoming requests into batches using dynamic
+batching techniques [ 43] in a first-come-first-serve (FCFS) manner. These batches are subsequently
+forwarded to the model executor for processing. The batch controller ensures that the KV cache
+blocks required by the requests in the batch for attention computation can fit in GPU memory.
+Once a request is finished, the batch controller sends the request ID to the KV cache manager,
+signaling it to release the corresponding KV blocks.
+5Finished Request ID Block ID
+KV Cache Manager
+GPU Memory Unified KV Cache MetadataLLM Model Executor
+Batching ControllerImportance Estimation
+Progressive AttentionDecode QueueRequest Generated  Token s
+CPU Memory Full KV CacheLoadPrefill Queue
+StoreFigure 3: The system architecture for PSA.
+•The Model Executor receives batches from the batch controller and performs the computation
+of model forwards. The model executor replaces the standard attention computation with the
+progressive attention mechanism ( §3.2) for decoding requests. During batch execution, the model
+executor transmits the newly generated KV cache to the KV cache manager and fetches the KV
+block metadata of the requests from the KV cache manager. Additionally, it sends the IDs of the
+KV blocks required for the attention computation to the KV cache manager to trigger the data
+loading. The metadata of KV blocks is used to estimate the criticality of KV blocks for a query
+token. By default, PSA utilizes the cuboid-mean method [ 7] to construct the metadata for KV
+blocks due to its high recall accuracy. However, other metadata construction methods [ 36,39] can
+be easily integrated into PSA.
+•The KV Cache Manager maintains a hierarchical KV block storage between GPU memory and
+host memory. Both GPU and host memory are organized into blocks to mitigate memory frag-
+mentation [ 20]. The KV cache manager receives newly generated KV cache data from the model
+executor and writes them to the corresponding KV blocks in GPU memory. Once a KV block
+reaches its capacity, it is flushed to host memory asynchronously, and its associated metadata is
+created. The metadata is retained in GPU memory due to its small size and is utilized in every
+attention computation. The remaining GPU memory is used to cache frequently accessed KV
+blocks ( §3.4).
+3.2 Progressive Sparse Attention Algorithm
+PSA leverages a threshold-based KV block selection algorithm rather than the top-k-based selection,
+which adaptively assigns the KV block budget for each layer of each query token according to its
+attention weight distributions. Specifically, PSA executes the attention computation progressively
+at the KV block level and keeps monitoring the accumulated attention weight of the computed KV
+blocks. The attention computation of a query token is immediately terminated once the accumulated
+attention weight reaches a given threshold (e.g., 95%), thereby avoiding unnecessary KV cache
+loading and extra computation.
+Algorithm 1 outlines the PSA algorithm. Given the query vector and the KV block indices of a
+decoding request, PSA first fetches the metadata of these KV blocks, Bmeta , and uses it to calculate
+the criticality score of each KV block, CS, for the query ( Line 5), similar to existing DSAes. Then,
+instead of selecting the top-k KV blocks with the highest criticality scores for attention, PSA ranks
+these KV blocks according to their criticality scores ( Line 6) and begins attention computation from
+the most critical KV blocks to the least critical KV blocks ( Lines 8−10).
+PSA progressively executes the attention computation at the granularity of a microbatch of KV blocks,
+where a microbatch consists of mKV blocks— mbeing the minimum number of KV blocks required
+for a single attention computation, designed to reduce the frequency of attention kernel calls. In the
+example shown in Algorithm 1, mis set to 1. After each attention computation, a partial output, O,
+6Algorithm 1: The PSA algorithm.
+Input: query vector qand KV block indices B.
+Output: approximate attention output Oacc.
+1defPSAttention( q,B):
+2 Oacc←[0, ... , 0]d // Init output
+3 ASacc←0
+4 ASmin←MAX _V AL
+5 CS←q· Bmeta // Criticality scores
+6B′←RankBbyCS
+7 Nleft←Len(B) // Num of blocks left
+8 foreach block binB′do
+9 KVb←Load( b) // KV cache of b
+10 O,AS←Attention( q,KVb)
+11 Oacc←(ASacc·Oacc+AS·O)/(ASacc+AS)
+12 ASacc+=AS
+13 ASmin←MIN(AS,ASmin)
+14 Nleft−= 1
+15 AStotal= (ASacc+ASmin·Nleft)
+16 Pacc←ASacc/AStotal
+17 ifPacc>attention weight threshold ϵthen
+18 break
+19 return Oacc
+and the sum of the token attention scores, AS, are returned ( Line 10). PSA then merges the Ointo
+the accumulated output, Oacc(Line 11), and updates the accumulated sum of the exponentiation of
+attention scores, ASacc(Line 12).
+PSA then computes the ratio of the accumulated attention score, ASacc, to the total attention score,
+AStotal. However, ASaccis unknown before performing attention computation on all KV blocks. To
+address the issue, PSA records the minimum block-level attention score encountered so far, ASmin
+(Line 13), and uses it as the upper-bound attention score of the remaining blocks that have not
+been processed to estimate AStotal (Line 15), calculated as ASacc+ASmin∗N_left. Finally, the
+accumulated attention weights, Pacc, can be estimated using ASaccandAStotal (Line 16). When
+Paccexceeds the threshold, Oaccis returned and the attention computation completes ( Lines 17−18).
+Figure 4 illustrates an example of executing the PSA algorithm. Given a list of KV blocks ranked
+by criticality scores and a query Q, PSA first computes the attention weights between Q and the
+first microbatch of KV blocks (98, 84, 68, 55), resulting in an accumulated attention weight of
+Pacc= 0.61. Since 0.61 is smaller than the threshold ϵ(= 0.98), PSA proceeds to compute the
+attention weights between Q and the second microbatch of KV blocks (31, 22, 15, 10), yielding
+Pacc= 0.91. As 0.91 is still below ϵ, PSA continues with the third microbatch of KV blocks (8.2, 6.1,
+4.9, 4.3), eventually reaching an accumulated attention weight of Pacc= 0.98. When Paccequals ϵ,
+the attention computation completes.
+Moreover, Algorithm 1 is presented for a single decoding request for clarity but be easily extended to
+support batched decoding requests. To execute a batch of multiple query tokens, each corresponding
+to a decoding request, PSA is invoked with all query tokens synchronously. Since each query token
+in the batch may require a different number of KV blocks to reach the attention weight threshold, we
+examine the current accumulated attention weights for all query tokens at the end of each iteration.
+Query tokens whose attention weights have already surpassed the threshold are removed from further
+processing. The batched PSA process continues until no query token remains in the batch.
+3.3 Pipelined Iteration Execution
+Nevertheless, implementing the PSA algorithm in practical LLM serving systems presents challenges
+for achieving efficient execution. The PSA algorithm breaks the attention process into multiple
+iterations. In each iteration, the algorithm first prepares the key-value (KV) blocks by loading
+7Query
+Q 98846855
+𝑃𝑎𝑐𝑐<𝜖Attention
+𝐸𝑆1
+✖𝑂1
+𝑂𝑎𝑐𝑐KV Blocks
+Iteration 1Query
+Q 31221510
+𝑃𝑎𝑐𝑐<𝜖Attention
+𝐸𝑆2
+✖𝑂2
+.4 𝑂𝑎𝑐𝑐KV Blocks Query
+Q 8.26.14.94.3
+𝑃𝑎𝑐𝑐>𝜖Attention
+𝐸𝑆3
+✔𝑂3
+𝑂𝑎𝑐𝑐KV Blocks
+Iteration 3 (stop) Iteration 2KV Blocks Ranked by 𝐵𝑆
+98846855312215108.26.14.94.3 0.10.1…
+0.65𝑃𝑎𝑐𝑐 0.91𝑃𝑎𝑐𝑐 0.98𝑃𝑎𝑐𝑐Figure 4: An example of executing the PSA algorithm.
+any missing blocks from host memory and updating the GPU HBM cache. It then performs the
+standard attention computation on the prepared KV blocks and subsequently updates the accumulated
+attention weights while checking whether the predefined threshold is met. This dynamic multi-
+iteration computation pattern can lead to two performance issues: (1) low GPU utilization due to
+the interleaving of CPU data preparation and GPU computation, and (2) significant synchronization
+overhead between CPUs and GPUs due to the frequent transfer of attention weights.
+To address these issues, we present pipelined iteration execution for PSA. Specifically, to enhance
+GPU utilization, we assign the data preparation and attention computation to separate threads,
+ensuring that data loading and computation can proceed concurrently without blocking each other. To
+further maximize parallelism, we utilize separate CUDA streams for these operations, allowing data
+transfers and kernel executions to overlap in a pipelined manner. This design minimizes idle GPU
+time and improves overall execution efficiency by ensuring that the GPU is continuously utilized for
+computation while data preparation occurs in parallel.
+To mitigate synchronization overhead, we design a verifying GPU kernel that updates and checks
+the accumulated attention weights directly on GPUs, eliminating the need to transfer these weights.
+Once the accumulated attention weights reach the predefined threshold, the verifying kernel writes a
+signal variable allocated in pinned host memory using the zero-copy technique, notifying the CPUs
+to terminate the attention process.
+3.4 Unified Memory Management
+GPU memory management in existing LLM serving systems, such as vllm [ 20], is typically conducted
+in a layer-wise manner. Specifically, the available GPU memory capacity is first determined through
+a profiling execution. Then each layer is allocated with a GPU tensor with an equal capacity of
+GPU memory and operates in isolation from the other layers. This design choice is based on the fact
+that the transformer layers of modern LLMs are identical in terms of memory usage patterns. To be
+specific, when executing an iteration for a batch of requests, each request accesses the same amount
+of KV blocks across all layers.
+However, directly applying such a layer-separated memory management approach in PSA leads to
+low GPU memory utilization. The reason is that PSA adaptively adjusts the KV blocks involved in
+the attention computation according to the attention weight distributions through progressive attention.
+As shown in Figure 2, the attention weight skewness of different layers varies significantly. The
+layers with low skewness access far more KV blocks during attention than those with high skewness,
+leading to a lower cache hit ratio.
+8To address this problem, PSA proposes a unified GPU memory management strategy. Specifically,
+PSA first determines the available GPU memory capacity through a profiling execution like existing
+systems, and allocates a single GPU tensor of the capacity. The GPU tensor is then divided into
+equal-sized slots to store KV blocks, which are managed by the KV cache manager. During runtime,
+all operations on the KV blocks across layers including allocation, deallocation, and loading are sent
+to the KV cache manager for processing.
+Currently, we employ the least recently used (LRU) policy as the KV cache eviction policy, which
+leverages the semantic similarity between consecutive query tokens during decoding, as reported in
+prior works [ 38,39]. Specifically, the query vectors of consecutive tokens generated during decoding
+exhibit a high similarity, leading to the selection of similar KV blocks. It is important to note that
+other cache eviction policies, such as the first in first out (FIFO) policy, can be easily integrated into
+PSA, and we leave designing more sophisticated policies for future work.
+4 Implementation
+Request Scheduling. We implement PSA in vllm[ 20] with about 6,000 lines of code. In vllm, a
+request can only be scheduled if all its KV cache can fit into GPU memory. However, with DSAes,
+it is not necessary for a request to have all its KV cache available for execution. In PSA, a request
+can be scheduled as long as the required KV blocks for executing a single iteration of progressive
+attention can be accommodated within the GPU memory.
+Compatibility with FlashAttention [ 10].FlashAttention is an attention backend widely used in
+modern LLM serving system to accelerate attention computation. It avoids writing attention weights
+to HBM through kernel fusion, thus significantly reducing data movement between on-chip memory
+and HBM. However, our proposed PSA mechanism requires the storage of attention weights to
+estimate the accumulated attention weights. To mitigate this issue, we aggregate the attention weights
+of tokens within each block using on-chip memory and subsequently write the aggregated results
+back to HBM.
+5 Performance Evaluation
+5.1 Experimental Setup
+Testbed. Our experiments are conducted on a machine hosting an Nvidia A100 GPUs with 40 GB
+HBM, an AMD EPYC 7J13 CPU, and 128 GB DRAM. The GPU is connected to the host via PCIe
+Gen 4, providing a bandwidth of 32 GB per second.
+Models. The experiments evaluate two widely used long-context LLM models: LWM-Text-7B [ 26]
+with a 1M context window and Llama-3.1-8B [ 28] with a 128K context window. In particular, the
+LWM-Text-7B model employs the same model architecture as Llama-2-7B [ 37]. These two models
+cover two mainstream attention methods, namely, multi-head attention (MHA) and grouped query
+attention (GQA).
+Workload. We conduct experiments using several datasets from LongBench [ 3], including Hot-
+potQA [ 41], 2WikiMultihopQA [ 17], MultifieldQA [ 3], Qasper [ 11], GovReport [ 18], QMSum [ 47],
+MultiNews [ 13], and SAMSum [ 16]. Accuracy is evaluated separately for each dataset, while effi-
+ciency is evaluated by combining the requests from all datasets into one trace. This reflects real-world
+LLM serving scenarios where requests from different tasks are handled simultaneously. As there is
+no public request arrival timestamps available in these datasets, we generate request arrival times
+based on a Poisson distribution with varying arrival rates, as done in prior works [1, 43].
+Baselines. We compare PSA with the following baselines: vllm [ 20], vllm-sparse, and InfiniGen [ 22].
+vllm is a state-of-the-art LLM serving system that employs full KV cache attention without sparsity.
+Since no existing DSA implementations support dynamic request batching [ 43], we implement
+Arkvale [ 7], which is the state-of-the-art block-level DSA, within the vllm, creating an additional
+baseline termed vllm-sparse. InfiniGen [ 22] is recognized as the state-of-the-art token-level DSA and
+is implemented within the offloading-based LLM inference system FlexGen [33].
+9QasperGovReportQMSumMultiNews HotpotQA 2WikiMQA MultifieldQASamSum
+LWM-T ext-Chat-7B0204060KV Cache Ratio (%)14.820.7
+12.416.7
+11.3 11.313.215.237.958.7
+26.938.1
+24.626.435.7
+28.647.2
+34.0
+19.126.045.6
+16.924.633.3
+QasperGovReportQMSumMultiNews HotpotQA 2WikiMQA MultifieldQASamSum
+Llama-3.1-8B0204060KV Cache Ratio (%)19.918.114.418.916.318.816.213.843.351.7
+29.745.242.043.540.0
+32.1PSA Vllm-Sparse InfiniGenFigure 5: The average amount of KV cache required by vllm-sparse, InfiniGen, and PSA to achieve
+over 98% average request accuracy when compared with vllm across different datasets from Long-
+Bench.
+5.2 Main Results
+KV cache reduction. We first compare the effectiveness of vllm-sparse, InfiniGen, and PSA in
+reducing the KV cache used during attention computation. We ensure that the average request
+accuracy meets a target of 98%, which is typical for practical production scenarios [ 6,9]. Figure 5
+shows the average KV cache utilized by these three systems during attention computation compared
+with vllm using full KV cache attention. For vllm-sparse, the amount of KV cache is adjusted by
+varying the top- kvalue. For PSA, it is modified by setting different thresholds for the accumulated
+attention weights. For InfiniGen, the token budget is adjusted by varying the minimum attention
+score of the selected tokens. Since InfiniGen only supports MHA and does not accommodate GQA,
+we report its performance only on LWM-Text-7B.
+As shown in Figure 5, PSA consistently outperforms both vllm-sparse and InfiniGen by a large
+margin. Specifically, PSA reduces the KV cache ratio for attention by 2.1 ×and 2.4 ×on average for
+LWM-Text-7B and Llama-3.1-8B, respectively, compared to vllm-sparse. This is because vllm-sparse
+assigns a uniform KV cache budget across all requests, leading to the over-selection of KV blocks for
+requests with shorter lengths and skewed attention weight distributions. In contrast, PSA dynamically
+adjusts KV cache budgets according to the attention weight distributions of requests, minimizing the
+KV cache usage. Compared to InfiniGen, PSA reduces the KV cache ratio for attention by 1.8x on
+average for LWM-Text-7B. This result may seem counterintuitive, given InfiniGen uses fine-grained
+token-level selection. However, InfiniGen uses a uniform minimal attention score threshold to selects
+critical tokens, which fails to account for the varying ranges of attention scores across requests.
+Moreover, InfiniGen adopts weight matrices compression and inter-layer prefetching to speed up the
+KV cache selection and loading process, but this inadvertently results in accuracy degradation in
+attention score estimation.
+Capacity evaluation. We measure the request throughput of vllm, vllm-sparse, and PSA under the
+same Service Level Objective (SLO) requirements, as shown in Figure 6. Following prior work [ 1,30],
+we define the strict and relaxed SLOs for the P99 TBT latency as 5 ×and 25 ×the execution time of
+a decoding iteration, respectively. Specifically, for the LWM-Text-7B model, the strict and relaxed
+SLO requirements are set to 150 and 750 milliseconds, respectively. For the Llama-3.1-8B model,
+the corresponding strict and relaxed SLO requirements are 100 and 500 milliseconds, respectively. In
+10SLO-S SLO-R SLO-S SLO-R
+LWM-T ext-Chat-7B                       Llama-3.1-8B   00.10.20.30.40.5Max CapacityVllm Vllm-Sparse PSAFigure 6: Maximum capacities in QPS of vllm, vllm-sparse, and PSA across each dataset under SLO
+constrains.
+all load experiments, we ensure the sustainability of the maximum load by imposing a threshold on
+request queuing delay. The median scheduling delay for requests is limited to 2 seconds to prevent
+excessive queuing, as suggested in [1].
+Compared to vllm, PSA achieves 1.5 ×and 1.3 ×higher throughput for the LWM-Text-7B and Llama-
+3.1-8B, respectively, under strict SLO requirements. With relaxed SLO requirements, PSA further
+increases the throughput by up to 2.0 ×for LWM-Text-7B and 1.5 ×for Llama-3.1-8B. This is
+because the throughput of vllm is limited by its small inference batch size, which is constrained by
+GPU memory. In contrast, PSA effectively reduces the amount of KV cache involved in attention
+computation, enabling larger inference batch sizes and higher throughput. Compared to vllm-sparse,
+PSA sustains up to 1.3 ×and 1.2 ×higher loads for LWM-Text-7B and Llama-3.1-8B, respectively,
+under strict SLO requirements. With relaxed SLO requirements, PSA sustains loads up to 1.4 ×and
+1.3×higher loads for LWM-Text-7B and Llama-3.1-8B, respectively. This is because PSA reduces
+more KV cache usage compared to vllm-sparse thanks to the progressive sparse attention mechanism.
+6 Related Work
+Static Sparse Attention. Several KV cache eviction algorithms, e.g., H2O [ 45], StreamingLLM [ 40],
+SnapKV [ 24], FastGen [ 15], and Scissorhands [ 27], have been proposed to retain only the KV cache
+of important tokens while discarding others to save GPU memory. However, since the importance
+of tokens changes during the decoding process, discarded tokens may become crucial for further
+computation [36], resulting in potential accuracy loss.
+Dynamic Sparse Attention. DSAes, such as ArkVale [ 7], InfLLM [ 39], Quest [ 36], mitigate the
+issue of static sparse attention by dynamically selecting a small portion of the critical KV cache for
+attention computation for each query token while retaining all KV cache. While existing DSAes
+predominantly focus on enhancing the accuracy of important KV cache identification, PSA is the first
+work to consider their deployment efficiency in practical LLM serving systems, achieving both high
+accuracy and efficiency through algorithm and system co-design.
+Token-level Sparse Attention. Recent works, such as InfiniGen [ 22], TokenSelect [ 38], RetrievalAt-
+tention [ 25], and MagicPig [ 8], perform KV cache selection at the granularity of tokens. However,
+as discussed in § 2.2, token-level selection incurs significant runtime overhead, making block-level
+selection a better balance between accuracy and performance overhead. Consequently, this paper
+focuses on block-level DSA approaches.
+Sparse Attention for Prefill and Training. There are also works [ 14,19,34] that apply sparse
+attention to accelerate the prefill phase and training of LLMs. GemFilter [ 34] prunes unimportant
+tokens using attention matrices from early layers to reduce the computational load in subsequent
+layers. Minference [ 19] recognizes three general patterns of sparse attention in long-context LLMs
+and provides optimized CUDA kernels for each pattern. SeerAttention [ 14] extends Minference by
+replacing fixed patterns with a learnable approach. Native sparse attention (NSA) [ 44] introduced by
+DeepSeek is the first to perform sparse attention during training. These methods are orthogonal to the
+11PSA proposed in this paper and can be combined with it to further enhance the overall efficiency of
+end-to-end LLM processing.
+Inference Parameter Offloading. DeepSpeed Inference [ 2,31] offloads model parameters to host
+memory and fetch them on demand. Lina [ 23] leverages sparse activation in mixture-of-expert
+(MoE) models to offload cold experts to host memory. PowerInfer [ 35] utilizes the sparsity in FFN
+computation to offload inactive weights to host memory, thereby saving memory and computational
+resources. FlexGen [ 33] offloads both model parameters and KV cache to host memory, targeting
+offline processing. In contrast, PSA exploits KV cache offloading in online LLM serving by utilizing
+the sparsity in KV cache.
+7 Conclusion
+This paper presents PSA , an efficient progressive sparse attention mechanism to address the limita-
+tions of the top- kKV cache selection in existing DSAes. By combining the algorithmic innovation
+of PSA with system-level optimizations, such as pipelined iteration execution and unified GPU
+memory management, PSA achieves both high accuracy and efficiency. Extensive experimental
+results demonstrate that PSA reduces KV cache usage for attention computation by up to 2.4 ×while
+maintaining the same accuracy, and increases the serving throughput by up to 1.4 ×.
+References
+[1]Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav S.
+Gulavani, Alexey Tumanov, and Ramachandran Ramjee. Taming throughput-latency tradeoff
+in LLM inference with sarathi-serve. In 18th USENIX Symposium on Operating Systems
+Design and Implementation, OSDI 2024, Santa Clara, CA, USA, July 10-12, 2024 , pages 117–
+134. USENIX Association, 2024. URL https://www.usenix.org/conference/osdi24/
+presentation/agrawal .
+[2]Reza Yazdani Aminabadi, Samyam Rajbhandari, Ammar Ahmad Awan, Cheng Li, Du Li,
+Elton Zheng, Olatunji Ruwase, Shaden Smith, Minjia Zhang, Jeff Rasley, and Yuxiong He.
+Deepspeed- inference: Enabling efficient inference of transformer models at unprecedented scale.
+InSC22: International Conference for High Performance Computing, Networking, Storage
+and Analysis, Dallas, TX, USA, November 13-18, 2022 , pages 46:1–46:15. IEEE, 2022. doi:
+10.1109/SC41404.2022.00051. URL https://doi.org/10.1109/SC41404.2022.00051 .
+[3]Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu, Jiankai Tang, Zhidian Huang, Zhengxiao
+Du, Xiao Liu, Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang, and Juanzi Li. Longbench: A
+bilingual, multitask benchmark for long context understanding. In Lun-Wei Ku, Andre Martins,
+and Vivek Srikumar, editors, Proceedings of the 62nd Annual Meeting of the Association for
+Computational Linguistics (Volume 1: Long Papers), ACL 2024, Bangkok, Thailand, August 11-
+16, 2024 , pages 3119–3137. Association for Computational Linguistics, 2024. doi: 10.18653/
+V1/2024.ACL-LONG.172. URL https://doi.org/10.18653/v1/2024.acl-long.172 .
+[4]Ahsaas Bajaj, Pavitra Dangati, Kalpesh Krishna, Pradhiksha Ashok Kumar, Rheeya Uppaal,
+Bradford Windsor, Eliot Brenner, Dominic Dotterrer, Rajarshi Das, and Andrew McCallum.
+Long document summarization in a low resource setting using pretrained language models. In
+Proceedings of the ACL-IJCNLP 2021 Student Research Workshop, ACL 2021, Online, JUli
+5-10, 2021 , pages 71–80. Association for Computational Linguistics, 2021. doi: 10.18653/V1/
+2021.ACL-SRW.7. URL https://doi.org/10.18653/v1/2021.acl-srw.7 .
+[5]Maciej Besta, Nils Blach, Ales Kubicek, Robert Gerstenberger, Michal Podstawski, Lukas
+Gianinazzi, Joanna Gajda, Tomasz Lehmann, Hubert Niewiadomski, Piotr Nyczyk, and Torsten
+Hoefler. Graph of thoughts: Solving elaborate problems with large language models. In
+Thirty-Eighth AAAI Conference on Artificial Intelligence, AAAI 2024, Thirty-Sixth Conference
+on Innovative Applications of Artificial Intelligence, IAAI 2024, Fourteenth Symposium on
+Educational Advances in Artificial Intelligence, EAAI 2014, February 20-27, 2024, Vancouver,
+Canada , pages 17682–17690. AAAI Press, 2024. doi: 10.1609/AAAI.V38I16.29720. URL
+https://doi.org/10.1609/aaai.v38i16.29720 .
+12[6]Tolga Bolukbasi, Joseph Wang, Ofer Dekel, and Venkatesh Saligrama. Adaptive neural networks
+for efficient inference. In Proceedings of the 34th International Conference on Machine
+Learning, ICML 2017, Sydney, NSW, Australia, 6-11 August 2017 , volume 70 of Proceedings of
+Machine Learning Research , pages 527–536. PMLR, 2017. URL http://proceedings.mlr.
+press/v70/bolukbasi17a.html .
+[7]Renze Chen, Zhuofeng Wang, Beiquan Cao, Tong Wu, Size Zheng, Xiuhong Li,
+Xuechao Wei, Shengen Yan, Meng Li, and Yun Liang. Arkvale: Efficient gen-
+erative LLM inference with recallable key-value eviction. In Advances in Neu-
+ral Information Processing Systems 38: Annual Conference on Neural Information
+Processing Systems 2024, NeurIPS 2024, Vancouver, BC, Canada, December 10 -
+15, 2024 , 2024. URL http://papers.nips.cc/paper_files/paper/2024/hash/
+cd4b49379efac6e84186a3ffce108c37-Abstract-Conference.html .
+[8]Zhuoming Chen, Ranajoy Sadhukhan, Zihao Ye, Yang Zhou, Jianyu Zhang, Niklas Nolte,
+Yuandong Tian, Matthijs Douze, Léon Bottou, Zhihao Jia, and Beidi Chen. Magicpig: LSH
+sampling for efficient LLM generation. CoRR , abs/2410.16179, 2024. doi: 10.48550/ARXIV .
+2410.16179. URL https://doi.org/10.48550/arXiv.2410.16179 .
+[9]Yinwei Dai, Rui Pan, Anand P. Iyer, Kai Li, and Ravi Netravali. Apparate: Rethinking
+early exits to tame latency-throughput tensions in ML serving. In Proceedings of the ACM
+SIGOPS 30th Symposium on Operating Systems Principles, SOSP 2024, Austin, TX, USA,
+November 4-6, 2024 , pages 607–623. ACM, 2024. doi: 10.1145/3694715.3695963. URL
+https://doi.org/10.1145/3694715.3695963 .
+[10] Tri Dao, Daniel Y . Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. Flashattention:
+Fast and memory-efficient exact attention with io-awareness. In Sanmi Koyejo, S. Mo-
+hamed, A. Agarwal, Danielle Belgrave, K. Cho, and A. Oh, editors, Advances in Neu-
+ral Information Processing Systems 35: Annual Conference on Neural Information Pro-
+cessing Systems 2022, NeurIPS 2022, New Orleans, LA, USA, November 28 - Decem-
+ber 9, 2022 , 2022. URL http://papers.nips.cc/paper_files/paper/2022/hash/
+67d57c32e20fd0a7a302cb81d36e40d5-Abstract-Conference.html .
+[11] Pradeep Dasigi, Kyle Lo, Iz Beltagy, Arman Cohan, Noah A. Smith, and Matt Gardner. A dataset
+of information-seeking questions and answers anchored in research papers. In Proceedings
+of the 2021 Conference of the North American Chapter of the Association for Computational
+Linguistics: Human Language Technologies, NAACL-HLT 2021, Online, June 6-11, 2021 ,
+pages 4599–4610. Association for Computational Linguistics, 2021. doi: 10.18653/V1/2021.
+NAACL-MAIN.365. URL https://doi.org/10.18653/v1/2021.naacl-main.365 .
+[12] DeepSeek-AI. Deepseek-v3 technical report, 2024. URL https://arxiv.org/abs/2412.
+19437 .
+[13] Alexander R. Fabbri, Irene Li, Tianwei She, Suyi Li, and Dragomir R. Radev. Multi-news: a
+large-scale multi-document summarization dataset and abstractive hierarchical model. CoRR ,
+abs/1906.01749, 2019. URL http://arxiv.org/abs/1906.01749 .
+[14] Yizhao Gao, Zhichen Zeng, Dayou Du, Shijie Cao, Hayden Kwok-Hay So, Ting Cao, Fan
+Yang, and Mao Yang. Seerattention: Learning intrinsic sparse attention in your llms. CoRR ,
+abs/2410.13276, 2024. doi: 10.48550/ARXIV .2410.13276. URL https://doi.org/10.
+48550/arXiv.2410.13276 .
+[15] Suyu Ge, Yunan Zhang, Liyuan Liu, Minjia Zhang, Jiawei Han, and Jianfeng Gao. Model
+tells you what to discard: Adaptive KV cache compression for llms. In The Twelfth Interna-
+tional Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 .
+OpenReview.net, 2024. URL https://openreview.net/forum?id=uNrFpDPMyo .
+[16] Bogdan Gliwa, Iwona Mochol, Maciej Biesek, and Aleksander Wawer. Samsum corpus: A
+human-annotated dialogue dataset for abstractive summarization. CoRR , abs/1911.12237, 2019.
+URL http://arxiv.org/abs/1911.12237 .
+13[17] Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara, and Akiko Aizawa. Constructing A
+multi-hop QA dataset for comprehensive evaluation of reasoning steps. In Proceedings of the
+28th International Conference on Computational Linguistics, COLING 2020, Barcelona, Spain
+(Online), December 8-13, 2020 , pages 6609–6625. International Committee on Computational
+Linguistics, 2020. doi: 10.18653/V1/2020.COLING-MAIN.580. URL https://doi.org/
+10.18653/v1/2020.coling-main.580 .
+[18] Luyang Huang, Shuyang Cao, Nikolaus Nova Parulian, Heng Ji, and Lu Wang. Efficient
+attentions for long document summarization. CoRR , abs/2104.02112, 2021. URL https:
+//arxiv.org/abs/2104.02112 .
+[19] Huiqiang Jiang, Yucheng Li, Chengruidong Zhang, Qianhui Wu, Xufang Luo, Surin Ahn,
+Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang, and Lili Qiu.
+Minference 1.0: Accelerating pre-filling for long-context llms via dynamic sparse attention.
+CoRR , abs/2407.02490, 2024. doi: 10.48550/ARXIV .2407.02490. URL https://doi.org/
+10.48550/arXiv.2407.02490 .
+[20] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph
+Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model
+serving with pagedattention. In Proceedings of the 29th Symposium on Operating Systems
+Principles, SOSP 2023, Koblenz, Germany, October 23-26, 2023 , pages 611–626. ACM, 2023.
+doi: 10.1145/3600006.3613165. URL https://doi.org/10.1145/3600006.3613165 .
+[21] Md. Tahmid Rahman Laskar, Mizanur Rahman, Israt Jahan, Enamul Hoque, and Jimmy Xiangji
+Huang. Can large language models fix data annotation errors? an empirical study using debate-
+pedia for query-focused text summarization. In Findings of the Association for Computational
+Linguistics: EMNLP 2023, Singapore, December 6-10, 2023 , pages 10245–10255. Association
+for Computational Linguistics, 2023. doi: 10.18653/V1/2023.FINDINGS-EMNLP.686. URL
+https://doi.org/10.18653/v1/2023.findings-emnlp.686 .
+[22] Wonbeom Lee, Jungi Lee, Junghwan Seo, and Jaewoong Sim. Infinigen: Efficient generative
+inference of large language models with dynamic KV cache management. In 18th USENIX
+Symposium on Operating Systems Design and Implementation, OSDI 2024, Santa Clara, CA,
+USA, July 10-12, 2024 , pages 155–172. USENIX Association, 2024. URL https://www.
+usenix.org/conference/osdi24/presentation/lee .
+[23] Jiamin Li, Yimin Jiang, Yibo Zhu, Cong Wang, and Hong Xu. Accelerating distributed
+moe training and inference with lina. In Proceedings of the 2023 USENIX Annual Technical
+Conference, USENIX ATC 2023, Boston, MA, USA, July 10-12, 2023 , pages 945–959. USENIX
+Association, 2023. URL https://www.usenix.org/conference/atc23/presentation/
+li-jiamin .
+[24] Yuhong Li, Yingbing Huang, Bowen Yang, Bharat Venkitesh, Acyr Locatelli, Hanchen Ye,
+Tianle Cai, Patrick Lewis, and Deming Chen. Snapkv: LLM knows what you are looking for
+before generation. CoRR , abs/2404.14469, 2024. doi: 10.48550/ARXIV .2404.14469. URL
+https://doi.org/10.48550/arXiv.2404.14469 .
+[25] Di Liu, Meng Chen, Baotong Lu, Huiqiang Jiang, Zhenhua Han, Qianxi Zhang, Qi Chen,
+Chengruidong Zhang, Bailu Ding, Kai Zhang, Chen Chen, Fan Yang, Yuqing Yang, and Lili
+Qiu. Retrievalattention: Accelerating long-context LLM inference via vector retrieval. CoRR ,
+abs/2409.10516, 2024. doi: 10.48550/ARXIV .2409.10516. URL https://doi.org/10.
+48550/arXiv.2409.10516 .
+[26] Hao Liu, Wilson Yan, Matei Zaharia, and Pieter Abbeel. World model on million-length video
+and language with blockwise ringattention. CoRR , abs/2402.08268, 2024. doi: 10.48550/
+ARXIV .2402.08268. URL https://doi.org/10.48550/arXiv.2402.08268 .
+[27] Zichang Liu, Aditya Desai, Fangshuo Liao, Weitao Wang, Victor Xie, Zhaozhuo Xu,
+Anastasios Kyrillidis, and Anshumali Shrivastava. Scissorhands: Exploiting the persis-
+tence of importance hypothesis for LLM KV cache compression at test time. In Ad-
+vances in Neural Information Processing Systems 36: Annual Conference on Neural In-
+formation Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December
+1410 - 16, 2023 , 2023. URL http://papers.nips.cc/paper_files/paper/2023/hash/
+a452a7c6c463e4ae8fbdc614c6e983e6-Abstract-Conference.html .
+[28] Inc. Meta Platforms. Llama 3.1, 2023. URL https://huggingface.co/meta-llama/
+Llama-3.1-8B .
+[29] OpenAI. GPT-4 technical report. CoRR , abs/2303.08774, 2023. doi: 10.48550/ARXIV .2303.
+08774. URL https://doi.org/10.48550/arXiv.2303.08774 .
+[30] Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka Shah, Íñigo Goiri, Saeed Maleki, and
+Ricardo Bianchini. Splitwise: Efficient generative LLM inference using phase splitting. In 51st
+ACM/IEEE Annual International Symposium on Computer Architecture, ISCA 2024, Buenos
+Aires, Argentina, June 29 - July 3, 2024 , pages 118–132. IEEE, 2024. doi: 10.1109/ISCA59077.
+2024.00019. URL https://doi.org/10.1109/ISCA59077.2024.00019 .
+[31] Samyam Rajbhandari, Olatunji Ruwase, Jeff Rasley, Shaden Smith, and Yuxiong He.
+Zero-infinity: Breaking the GPU memory wall for extreme scale deep learning. CoRR ,
+abs/2104.07857, 2021. URL https://arxiv.org/abs/2104.07857 .
+[32] Machel Reid, Nikolay Savinov, Denis Teplyashin, Dmitry Lepikhin, Timothy P. Lillicrap, Jean-
+Baptiste Alayrac, Radu Soricut, Angeliki Lazaridou, Orhan Firat, Julian Schrittwieser, Ioannis
+Antonoglou, Rohan Anil, Sebastian Borgeaud, Andrew M. Dai, Katie Millican, Ethan Dyer,
+Mia Glaese, Thibault Sottiaux, Benjamin Lee, Fabio Viola, Malcolm Reynolds, Yuanzhong
+Xu, James Molloy, Jilin Chen, Michael Isard, Paul Barham, Tom Hennigan, Ross McIlroy,
+Melvin Johnson, Johan Schalkwyk, Eli Collins, Eliza Rutherford, Erica Moreira, Kareem Ayoub,
+Megha Goel, Clemens Meyer, Gregory Thornton, Zhen Yang, Henryk Michalewski, Zaheer
+Abbas, Nathan Schucher, Ankesh Anand, Richard Ives, James Keeling, Karel Lenc, Salem
+Haykal, Siamak Shakeri, Pranav Shyam, Aakanksha Chowdhery, Roman Ring, Stephen Spencer,
+Eren Sezener, and et al. Gemini 1.5: Unlocking multimodal understanding across millions of
+tokens of context. CoRR , abs/2403.05530, 2024. doi: 10.48550/ARXIV .2403.05530. URL
+https://doi.org/10.48550/arXiv.2403.05530 .
+[33] Ying Sheng, Lianmin Zheng, Binhang Yuan, Zhuohan Li, Max Ryabinin, Beidi Chen, Percy
+Liang, Christopher Ré, Ion Stoica, and Ce Zhang. Flexgen: High-throughput generative
+inference of large language models with a single GPU. In International Conference on Machine
+Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , volume 202 of Proceedings of
+Machine Learning Research , pages 31094–31116. PMLR, 2023. URL https://proceedings.
+mlr.press/v202/sheng23a.html .
+[34] Zhenmei Shi, Yifei Ming, Xuan-Phi Nguyen, Yingyu Liang, and Shafiq Joty. Discovering
+the gems in early layers: Accelerating long-context llms with 1000x input token reduction.
+CoRR , abs/2409.17422, 2024. doi: 10.48550/ARXIV .2409.17422. URL https://doi.org/
+10.48550/arXiv.2409.17422 .
+[35] Yixin Song, Zeyu Mi, Haotong Xie, and Haibo Chen. Powerinfer: Fast large language model
+serving with a consumer-grade GPU. In Proceedings of the ACM SIGOPS 30th Symposium
+on Operating Systems Principles, SOSP 2024, Austin, TX, USA, November 4-6, 2024 , pages
+590–606. ACM, 2024. doi: 10.1145/3694715.3695964. URL https://doi.org/10.1145/
+3694715.3695964 .
+[36] Jiaming Tang, Yilong Zhao, Kan Zhu, Guangxuan Xiao, Baris Kasikci, and Song Han. QUEST:
+query-aware sparsity for efficient long-context LLM inference. In Forty-first International Con-
+ference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 . OpenReview.net,
+2024. URL https://openreview.net/forum?id=KzACYw0MTV .
+[37] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei,
+Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas
+Blecher, Cristian Canton-Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes,
+Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony
+Hartshorn, Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian
+Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut
+Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov,
+15Pushkar Mishra, Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy Reizenstein, Rashi Rungta,
+Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiao-
+qing Ellen Tan, Binh Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng
+Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurélien
+Rodriguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. Llama 2: Open foundation
+and fine-tuned chat models. CoRR , abs/2307.09288, 2023. doi: 10.48550/ARXIV .2307.09288.
+URL https://doi.org/10.48550/arXiv.2307.09288 .
+[38] Wei Wu, Zhuoshi Pan, Chao Wang, Liyi Chen, Yunchu Bai, Kun Fu, Zheng Wang, and Hui
+Xiong. Tokenselect: Efficient long-context inference and length extrapolation for llms via
+dynamic token-level kv cache selection. 2024. URL https://api.semanticscholar.org/
+CorpusID:273821700 .
+[39] Chaojun Xiao, Pengle Zhang, Xu Han, Guangxuan Xiao, Yankai Lin, Zhengyan Zhang, Zhiyuan
+Liu, Song Han, and Maosong Sun. Infllm: Unveiling the intrinsic capacity of llms for understand-
+ing extremely long sequences with training-free memory. CoRR , abs/2402.04617, 2024. doi:
+10.48550/ARXIV .2402.04617. URL https://doi.org/10.48550/arXiv.2402.04617 .
+[40] Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. Efficient streaming
+language models with attention sinks. In The Twelfth International Conference on Learning
+Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net, 2024. URL
+https://openreview.net/forum?id=NG7sS51zVF .
+[41] Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W. Cohen, Ruslan Salakhut-
+dinov, and Christopher D. Manning. Hotpotqa: A dataset for diverse, explainable multi-hop
+question answering. In Proceedings of the 2018 Conference on Empirical Methods in Natu-
+ral Language Processing, Brussels, Belgium, October 31 - November 4, 2018 , pages 2369–
+2380. Association for Computational Linguistics, 2018. doi: 10.18653/V1/D18-1259. URL
+https://doi.org/10.18653/v1/d18-1259 .
+[42] Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik
+Narasimhan. Tree of thoughts: Deliberate problem solving with large language models.
+InAdvances in Neural Information Processing Systems 36: Annual Conference on Neural
+Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December
+10 - 16, 2023 , 2023. URL http://papers.nips.cc/paper_files/paper/2023/hash/
+271db9922b8d1f4dd7aaef84ed5ac703-Abstract-Conference.html .
+[43] Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, Soojeong Kim, and Byung-Gon Chun.
+Orca: A distributed serving system for transformer-based generative models. In 16th USENIX
+Symposium on Operating Systems Design and Implementation, OSDI 2022, Carlsbad, CA, USA,
+July 11-13, 2022 , pages 521–538. USENIX Association, 2022. URL https://www.usenix.
+org/conference/osdi22/presentation/yu .
+[44] Jingyang Yuan, Huazuo Gao, Damai Dai, Junyu Luo, Liang Zhao, Zhengyan Zhang, Zhenda Xie,
+Y . X. Wei, Lean Wang, Zhiping Xiao, Yuqing Wang, Chong Ruan, Ming Zhang, Wenfeng Liang,
+and Wangding Zeng. Native sparse attention: Hardware-aligned and natively trainable sparse
+attention. 2025. URL https://api.semanticscholar.org/CorpusID:276408911 .
+[45] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong Chen, Lianmin Zheng, Ruisi Cai, Zhao
+Song, Yuandong Tian, Christopher Ré, Clark W. Barrett, Zhangyang Wang, and Beidi Chen.
+H2O: heavy-hitter oracle for efficient generative inference of large language models. In
+Advances in Neural Information Processing Systems 36: Annual Conference on Neural
+Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December
+10 - 16, 2023 , 2023. URL http://papers.nips.cc/paper_files/paper/2023/hash/
+6ceefa7b15572587b78ecfcebb2827f8-Abstract-Conference.html .
+[46] Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. Automatic chain of thought prompt-
+ing in large language models. In The Eleventh International Conference on Learning Rep-
+resentations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023 . OpenReview.net, 2023. URL
+https://openreview.net/forum?id=5NTt8GFjUHkr .
+16[47] Ming Zhong, Da Yin, Tao Yu, Ahmad Zaidi, Mutethia Mutuma, Rahul Jha, Ahmed Hassan
+Awadallah, Asli Celikyilmaz, Yang Liu, Xipeng Qiu, and Dragomir R. Radev. Qmsum: A new
+benchmark for query-based multi-domain meeting summarization. CoRR , abs/2104.05938,
+2021. URL https://arxiv.org/abs/2104.05938 .
+17

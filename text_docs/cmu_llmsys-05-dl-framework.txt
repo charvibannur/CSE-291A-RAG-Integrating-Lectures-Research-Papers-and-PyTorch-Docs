@@ -1,0 +1,241 @@
+Deep Learning Framework 
+Design
+Lei Li
+•Learning parameters of an NN needs gradient calculation
+•Computation Graph
+oto perform computation: topological traversal along the DAG
+•Auto Differentiation
+obuilding backward computation graph for gradient calculation
+2Recap3y=x1 +  exp(1.5 * x1 + 2.0 * x2) x1= 3, x2=0.5
+𝑥1
+𝑥3
+𝑥5𝑤1
+=1.5
+*
++
+𝑥6exp(.)
+𝑥7𝑥2
+𝑥4𝑤2
+=2.0
+*
++
+𝑥7
+=1𝑥6𝑥4
+𝑥5
+exp(.)
+id𝑥5→6 *id𝑤2*𝑥2
+*
+𝑥3id𝑤1*𝑥1
+𝑥1→3*+Backward Computation Graph•How to design a deep learning framework
+oDesign ideas in TensorFlow
+▪Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, 
+OSDI 2016
+oBasic Graph node types in Tensorflow /Pytorch
+oOverall design principles
+•Hands -on practice to implement a mini -tensorflow
+•Execution in Tensorflow
+4Today’s Topic
+•expressive to specify any neural networks
+osupport future custom operators/layers
+•productive for ML engineers
+ohide low -level details (no need to write cuda )
+oautomatic differentiation (no need to derive gradient calculation 
+manually)
+•efficient in large -scale training and inference
+oautomatically scale to data and model size
+oautomatic hardware acceleration5Deep Learning Frameworks (also for LLMs)•Formulate machine learning computation using data flow 
+graphs (data moving around a computation graph)
+•TensorFlow is an interface for expressing machine learning 
+algorithms and an implementation for executing such 
+algorithms
+•PyTorch  is a programming framework for tensor 
+computation, deep learning, and auto differentiation
+6Deep Learning Programming Framework7Aspect PyTorch TensorFlow JAX NumPy
+Primary Use Deep learning Deep learningnumerical and 
+ML computingnumerical 
+computing
+Programming 
+ParadigmDynamic (eager 
+execution)Static (Graph 
+mode, or Eager)Functional 
+transformationsProcedural
+Autograddynamic comp 
+graphstatic comp graphFunctional -based 
+with grad/jitNot available
+Hardware 
+SupportCPU, GPU, TPU CPU, GPU, TPU CPU, GPU, TPU CPU only
+Ease of Use Pythonica bit learning 
+curvePythonic and 
+functionalVery easy, native 
+python
+EcosystemPyTorch  Lightning, 
+TorchVisionTensorBoard , 
+TensorFlow 
+Extendedintegrates with 
+NumPyNA
+ParallelismMulti -GPU with 
+DataParallel or DDPMulti -GPU/TPU 
+via tf.distributeMulti -GPU/TPU 
+via pmapNo parallelism•Key idea: express a numeric computation as a computation 
+graph
+ofollowing what we described in last lecture
+•Graph nodes are operations  with any number of inputs and 
+outputs
+•Graph edges are  tensors which flow between nodes
+otensor: multidimensional array
+8TensorFlow•A tensor is a multi -dimensional array. generalization to vector 
+and matrix
+tf.constant ([[1, 2], [3, 4]])
+is a 2x2 tensor with element type int32
+tf.Tensor ([[2 3] [4 5]], shape=(2, 2), dtype =int32) 
+9Data as a Tensor
+Pytorch : 
+torch.tensor ([[1., 2.], [3., 4.]])10Computation Graph in Tensorflow
+import  tensorflow  as tf
+b = tf.Variable (tf.zeros ((100,)))
+W = tf.Variable (tf.random_uniform ((784, 100), -1, 1))
+x = tf.placeholder (tf.float32, ( 1, 784))
+h = tf.nn.relu (tf.matmul (x, W) + b)
+ℎ=𝑅𝐸𝐿𝑈(𝑊𝑥+𝑏)•Variables  are stateful nodes 
+which output their current value.  
+•State is retained across multiple 
+executions of a graph
+•mostly parameters
+11Variable Node
+ℎ=𝑅𝐸𝐿𝑈(𝑊𝑥+𝑏)
+b = tf.Variable (tf.zeros ((100,)))
+tf.Variable (initial_value =None,    
+  trainable=None,
+  name=None)12Placeholder Node ( Tensorflow  v1)
+•Represent Inputs, Labels, …
+•value is fed in at execution time
+•No need to explicitly define 
+Placeholder in Tensorflow  v2
+ℎ=𝑅𝐸𝐿𝑈(𝑊𝑥+𝑏)
+x = tf.placeholder (tf.float32, ( 1, 784))13Mathematical Operations
+tf.linalg.matmul (a, b): multiply two matrices
+tf.math.add (a, b) : Add elementwise
+tf.nn.relu (a): Activate with elementwise 
+rectified linear functionReLu (x) = 0, x <= 0
+x, x > 0ℎ=𝑅𝐸𝐿𝑈(𝑊𝑥+𝑏)
+Pytorch :
+torch.matmul (a, b)
+torch.add (a, b)
+torch.nn.ReLU (a)14Running the Graph
+CPU
+GPUIn TF v1, to d eploy  graph with a 
+session : a binding to a particular 
+execution context (e.g. CPU, 
+GPU)
+with tf.Session () as s:
+  …
+  s.run () •Use placeholder  for labels
+•Build loss node using labels and prediction
+16Defining Loss
+prediction = tf.nn.softmax (...)  #Output of neural network
+label = tf.placeholder (tf.float32, [ 100, 10])
+cross_entropy = -tf.reduce_sum(label * tf.log(prediction), axis=1)•tf.train.GradientDescentOptimizer  is an Optimizer object
+•tf.train.GradientDescentOptimizer (lr).minimize( cross_entropy ) adds 
+optimization operation to computation graph
+•TensorFlow graph nodes have attached gradient operations
+•Gradient with respect to parameters computed with Auto 
+Differentiation (recall previous lecture)
+17Gradient Computation
+train_step  = tf.train.GradientDescentOptimizer (0.5).minimize( cross_entropy )•How to design a deep learning framework
+oDesign ideas in TensorFlow
+▪Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, 
+OSDI 2016
+oBasic Graph node types in Tensorflow /Pytorch
+oOverall design principles
+•Hands -on practice to implement a mini -tensorflow
+•Execution in Tensorflow
+18Today’s Topic
+•All nodes return tensors
+•How a node computes is indistinguishable to TensorFlow
+•In TF v1: metaprogramming - constructing the graph for the 
+real computation. No computation occurs yet! 
+•TF v2 has eager mode, the computation is applied 
+immediately (essentially constructing the graph and apply 
+the computation)
+19Core TensorFlow Constructs•Dataflow graphs of primitive operators
+•Deferred execution (two phases)
+1. Define program i.e., symbolic dataflow graph w/ placeholders, 
+essentially constructing the computation graph
+2. Executes optimized version of program on set of available 
+devices
+20Design Principles•Problem: support ML algos that contain conditional and 
+iterative control flow, e.g.  
+oRecurrent Neural Networks (RNNs) and LSTMs
+oAutoregressive decoder
+•Solution: Add conditional (if statement) and iterative (while 
+loop) programming constructs
+21Dynamic Flow Control•Core in C++
+o Very low overhead
+•Different front ends for specifying/driving the computation 
+oPython and C++, easy to add more
+22TensorFlow Architecture
+http://www.wsdm -conference.org/2016/slides/WSDM2016 -Jeff-Dean.pdf
+•Semi -interpreted
+•Call GPU kernel per primitive operation
+•Can batch operations with custom C++
+•Basic type -safety within dataflow graph 
+(error at graph construction time)
+23TensorFlow Implementation
+https://www.tensorflow.org/extend/architecture•How to design a deep learning framework
+oDesign ideas in TensorFlow
+▪Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, 
+OSDI 2016
+oBasic Graph node types in Tensorflow /Pytorch
+oOverall design principles
+•Hands -on practice to implement a mini -tensorflow
+•Execution in Tensorflow
+24Today’s Topic
+25Code Practice: Implement Computation 
+Graph
+https://github.com/llmsystem/llmsys_code_examples/tree/mai
+n/mini_tensorflow  
+Please follow the instructions and fill in the code in 
+https://github.com/llmsystem/llmsys_code_examples/blob/mai
+n/mini_tensorflow/mini_tensorflow.ipynb
+The full code is provided in 
+https://github.com/llmsystem/llmsys_code_examples/blob/mai
+n/mini_tensorflow/mini_tensorflow_full.ipynb  •How to design a deep learning framework
+oDesign ideas in TensorFlow
+▪Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, 
+OSDI 2016
+oBasic Graph node types in Tensorflow /Pytorch
+oOverall design principles
+•Hands -on practice to implement a mini -tensorflow
+•Execution in Tensorflow
+26Today’s Topic
+•Similar to MapReduce, Apache Hadoop, Apache Spark, …
+27Tensorflow  Execution Key Components
+28Client
+29Master
+30Computation Graph Partition
+31Computation Graph Partition
+32Execution
+•Determined by node: Queue nodes used for barriers
+•Synchronous nearly as fast as asynchronous
+•Default model is asynchronous
+33Synchronous vs Asynchronous•Assumptions: 
+oFine grain operations: “It is unlikely that tasks will fail so often that 
+individual operations need fault tolerance” ; -)
+o“Many learning algorithms do not require strong consistency”
+•Solution: user -level checkpointing (provides 2 ops)
+osave(): writes one or more tensors to a checkpoint file
+orestore(): reads one or more tensors from a checkpoint file
+34Fault Tolerance35Performance
+•Single Node
+Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, OSDI 2016•Distributed Throughput
+36Performance
+Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, OSDI 2016•Key Contributions
+o Programmability/abstraction
+o Accessibility / ease of use
+•Deferred execution: 
+1. Define program i.e., symbolic dataflow graph w/ placeholders, 
+essentially constructing the computation graph
+2. Executes (optimized) computation graph on set of available 
+devices
+37Summary
+Abadi et al., “TensorFlow: A System for Large -Scale Machine Learning”, OSDI 2016

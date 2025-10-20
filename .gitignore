@@ -1,27 +1,63 @@
-
+# Python cache files
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyc
 
+# Virtual environments
 .venv/
 venv/
 env/
+.env
 
+# OS files
 .DS_Store
 Thumbs.db
 
+# Generated outputs and results
+vector_db/
+*.json
+*.png
+*.jpg
+*.jpeg
+plots/
+demo_plots/
+custom_evaluation_results.json
+demo_evaluation_results.json
+demo_report.json
+
+# Logs and model files
 *.log
 *.ckpt
 *.pth
 
+# Jupyter notebook checkpoints
 .ipynb_checkpoints/
 
-data/
-outputs/
-runs/
-
-.env
-
+# Build directories
 build/
 dist/
 *.egg-info/
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Large model files
+*.bin
+*.safetensors
+
+# Other scripts (not needed for custom_evaluator)
+demo.py
+demo_rag_system.ipynb
+evaluator.py
+test_rag_system.py
+setup.py
+setup_minimal.py
+PROJECT_SUMMARY.md
