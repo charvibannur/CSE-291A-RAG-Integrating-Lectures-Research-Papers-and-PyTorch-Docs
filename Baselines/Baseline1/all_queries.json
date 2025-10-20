@@ -1,0 +1,49 @@
+{
+    "queries": [
+        {
+            "query": "What optimizations does FlashAttention introduce compared to standard attention kernels implemented in PyTorch?"
+        },
+        {
+            "query": "What are the trade-offs between simple post-training quantization and GPTQ?"
+        },
+        {
+            "query": "What are the challenges of theoretical distributed training (PipeDream) and what is the scaling efficiency of distributed real-world Trainium performance (HLAT)?"
+        },
+        {
+            "query": "What is the difference between torch.disttibuted and torch.distributed.pipelining?"
+        },
+        {
+            "query": "Explain the importance of ImageNet in the works alexnet and googlenet."
+        },
+        {
+            "query": "What search algorithm does AlphaZero use instead of alpha-beta search?"
+        },
+        {
+            "query": "What is internal covariate shift, and how does it affect training?"
+        },
+        {
+            "query": "What does IO-aware mean in the context of FlashAttention?"
+        },
+        {
+            "query": "Why can cProfile and the CPU-mode autograd profiler give incorrect timings on CUDA code?"
+        },
+        {
+            "query": "How does auto-differentiation work in these frameworks?"
+        },
+        {
+            "query": "What are FlashMLA, DeepEP, and DeepGEMM, and what problems do they each solve?"
+        },
+        {
+            "query": "What problem does the Model Context Protocol (MCP) solve?"
+        },
+        {
+            "query": "What are the three core components of the TinyServe system?"
+        },
+        {
+            "query": "What is NVIDIA GPU Confidential Computing (CC) and how does it secure communication?"
+        },
+        {
+            "query": "Why can't you perform data-dependent operations on meta tensors?"
+        }
+    ]
+}
