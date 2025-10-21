@@ -31,8 +31,6 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
-
-### Data
 The docs for the RAG system are present in the \data. The queries for single doc and multi doc retrieval are present in the \queries folder.
 
 ### Baseline 1: BM25
