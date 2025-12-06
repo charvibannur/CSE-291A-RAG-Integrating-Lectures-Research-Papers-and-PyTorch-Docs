@@ -25,3 +25,7 @@ runs/
 build/
 dist/
 *.egg-info/
+
+*.bin
+*.pickle
+*.sqlite3
