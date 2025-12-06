@@ -9,7 +9,8 @@ for the LLM Systems domain, including:
 - Vector database integration with ChromaDB
 - Evaluation pipeline
 """
-
+import nltk
+nltk.download('punkt_tab')
 import os
 import json
 import pandas as pd

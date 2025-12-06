@@ -1,0 +1,1129 @@
+{
+  "queries": [
+    {
+      "query": "What optimizations does FlashAttention introduce compared to standard attention kernels implemented in PyTorch?",
+      "results": [
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "tention and block-sparse FlashAttention compared to the baselines in exact, approximate, and sparse\nattention (exact numbers in Appendix E). Runtime grows quadratically with sequence length, but FlashAt-\ntention runs signi\ufb01cantly faster than exact attention baselines, up to 3 \u0002faster than the PyTorch\nimplementation. The runtimes of many approximate/sparse attention mechanisms grow linearly with se-\nquence length, but FlashAttention still runs faster than approximate and sparse attention for short",
+          "score": 4.376280307769775,
+          "rank": 1
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "computation back to HBM. Right:Speedup over the PyTorch implementation of attention on GPT-2.\nFlashAttention does not read and write the large \ud835\udc41\u0002\ud835\udc41attention matrix to HBM, resulting in an 7.6 \u0002\nspeedup on the attention computation.\nGPUs, compute speed has out-paced memory speed [ 61,62,63], and most operations in Transformers are\nbottlenecked by memory accesses [ 43]. IO-aware algorithms have been critical for similar memory-bound",
+          "score": 3.3795762062072754,
+          "rank": 2
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "time of all models. Each task has a di\ufb00erent sequence length varying between 1024 and 4096. We follow the\nimplementation and experimental setting in Tay et al. [80]and Xiong et al. [90].3Table 3 shows that FlashAt-\ntention achieves up 2.4\u0002speed-up compared to standard attention. Block-sparse FlashAttention is\nfaster than all of the approximate attention methods that we have tested.\nTable 3: The performance of standard attention, FlashAttention , block-sparse FlashAttention , and approximate",
+          "score": 2.9396629333496094,
+          "rank": 3
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "wall-clock time. We analyze its IO complexity, showing that our method requires much fewer HBM accesses\ncompared to standard attention. We further show that FlashAttention can serve as a useful primitive by\nextending it to handle block-sparse attention.\nWe focus here on the forward pass for ease of exposition; Appendix B contains details for the backward.\n3.1 An E\ufb03cient Attention Algorithm With Tiling and Recomputation",
+          "score": 2.866919755935669,
+          "rank": 4
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "We analyze the IO complexity [ 1] ofFlashAttention , proving that it requires \ud835\udc42\u00b9\ud835\udc412\ud835\udc512\ud835\udc40\u00001\u00baHBM\naccesses where \ud835\udc51is the head dimension and \ud835\udc40is the size of SRAM, as compared to \u03a9\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baof standard\nattention. For typical values of \ud835\udc51and\ud835\udc40,FlashAttention requires many times fewer HBM accesses\ncompared to standard attention (up to 9 \u0002fewer, as shown in Fig. 2). Moreover, we provide a lower bound,\nshowing that no exact attention algorithm can asymptotically improve on the number of HBM accesses over\nall SRAM sizes.",
+          "score": 2.8076295852661133,
+          "rank": 5
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "In Fig. 2 (left), we see that even though FlashAttention has higher FLOP count compared to standard\nattention (due to recomputation in the backward pass), it has much fewer HBM accesses, resulting in much\nfaster runtime. In Fig. 2 (middle), we vary the block size \ud835\udc35\ud835\udc50ofFlashAttention , which results in di\ufb00erent\namounts of HBM accesses, and measure the runtime of the forward pass. As block size increases, the number",
+          "score": 1.6964211463928223,
+          "rank": 6
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "solely from using a longer sequence length (16K). Block-sparse FlashAttention enables a Transformer\nto scale to even longer sequences (64K), resulting in the \ufb01rst model that can achieve better-than-chance\nperformance on Path-256.\n\u2022Benchmarking Attention. FlashAttention is up to 3\u0002faster than the standard attention implemen-\ntation across common sequence lengths from 128 to 2K and scales up to 64K. Up to sequence length of 512,",
+          "score": 0.3812292218208313,
+          "rank": 7
+        },
+        {
+          "doc": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "filename": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "text": "optimizations such as operator reordering, fusion, and mem-\nory reuse.\nMajor frameworks have been integrating compiler capa-\nbilities into their ecosystems. For example, PyTorch now in-\ncludes its own compiler infrastructure to enable graph-based\noptimizations [ 2]. Since these compilers can be applied to\nthe vast number of existing model implementations, they\nare now widely used in practice.\n2.4 Motivating Example\nThe fully sharded approach, as implemented in systems like",
+          "score": 0.1808822900056839,
+          "rank": 8
+        },
+        {
+          "doc": "Progressive Sparse Attention_ Algorithm and System Co-design for   Efficient Att",
+          "filename": "Progressive Sparse Attention_ Algorithm and System Co-design for   Efficient Att",
+          "text": "can be scheduled as long as the required KV blocks for executing a single iteration of progressive\nattention can be accommodated within the GPU memory.\nCompatibility with FlashAttention [ 10].FlashAttention is an attention backend widely used in\nmodern LLM serving system to accelerate attention computation. It avoids writing attention weights\nto HBM through kernel fusion, thus significantly reducing data movement between on-chip memory",
+          "score": 0.053993675857782364,
+          "rank": 9
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "The proof is in Appendix C.\n21B.5 Comparison with Rabe and Staats [66]\nWe describe here some similarities and di\ufb00erences between our FlashAttention algorithm and the algorithm\nof Rabe and Staats [66].\nConceptually, both FlashAttention and Rabe and Staats [66]operate on blocks of the attention matrix\nusing the well-established technique of tiling (or softmax scaling) [ 51,60]. To reduce the memory footprint,",
+          "score": -0.22786641120910645,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What are the trade-offs between simple post-training quantization and GPTQ?",
+      "results": [
+        {
+          "doc": "cmu_llmsys-18-peft",
+          "filename": "cmu_llmsys-18-peft",
+          "text": "28\n\u2022Overview of Parameter Efficient Fine -Tuning\n\u2022LoRA : Low -rank Adaptation (Counter -interference adapter, \nCIAT)\n\u2022QLoRA : Quantization + Low -rank training\n\u2022Code Walkthrough\n30Outline\n\u2022GPTQ is Post -Training Quantization (PTQ): converting the \nweights of an already trained model to a lower precision \nwithout any retraining. \n\u2022Quantization -Aware Training (QAT): integrates the weight \nconversion process during the training stage. often superior \nmodel performance. ( QLoRA ) ",
+          "score": 2.925814628601074,
+          "rank": 1
+        },
+        {
+          "doc": "cmu_llmsys-17-quantization2",
+          "filename": "cmu_llmsys-17-quantization2",
+          "text": "error  incurred by quantizing a single weight\n6Overall idea of GPTQ\nOptimal Brain Compression: A framework for accurate post -training quantization and pruning (2022)Optimal Brain Surgeon and General Network Pruning (1993)GPTQ: Accurate Post -Training Quantization for Generative Pre -trained Transformers. Frantar  et al. ICLR 2023. 1.Pre-compute Cholesky decomposition of the Hessian \ninverse for input data X of current (Linear) layer\n2.Iteratively handle one batch of columns of weight matrix W",
+          "score": 0.9343751072883606,
+          "rank": 2
+        },
+        {
+          "doc": "cmu_llmsys-16-quantization",
+          "filename": "cmu_llmsys-16-quantization",
+          "text": "\u2022The scalability is verified up to 20B models (GPT -NeoX20B)\n\u2022At 1.3B scale, computation time is ~3 hours\nobut slower than GPTQ (x100 larger in ~4 hours)\n\u2022integrated in Deepspeed\n22ZeroQuant\nYao et al. ZeroQuant : Efficient and Affordable Post -Training Quantization for Large -Scale Transformers. Neurips  2022.\u2022Using 8 -bit quantization for \nmatrix multiplications\n\u2022But, extreme outliers in \nfeatures (activation values)\noneed for wider numerical ranges \noQuantize all parameters without ",
+          "score": 0.8492363095283508,
+          "rank": 3
+        },
+        {
+          "doc": "The Early Bird Catches the Leak_ Unveiling Timing Side Channels in LLM   Serving",
+          "filename": "The Early Bird Catches the Leak_ Unveiling Timing Side Channels in LLM   Serving",
+          "text": "language models,\u201d Advances in Neural Information Processing Systems ,\nvol. 35, pp. 17 402\u201317 414, 2022.\n[7] G. Xiao, J. Lin, M. Seznec, H. Wu, J. Demouth, and S. Han,\n\u201cSmoothquant: Accurate and efficient post-training quantization for\nlarge language models,\u201d in International Conference on Machine\nLearning . PMLR, 2023, pp. 38 087\u201338 099.\n[8] E. Frantar, S. Ashkboos, T. Hoefler, and D. Alistarh, \u201cGptq: Accu-\nrate post-training quantization for generative pre-trained transformers,\u201d",
+          "score": -0.25159013271331787,
+          "rank": 4
+        },
+        {
+          "doc": "cmu_llmsys-17-quantization2",
+          "filename": "cmu_llmsys-17-quantization2",
+          "text": "19Insight of Arbitrary Update Order for OBQ\nGPTQ: Accurate Post -Training Quantization for Generative Pre -trained Transformers. Frantar  et al. ICLR 2023. \u2022Na\u00efve column update is not fast in practice \nolow compute -to-memory -access ratio\nocannot highly utilize GPUs compute.\n\u2022Observation: \noRounding decisions for col i only affected \nby updates on this col\noUpdates to later columns are irrelevant at \nthis point in the process.\n\u2022Efficient update\n20Lazy Batch Updates",
+          "score": -0.42450520396232605,
+          "rank": 5
+        },
+        {
+          "doc": "cmu_llmsys-16-quantization",
+          "filename": "cmu_llmsys-16-quantization",
+          "text": "15Quantization   during training\npost trainingpreserve accuracy\nscale to large \nparametersBRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)\nOBQ (Frantar et al., 2022)\nZeroQuant (Yao et al., 2022)\nLLM.int8() (Dettmers et al., 2022)Model Quantization Approaches\n16Quantization  during training\npost trainingpreserve \naccuracy\n(by quantizing each \nindividual / consecutive \nlayers)\nscale to large \nparametersBRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)\nOBQ (Frantar et al., 2022)",
+          "score": -1.9952819347381592,
+          "rank": 6
+        },
+        {
+          "doc": "cmu_llmsys-16-quantization",
+          "filename": "cmu_llmsys-16-quantization",
+          "text": "P rec@5 85.7 % 5.6 % 75.7 %\n19Is Quantization Accurate?20Why is Quantizing LLMs Difficult?\nQuantization  during training\npost trainingpreserve accuracy\nscale to large \nparameters\n(by rounding weights to the \nnearest quantization level)BRECQ (Li et al., 2021)AdaQuant (Hubara et al., 2021)\nOBQ (Frantar et al., 2022)\nZeroQuant (Yao et al., 2022)\nLLM.int8() (Dettmers et al., 2022)accuracy loss when lower -bit \nprecision (ex. 3, 4 bits per \nparameter)\u2022Layer -by-layer knowledge distillation ",
+          "score": -2.208678722381592,
+          "rank": 7
+        },
+        {
+          "doc": "The Early Bird Catches the Leak_ Unveiling Timing Side Channels in LLM   Serving",
+          "filename": "The Early Bird Catches the Leak_ Unveiling Timing Side Channels in LLM   Serving",
+          "text": "rate post-training quantization for generative pre-trained transformers,\u201d\narXiv preprint arXiv:2210.17323 , 2022.\n[9] Z. Liu, B. Oguz, C. Zhao, E. Chang, P. Stock, Y . Mehdad, Y . Shi, R. Kr-\nishnamoorthi, and V . Chandra, \u201cLlm-qat: Data-free quantization aware\ntraining for large language models,\u201d arXiv preprint arXiv:2305.17888 ,\n2023.\n[10] W. Wang, W. Chen, Y . Luo, Y . Long, Z. Lin, L. Zhang, B. Lin,\nD. Cai, and X. He, \u201cModel compression and efficient inference for",
+          "score": -2.6952579021453857,
+          "rank": 8
+        },
+        {
+          "doc": "cmu_llmsys-17-quantization2",
+          "filename": "cmu_llmsys-17-quantization2",
+          "text": "1.3B model - 3h\nDoes GPT -Q even work for extreme 2 -bit quantization?\n28\nHow is GPT -Q\u2019s perf on small models compared with \naccurate -but-expensive methods?\n29\n Fastest prior method\u2022https://github.com/qwopqwop200/GPTQ -for-LLaMa/  \n\u2022GPTQ in \nohttps://github.com/qwopqwop200/GPTQ -for-\nLLaMa/blob/triton/gptq.py  \n31GPTQ for LLaMAGPTQ: Initialization\n32\n\u25cfReshape weights from the \ninput layer\n\u25cfInitialize Hessian matrixGPTQ: Hessian Matrix Update\n33\u25cfUpdate Hessian matrix with \ninformation from a new ",
+          "score": -2.788555860519409,
+          "rank": 9
+        },
+        {
+          "doc": "cmu_llmsys-17-quantization2",
+          "filename": "cmu_llmsys-17-quantization2",
+          "text": "\u2022Key ideas: \n1.Quantizes one column -block of weights at a time\n2.Updates all the not -yet-quantized weights, to compensate for the \nerror  incurred by quantizing a single weight\n6Overall idea of GPTQ",
+          "score": -3.067474842071533,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What are the challenges of theoretical distributed training (PipeDream) and what is the scaling efficiency of distributed real-world Trainium performance (HLAT)?",
+      "results": [
+        {
+          "doc": "Pipeline MoE_ A Flexible MoE Implementation with Pipeline Parallelism",
+          "filename": "Pipeline MoE_ A Flexible MoE Implementation with Pipeline Parallelism",
+          "text": "(parameter count) are further increased to an incredible 530 billion (Megatron-Turing-NLG Smith\net al. (2022)) and 540 billion (PaLM Chowdhery et al. (2022)), because the scaling law Henighan\net al. (2020) is still working.\nEf\ufb01cient Distributed Model Training. Scaling model training to tens of or hundreds of billion\nparameters is a complicated task, which requires a lot of algorithmic innovations and engineer-\ning optimization. One of the most critical challenges is that the model cannot \ufb01t into one single",
+          "score": 1.956183671951294,
+          "rank": 1
+        },
+        {
+          "doc": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "filename": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "text": "training large-scale models.\n2.2 Parallelization Strategies\nVarious parallelization strategies have been proposed to im-\nprove the efficiency of distributed training.\nData parallelism replicates the entire model on each GPU,\nand each GPU processes a different portion of the training\ndata. A key advantage is that it can be used with any model\narchitecture without requiring code changes, and the com-\nmunication overhead is relatively low. However, because",
+          "score": -1.1921706199645996,
+          "rank": 2
+        },
+        {
+          "doc": "yiying_training-2",
+          "filename": "yiying_training-2",
+          "text": "Background: distributed training on Trainium",
+          "score": -1.5990253686904907,
+          "rank": 3
+        },
+        {
+          "doc": "24_fsdp_2304_11277",
+          "filename": "24_fsdp_2304_11277",
+          "text": "training framework becomes increasingly imperative for applica-\ntions built on top of PyTorch. This section elucidates the trajectory\nof PyTorch\u2019s distributed training capabilities.\n2.1 Model Replication\nModel replication approaches are designed to tackle high-volume\ndatasets by scaling out and distributing computations across multi-\nple devices. DistributedDataParallel (DDP) [ 14] is the first end-to-end\ndistributed training feature in PyTorch that falls into this category.",
+          "score": -1.6479536294937134,
+          "rank": 4
+        },
+        {
+          "doc": "MoNTA_ Accelerating Mixture-of-Experts Training with   Network-Traffc-Aware Para",
+          "filename": "MoNTA_ Accelerating Mixture-of-Experts Training with   Network-Traffc-Aware Para",
+          "text": "computation/communication overlap, and memory usage\nlimits. PipeMoE (Shaohuai et al. 2023) utilizes parallelism\nbetween expert computation and AllToAll communication,\nemploying a micro chunk approach for hiding latency, and\npresents the optimal parallel degree for pipelining modeling.\nDeepSpeed is a framework developed by Microsoft specifi-\ncally designed for large-scale distributed training to improve\ntraining efficiency and reduce resource consumption. It",
+          "score": -2.134281873703003,
+          "rank": 5
+        },
+        {
+          "doc": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "filename": "DeepCompile_ A Compiler-Driven Approach to Optimizing Distributed Deep   Learnin",
+          "text": "shows the training losses for both settings. Although some\noperators are non-deterministic and introduce subtle differ-\nences, the loss curves were closely aligned.\n6 Related Work\n6.1 Distributed Training Framework\nAs discussed in Section 2, various distributed training strate-\ngies have been proposed to scale deep learning models be-\nyond the capacity of a single GPU. For instance, tensor par-\nallelism, as introduced in Megatron-LM [ 25], splits large",
+          "score": -2.135361909866333,
+          "rank": 6
+        },
+        {
+          "doc": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "filename": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "text": "patterns). These methods assume that workloads remain stable dur-\ning training. Consequently, they fail to handle the pipeline stalls\nintroduced by dynamic models, leading to reduced computational\nefficiency.\nInnovative designs of dynamic models aim to reduce compu-\ntational cost, but without effective load balancing, their benefits\npractically fail to translate into actual performance gains during\ndistributed training [ 4]. To address this gap, we introduce DynMo ,",
+          "score": -2.169346809387207,
+          "rank": 7
+        },
+        {
+          "doc": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "filename": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "text": "tion, they often introduce significant workload imbalance across\nworkers. In many cases, this imbalance is severe enough to ren-\nder the techniques impractical for large-scale distributed training,\nlimiting their applicability to toy models due to poor efficiency.\nWe propose an autonomous dynamic load balancing solution,\nDynMo , which provably achieves maximum reduction in workload\nimbalance and adaptively equalizes compute loads across work-\ners in pipeline-parallel training. In addition, DynMo dynamically",
+          "score": -2.6671056747436523,
+          "rank": 8
+        },
+        {
+          "doc": "MoE Parallel Folding_ Heterogeneous Parallelism Mappings for Efficient   Large-S",
+          "filename": "MoE Parallel Folding_ Heterogeneous Parallelism Mappings for Efficient   Large-S",
+          "text": "effectively. Conventional distributed training methods include TP, DP, CP and PP. TP divides the\ncomputations of neural network layers across multiple devices, allowing for parallel processing\nof tensors within layers[ 31]. TP can significantly reduce the memory consumption of each model\nrank but introduces some intra-layer communication overhead. DP distributes batches of data\nacross replicas of the model on different devices, aggregating gradients during training[ 35]. Zero",
+          "score": -3.075972080230713,
+          "rank": 9
+        },
+        {
+          "doc": "yiying_training-2",
+          "filename": "yiying_training-2",
+          "text": "Background: distributed training on Trainium\n4\u2022AWS Trainium\u2022Trn1.32xlarge contains 16 Trn accelerators, and 32 Neuron Cores\u202216GB memory per Neuron Core\u20223040 TFLOPS in FP16/BF1\u2022Cost $21.50 vs. p4d.24xlarge $32.77\u2022Neuron Distributed Training Library (NDTL, also called NeuronX-distributed)\u2022Tensor, pipeline, data, and sequence parallelism\u2022Zero-1 optimizer\u2022Multiple training precision configurations\u2022Automatic fault recovery\u2022\u2026\u00a9 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.",
+          "score": -3.3283848762512207,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What is the difference between torch.disttibuted and torch.distributed.pipelining?",
+      "results": [
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "What is torch.distributed.pipelining ?\nWhile promising for scaling, pipelining is often difficult to implement because it needs to partition\nthe execution of a model in addition to model weights. The partitioning of execution often requires\nintrusive code changes to your model. Another aspect of complexity comes from scheduling\nmicro-batches in a distributed environment, with data flow dependency considered.\nThe pipelining  package provides a toolkit that does said things automatically which allows easy",
+          "score": 4.678384780883789,
+          "rank": 1
+        },
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "splitting the module. (default: None)\nReturn type:\nA pipeline representation of class Pipe.\nclass torch.distributed.pipelining. Pipe (split_gm , num_stages ,\nhas_loss_and_backward , loss_spec )\ntorch.distributed.pipelining. pipe_split ( )\npipe_split is a special operator that is used to mark the boundary between stages in a module.\nIt is used to split the module into stages. It is a no-op if your annotated module is run eagerly.\nExample\nThe above example will be split into two stages.\nMicrobatch Utilities",
+          "score": 3.0660109519958496,
+          "rank": 2
+        },
+        {
+          "doc": "distributed",
+          "filename": "distributed",
+          "text": "torch.distributed.ProcessGroupNCCL.Options . Learn more about them using help (e.g.\nhelp(torch.distributed.ProcessGroupNCCL.NCCLConfig) ) in the interpreter.\nBasics\nThe torch.distributed  package provides PyTorch support and communication primitives for\nmultiprocess parallelism across several computation nodes running on one or more machines. The\nclass torch.nn.parallel.DistributedDataParallel()  builds on this functionality to provide",
+          "score": 2.642554521560669,
+          "rank": 3
+        },
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "model to be partitioned such that multiple micro-batches can execute different parts of the mode\ncode concurrently. Pipeline parallelism can be an effective technique for:\nlarge-scale training\nbandwidth-limited clusters\nlarge model inference\nThe above scenarios share a commonality that the computation per device cannot hide the\ncommunication of conventional parallelism, for example, the weight all-gather of FSDP.\nWhat is torch.distributed.pipelining ?",
+          "score": 1.981663465499878,
+          "rank": 4
+        },
+        {
+          "doc": "distributed",
+          "filename": "distributed",
+          "text": "TORCH_GLOO_LAZY_INIT  - establishes connections on demand rather than using a full mesh\nwhich can greatly improve initialization time for non all2all operations.\nPost-Initialization\nOnce torch.distributed.init_process_group()  was run, the following functions can be used.\nTo check whether the process group has already been initialized use\ntorch.distributed.is_initialized() .\nclass torch.distributed. Backend (name )\nAn enum-like class for backends.",
+          "score": 1.801804542541504,
+          "rank": 5
+        },
+        {
+          "doc": "distributed",
+          "filename": "distributed",
+          "text": "during initialization that can lead to hangs.\ntorch.distributed. is_available ( )\nReturn True if the distributed package is available.\nOtherwise, torch.distributed  does not expose any other APIs. Currently,\ntorch.distributed  is available on Linux, MacOS and Windows. Set USE_DISTRIBUTED=1  to\nenable it when building PyTorch from source. Currently, the default value is\nUSE_DISTRIBUTED=1  for Linux and Windows, USE_DISTRIBUTED=0  for MacOS.\nReturn type:\nbool",
+          "score": 1.7433726787567139,
+          "rank": 6
+        },
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "class\ntorch.distributed.pipelining.schedules. PipelineScheduleSingle (stage,\nn_microbatches , loss_fn=None, args_chunk_spec =None, kwargs_chunk_spec =None\noutput_merge_spec =None, scale_grads =True )\nBase class for single-stage schedules. Implements the step method. Derived classes should\nimplement _step_microbatches.\nGradients are scaled by num_microbatches depending on the scale_grads argument, defaultin\nto True. This setting should match the configuration of your loss_fn, which may either average",
+          "score": 1.5300445556640625,
+          "rank": 7
+        },
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "forward function. :ivar END: Represents adding a split point after the execution of a certain\nsubmodule in the forward function.\ntorch.distributed.pipelining. pipeline (module, mb_args, mb_kwargs =None,\nsplit_spec =None, split_policy =None )\nSplit a module based on a specification.\nSee Pipe for more details.\nParameters:\nmodule (Module) \u2013 The module to be split.\nmb_args (tuple[Any, ...]) \u2013 Example positional inputs, in micro-batch form.",
+          "score": 1.3046026229858398,
+          "rank": 8
+        },
+        {
+          "doc": "distributed",
+          "filename": "distributed",
+          "text": "components.\nInitialization\nThe package needs to be initialized using the torch.distributed.init_process_group()  or\ntorch.distributed.device_mesh.init_device_mesh()  function before calling any other\nmethods. Both block until all processes have joined.\nInitialization is not thread-safe. Process group creation should be performed from a single\nthread, to prevent inconsistent \u2018UUID\u02bc assignment across ranks, and to prevent races\nduring initialization that can lead to hangs.\ntorch.distributed. is_available ( )",
+          "score": 0.6034611463546753,
+          "rank": 9
+        },
+        {
+          "doc": "distributed_pipelining",
+          "filename": "distributed_pipelining",
+          "text": "Pipeline Parallelism\nCreated On: Jun 16, 2025 | Last Updated On: Jun 16, 2025\ntorch.distributed.pipelining  is currently in alpha state and under development. API\nchanges may be possible. It was migrated from the PiPPy project.\nWhy Pipeline Parallel?\nPipeline Parallelism is one of the primitive parallelism for deep learning. It allows the execution of \nmodel to be partitioned such that multiple micro-batches can execute different parts of the mode",
+          "score": 0.36964425444602966,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "Explain the importance of ImageNet in the works alexnet and googlenet.",
+      "results": [
+        {
+          "doc": "10_efficientnet_1905_11946",
+          "filename": "10_efficientnet_1905_11946",
+          "text": "ference. Compared to the widely used ResNet-50 (He et al.,\n2016), our Ef\ufb01cientNet-B4 improves the top-1 accuracy\nfrom 76.3% to 83.0% (+6.7%) with similar FLOPS. Besides\nImageNet, Ef\ufb01cientNets also transfer well and achieve state-of-the-art accuracy on 5 out of 8 widely used datasets, while\nreducing parameters by up to 21x than existing ConvNets.\n2. Related Work\nConvNet Accuracy: Since AlexNet (Krizhevsky et al.,\n2012) won the 2012 ImageNet competition, ConvNets have",
+          "score": 0.3131418824195862,
+          "rank": 1
+        },
+        {
+          "doc": "14_simclr_2002_05709",
+          "filename": "14_simclr_2002_05709",
+          "text": "ImageNet only in the choice of data augmentation, the use of\na nonlinear head at the end of the network, and the loss func-\ntion. The strength of this simple framework suggests that,\ndespite a recent surge in interest, self-supervised learning\nremains undervalued.\nAcknowledgements\nWe would like to thank Xiaohua Zhai, Rafael M\u00fcller and\nYani Ioannou for their feedback on the draft. We are also\ngrateful for general support from Google Research teams in\nToronto and elsewhere.\nReferences",
+          "score": -0.0018902868032455444,
+          "rank": 2
+        },
+        {
+          "doc": "14_simclr_2002_05709",
+          "filename": "14_simclr_2002_05709",
+          "text": "composition of two transformations (applied sequentially). The\nlast column re\ufb02ects the average over the row.\nTo understand the effects of individual data augmentations\nand the importance of augmentation composition, we in-\nvestigate the performance of our framework when applying\naugmentations individually or in pairs. Since ImageNet\nimages are of different sizes, we always apply crop and re-\nsize images (Krizhevsky et al., 2012; Szegedy et al., 2015),\nwhich makes it dif\ufb01cult to study other augmentations in",
+          "score": -1.241518497467041,
+          "rank": 3
+        },
+        {
+          "doc": "06_dropout_1207_0580",
+          "filename": "06_dropout_1207_0580",
+          "text": "as belonging to the class indicated by the image label.\nE ImageNet\nImageNet is a dataset of millions of labeled images in thousands of categories. The images\nwere collected from the web and labelled by human labellers using Amazon\u2019s Mechanical Turk\ncrowd-sourcing tool. In 2010, a subset of roughly 1000 images in each of 1000 classes was the\nbasis of an object recognition competition, a part of the Pascal Visual Object Challenge. This",
+          "score": -2.2180066108703613,
+          "rank": 4
+        },
+        {
+          "doc": "04_googlenet_1409_4842",
+          "filename": "04_googlenet_1409_4842",
+          "text": "keeping the computational budget constant. To optimize quality, the architectural\ndecisions were based on the Hebbian principle and the intuition of multi-scale\nprocessing. One particular incarnation used in our submission for ILSVRC14 is\ncalled GoogLeNet, a 22 layers deep network, the quality of which is assessed in\nthe context of classi\ufb01cation and detection.\n1 Introduction\nIn the last three years, mainly due to the advances of deep learning, more concretely convolutional",
+          "score": -2.469942331314087,
+          "rank": 5
+        },
+        {
+          "doc": "02_resnet_1512_03385",
+          "filename": "02_resnet_1512_03385",
+          "text": "ity. An ensemble of these residual nets achieves 3.57% error\non the ImageNet testset. This result won the 1st place on the\nILSVRC 2015 classi\ufb01cation task. We also present analysis\non CIFAR-10 with 100 and 1000 layers.\nThe depth of representations is of central importance\nfor many visual recognition tasks. Solely due to our ex-\ntremely deep representations, we obtain a 28% relative im-\nprovement on the COCO object detection dataset. Deep\nresidual nets are foundations of our submissions to ILSVRC",
+          "score": -2.6481130123138428,
+          "rank": 6
+        },
+        {
+          "doc": "06_dropout_1207_0580",
+          "filename": "06_dropout_1207_0580",
+          "text": "and there are 1000 categories instead of ten. Another difference is that the ImageNet images\noften contain multiple instances of ImageNet objects, simply due to the sheer number of object\nclasses. For this reason, even a human would have dif\ufb01culty approaching perfect accuracy on\nthis dataset. For our experiments we resized all images to 256\u0002256pixels.\nF Convolutional Neural Networks\nOur models for CIFAR-10 and ImageNet are deep, feed-forward convolutional neural networks",
+          "score": -2.7800137996673584,
+          "rank": 7
+        },
+        {
+          "doc": "11_nas_rl_1611_01578",
+          "filename": "11_nas_rl_1611_01578",
+          "text": "Krizhevsky et al., 2012) and machine translation (Sutskever et al., 2014; Bahdanau et al., 2015; Wu\net al., 2016). Along with this success is a paradigm shift from feature designing to architecture\ndesigning, i.e., from SIFT (Lowe, 1999), and HOG (Dalal & Triggs, 2005), to AlexNet (Krizhevsky\net al., 2012), VGGNet (Simonyan & Zisserman, 2014), GoogleNet (Szegedy et al., 2015), and\nResNet (He et al., 2016a). Although it has become easier, designing architectures still requires a",
+          "score": -2.9113006591796875,
+          "rank": 8
+        },
+        {
+          "doc": "06_dropout_1207_0580",
+          "filename": "06_dropout_1207_0580",
+          "text": "\u201cmax-pooling\u201d layers that report the maximum activity in local pools of convolutional units.\nThese six layers were followed by one locally-connected layer (For details see Appendix D) .\nUsing dropout in the last hidden layer gives an error rate of 15.6%.\nImageNet is an extremely challenging object recognition dataset consisting of thousands of\nhigh-resolution images of thousands of classes of object ( 11). In 2010, a subset of 1000 classes",
+          "score": -3.0993056297302246,
+          "rank": 9
+        },
+        {
+          "doc": "01_alexnet_imagenet_2012",
+          "filename": "01_alexnet_imagenet_2012",
+          "text": "is not among the \ufb01ve labels considered most probable by the model.\nImageNet consists of variable-resolution images, while our system requires a constant input dimen-\nsionality. Therefore, we down-sampled the images to a \ufb01xed resolution of 256\u0002256. Given a\nrectangular image, we \ufb01rst rescaled the image such that the shorter side was of length 256, and then\ncropped out the central 256\u0002256patch from the resulting image. We did not pre-process the images",
+          "score": -3.225776433944702,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What search algorithm does AlphaZero use instead of alpha-beta search?",
+      "results": [
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "v\u0019E[zjs].AlphaZero learns these move probabilities and value estimates entirely from self-\nplay; these are then used to guide its search.\nInstead of an alpha-beta search with domain-speci\ufb01c enhancements, AlphaZero uses a general-\npurpose Monte-Carlo tree search (MCTS) algorithm. Each search consists of a series of simu-\nlated games of self-play that traverse a tree from root srootto leaf. Each simulation proceeds by\nselecting in each state sa moveawith low visit count, high move probability and high value",
+          "score": 9.524613380432129,
+          "rank": 1
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "out when evaluating a large subtree. In contrast, alpha-beta search computes an explicit mini-\nmax, which propagates the biggest approximation errors to the root of the subtree. Using MCTS\nmay allow AlphaZero to effectively combine its neural network representations with a powerful,\ndomain-independent search.\nDomain Knowledge\n1. The input features describing the position, and the output features describing the move,\nare structured as a set of planes; i.e. the neural network architecture is matched to the",
+          "score": 5.914522171020508,
+          "rank": 2
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "An approach based on training dual policy and value networks using AlphaZero -like policy\niteration was successfully applied to improve on the state-of-the-art in Hex ( 3).\n11MCTS and Alpha-Beta Search\nFor at least four decades the strongest computer chess programs have used alpha-beta search\n(18, 23 ).AlphaZero uses a markedly different approach that averages over the position evalu-\nations within a subtree, rather than computing the minimax evaluation of that subtree. How-",
+          "score": 5.877591133117676,
+          "rank": 3
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "(see Table 1).\nWe also analysed the relative performance of AlphaZero \u2019s MCTS search compared to the\nstate-of-the-art alpha-beta search engines used by Stock\ufb01sh andElmo .AlphaZero searches just\n80 thousand positions per second in chess and 40 thousand in shogi, compared to 70 million\nforStock\ufb01sh and 35 million for Elmo .AlphaZero compensates for the lower number of evalu-\nations by using its deep neural network to focus much more selectively on the most promising",
+          "score": 5.766561985015869,
+          "rank": 4
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "ations within a subtree, rather than computing the minimax evaluation of that subtree. How-\never, chess programs using traditional MCTS were much weaker than alpha-beta search pro-\ngrams, ( 4, 24 ); while alpha-beta programs based on neural networks have previously been un-\nable to compete with faster, handcrafted evaluation functions.\nAlphaZero evaluates positions using non-linear function approximation based on a deep",
+          "score": 5.0849289894104,
+          "rank": 5
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "AlphaZero evaluates positions using non-linear function approximation based on a deep\nneural network, rather than the linear function approximation used in typical chess programs.\nThis provides a much more powerful representation, but may also introduce spurious approxi-\nmation errors. MCTS averages over these approximation errors, which therefore tend to cancel\nout when evaluating a large subtree. In contrast, alpha-beta search computes an explicit mini-",
+          "score": 4.410152912139893,
+          "rank": 6
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "and a tabula rasa reinforcement learning algorithm.\nInstead of a handcrafted evaluation function and move ordering heuristics, AlphaZero utilises\na deep neural network (p;v) =f\u0012(s)with parameters \u0012. This neural network takes the board po-\nsitionsas an input and outputs a vector of move probabilities pwith components pa=Pr(ajs)\n2for each action a, and a scalar value vestimating the expected outcome zfrom position s,\nv\u0019E[zjs].AlphaZero learns these move probabilities and value estimates entirely from self-",
+          "score": 4.188767910003662,
+          "rank": 7
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "losses respectively,\n(p;v) =f\u0012(s); l = (z\u0000v)2\u0000\u0019\u0019\u0019>logp+cjj\u0012jj2(1)\nwherecis a parameter controlling the level of L2weight regularisation. The updated parameters\nare used in subsequent games of self-play.\nThe AlphaZero algorithm described in this paper differs from the original AlphaGo Zero\nalgorithm in several respects.\nAlphaGo Zero estimates and optimises the probability of winning, assuming binary win/loss\noutcomes. AlphaZero instead estimates and optimises the expected outcome, taking account of",
+          "score": 4.166556358337402,
+          "rank": 8
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "the-art programs are based on powerful engines that search many millions of positions, leverag-\ning handcrafted domain expertise and sophisticated domain adaptations. AlphaZero is a generic\nreinforcement learning algorithm \u2013 originally devised for the game of Go \u2013 that achieved su-\nperior results within a few hours, searching a thousand times fewer positions, given no domain\n3The prevalence of draws in high-level chess tends to compress the Elo scale, compared to shogi or Go.",
+          "score": 3.915585994720459,
+          "rank": 9
+        },
+        {
+          "doc": "18_alphazero_1712_01815",
+          "filename": "18_alphazero_1712_01815",
+          "text": "ons ( 5). These programs use a similar algorithm to computer chess programs, again based on a\nhighly optimised alpha-beta search engine with many domain-speci\ufb01c adaptations.\nGo is well suited to the neural network architecture used in AlphaGo because the rules of\nthe game are translationally invariant (matching the weight sharing structure of convolutional\nnetworks), are de\ufb01ned in terms of liberties corresponding to the adjacencies between points",
+          "score": 3.089620590209961,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What is internal covariate shift, and how does it affect training?",
+      "results": [
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "ratesandcarefulparameterinitialization,andmakesitno -\ntoriously hard to train models with saturating nonlineari-\nties. We refer to this phenomenon as internal covariate\nshift, and address the problem by normalizing layer in-\nputs. Ourmethoddrawsitsstrengthfrommakingnormal-\nizationapartofthemodelarchitectureandperformingthe\nnormalization for each training mini-batch . Batch Nor-\nmalizationallowsustousemuchhigherlearningratesand\nbe less careful about initialization. It also acts as a regu-",
+          "score": 4.656845569610596,
+          "rank": 1
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "that the distribution of nonlinearity inputs remains more\nstable as the network trains, then the optimizer would be\nless likely to get stuck in the saturated regime, and the\ntrainingwouldaccelerate.\nWe refer to the change in the distributions of internal\nnodes of a deep network, in the course of training, as In-\nternal Covariate Shift . Eliminating it offers a promise of\nfaster training. We propose a new mechanism, which we\ncallBatch Normalization , that takes a step towards re-",
+          "score": 4.615631580352783,
+          "rank": 2
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "that we can match its performance using only 7% of the\ntraining steps, and can further exceed its accuracy by a\nsubstantial margin. Using an ensemble of such networks\ntrained with Batch Normalization, we achieve the top-5\nerror rate that improves upon the best known results on\nImageNetclassi\ufb01cation.2 Towards Reducing Internal\nCovariateShift\nWe de\ufb01ne Internal Covariate Shift as the change in the\ndistribution of network activations due to the change in\nnetworkparametersduringtraining. Toimprovethetrain-",
+          "score": 3.7508273124694824,
+          "rank": 3
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "callBatch Normalization , that takes a step towards re-\nducing internal covariate shift, and in doing so dramati-\ncally accelerates the training of deep neural nets. It ac-\ncomplishes this via a normalization step that \ufb01xes the\nmeansandvariancesoflayerinputs. BatchNormalization\nalso has a bene\ufb01cial effect on the gradient \ufb02ow through\nthe network, by reducing the dependence of gradients\non the scale of the parameters or of their initial values.\nThis allows us to use much higher learning rates with-",
+          "score": 3.536703586578369,
+          "rank": 4
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "networkparametersduringtraining. Toimprovethetrain-\ning, we seek to reduce the internal covariate shift. By\n\ufb01xingthe distributionof the layer inputs xas the training\nprogresses,weexpecttoimprovethetrainingspeed. Ithas\nbeen long known (LeCunetal., 1998b; Wiesler &Ney,\n2011) that the network training convergesfaster if its in-\nputsarewhitened\u2013i.e.,linearlytransformedtohavezero\nmeansandunitvariances,anddecorrelated. Aseachlayer\nobservestheinputsproducedbythelayersbelow,itwould",
+          "score": 3.044081211090088,
+          "rank": 5
+        },
+        {
+          "doc": "02_resnet_1512_03385",
+          "filename": "02_resnet_1512_03385",
+          "text": "computation , 9(8):1735\u20131780, 1997.\n[16] S. Ioffe and C. Szegedy. Batch normalization: Accelerating deep\nnetwork training by reducing internal covariate shift. In ICML , 2015.\n[17] H. Jegou, M. Douze, and C. Schmid. Product quantization for nearest\nneighbor search. TPAMI , 33, 2011.\n[18] H. Jegou, F. Perronnin, M. Douze, J. Sanchez, P. Perez, and\nC. Schmid. Aggregating local image descriptors into compact codes.\nTPAMI , 2012.\n[19] Y . Jia, E. Shelhamer, J. Donahue, S. Karayev, J. Long, R. Girshick,",
+          "score": 1.9597810506820679,
+          "rank": 6
+        },
+        {
+          "doc": "14_simclr_2002_05709",
+          "filename": "14_simclr_2002_05709",
+          "text": "network training by reducing internal covariate shift. arXiv\npreprint arXiv:1502.03167 , 2015.\nJi, X., Henriques, J. F., and Vedaldi, A. Invariant information\nclustering for unsupervised image classi\ufb01cation and segmenta-\ntion. In Proceedings of the IEEE International Conference on\nComputer Vision , pp. 9865\u20139874, 2019.\nKingma, D. P. and Welling, M. Auto-encoding variational bayes.\narXiv preprint arXiv:1312.6114 , 2013.\nKolesnikov, A., Zhai, X., and Beyer, L. Revisiting self-supervised",
+          "score": 1.878291130065918,
+          "rank": 7
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "\ufb01tting,inabatch-normalizednetworkwefoundthatitcan\nbeeitherremovedorreducedinstrength.\n4 Experiments\n4.1 Activationsovertime\nTo verify the effects of internal covariate shift on train-\ning, and the ability of Batch Normalization to combat it,\nweconsideredtheproblemofpredictingthedigitclasson\ntheMNISTdataset(LeCunetal.,1998a). Weusedavery\nsimple network, with a 28x28binary image as input, and\n510K20K30K40K50K0.70.80.91\n  \nWithout BN\nWith BN\n\u2212202\n\u2212202\n(a) (b)WithoutBN (c)With BN",
+          "score": 1.5827454328536987,
+          "rank": 8
+        },
+        {
+          "doc": "09_vit_2010_11929",
+          "filename": "09_vit_2010_11929",
+          "text": "and Aaron van den Oord. Data-ef\ufb01cient image recognition with contrastive predictive coding. In\nICML , 2020.\n10Published as a conference paper at ICLR 2021\nSergey Ioffe and Christian Szegedy. Batch normalization: Accelerating deep network training by\nreducing internal covariate shift. 2015.\nDiederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In ICLR , 2015.\nAlexander Kolesnikov, Lucas Beyer, Xiaohua Zhai, Joan Puigcerver, Jessica Yung, Sylvain Gelly,",
+          "score": 0.7784285545349121,
+          "rank": 9
+        },
+        {
+          "doc": "05_batchnorm_1502_03167",
+          "filename": "05_batchnorm_1502_03167",
+          "text": "introduces normalized activations into the network. This\nensures that as the model is training, layers can continue\nlearningoninputdistributionsthatexhibitlessinternal co-\nvariate shift, thus accelerating the training. Furthermor e,\nthe learned af\ufb01ne transform applied to these normalized\nactivationsallowstheBNtransformtorepresenttheiden-\ntity transformationandpreservesthenetworkcapacity.\n3.1 Training and Inference with Batch-\nNormalizedNetworks\nToBatch-Normalize anetwork,wespecifyasubsetofac-",
+          "score": 0.05490914359688759,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What does \u201cIO-aware\u201d mean in the context of FlashAttention?",
+      "results": [
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "computation back to HBM. Right:Speedup over the PyTorch implementation of attention on GPT-2.\nFlashAttention does not read and write the large \ud835\udc41\u0002\ud835\udc41attention matrix to HBM, resulting in an 7.6 \u0002\nspeedup on the attention computation.\nGPUs, compute speed has out-paced memory speed [ 61,62,63], and most operations in Transformers are\nbottlenecked by memory accesses [ 43]. IO-aware algorithms have been critical for similar memory-bound",
+          "score": 1.8948215246200562,
+          "rank": 1
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "FlashAttention : Fast and Memory-E\ufb03cient Exact Attention\nwith IO-Awareness\nTri Daoy, Daniel Y. Fuy, Stefano Ermony, Atri Rudraz, and Christopher R\u00e9y\nyDepartment of Computer Science, Stanford University\nzDepartment of Computer Science and Engineering, University at Bu\ufb00alo, SUNY\n{trid,danfu}@cs.stanford.edu ,ermon@stanford.edu ,atri@buffalo.edu ,\nchrismre@cs.stanford.edu\nJune 24, 2022\nAbstract\nTransformers are slow and memory-hungry on long sequences, since the time and memory complexity",
+          "score": 1.7668567895889282,
+          "rank": 2
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "We analyze the IO complexity [ 1] ofFlashAttention , proving that it requires \ud835\udc42\u00b9\ud835\udc412\ud835\udc512\ud835\udc40\u00001\u00baHBM\naccesses where \ud835\udc51is the head dimension and \ud835\udc40is the size of SRAM, as compared to \u03a9\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baof standard\nattention. For typical values of \ud835\udc51and\ud835\udc40,FlashAttention requires many times fewer HBM accesses\ncompared to standard attention (up to 9 \u0002fewer, as shown in Fig. 2). Moreover, we provide a lower bound,\nshowing that no exact attention algorithm can asymptotically improve on the number of HBM accesses over\nall SRAM sizes.",
+          "score": 0.38462162017822266,
+          "rank": 3
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "Proposition 4. Let\ud835\udc41be the sequence length, \ud835\udc51be the head dimension, and \ud835\udc40be size of SRAM with\n\ud835\udc51\u0014\ud835\udc40\u0014\ud835\udc41\ud835\udc51. Block-sparse FlashAttention (Algorithm 5) requires \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\ud835\udc512\ud835\udc40\u00001\ud835\udc60\u00baHBM accesses\nwhere\ud835\udc60is the fraction of nonzero blocks in the block-sparsity mask.\nWe see that applying block-sparsity yields a direct improvement by the sparsity to the larger term in the\nIO complexity. For large sequence lengths \ud835\udc41,\ud835\udc60is often set to \ud835\udc41\u00001\u009d2[11] or\ud835\udc41\u00001log\ud835\udc41[3,17,92], resulting\nin\u0398\u00b9\ud835\udc41p",
+          "score": -1.3423298597335815,
+          "rank": 4
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "17:end if\n18:end for\n19:end for\n20:Return O\u0096\u2113\u0096\ud835\udc5a\u0096R.\nD Extension Details\nD.1 Block-sparse FlashAttention\nWe describe the full block-sparse FlashAttention algorithm in Algorithm 5. The algorithm is identical\nto Algorithm 2, except that we skip zero blocks.\nWe prove the IO-complexity of block-sparse FlashAttention .\nProof of Proposition 4. The proof is very similar to the proof of Theorem 2. For the block-sparse case, notice",
+          "score": -1.9390795230865479,
+          "rank": 5
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "HBM, and needs to write the outputs of size \ud835\udc412or\ud835\udc41\ud835\udc51to HBM. This incurs \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baHBM accesses.\nWe now analyze the IO complexity of FlashAttention backward pass.\nSimilar to Theorem 2, we see that each element of KandVis loaded from HBM once. Each element of\ndKanddVis only written to HBM once. We make \ud835\udc47\ud835\udc50passes over Q\u0096O\u0096dO, each pass loading all of Q\u0096O\u0096dO\nto HBM. We also make \ud835\udc47\ud835\udc50passes over dQ, each pass reading/writing all of dQfrom/to HBM. Therefore the\nnumber of HBM accesses is \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc41\ud835\udc51\ud835\udc47\ud835\udc50\u00ba=\u0398\u00b9\ud835\udc41\ud835\udc51\ud835\udc47\ud835\udc50\u00ba.",
+          "score": -2.1859030723571777,
+          "rank": 6
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "both methods avoid storing the large attention matrix in the forward pass and recompute it in the backward\npass.\nThe \ufb01rst major di\ufb00erence is that Rabe and Staats [66]focuses on the reducing the total memory footprint\n(maximum amount of GPU memory required) while FlashAttention focuses on reducing memory accesses\n(the number of memory reads/writes). As mentioned in Section 2, the amount of memory access is the",
+          "score": -2.2131171226501465,
+          "rank": 7
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "blocks are combined using the statistics to produce the \ufb01nal output. FlashAttention instead incrementally\nupdates the output (Algorithm 1 line 12) after processing each block, so only one copy of the output is needed\n(instead of\ud835\udc3ecopies for\ud835\udc3eblocks). This means that FlashAttention has smaller total memory requirement\ncompared to Rabe and Staats [66].\nThe \ufb01nal major di\ufb00erence is the way the backward pass is computed. Rabe and Staats [66]uses gradient",
+          "score": -2.52791690826416,
+          "rank": 8
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "(the number of memory reads/writes). As mentioned in Section 2, the amount of memory access is the\nprimary determining factor of runtime. Reducing memory accesses also necessarily reduces the total amount\nof memory required (e.g., if an operation incurs \ud835\udc34memory accesses, then its total memory requirement is at\nmost\ud835\udc34). As a result, FlashAttention is faster than standard attention (2-4 \u0002) while Rabe and Staats [66]",
+          "score": -3.370187520980835,
+          "rank": 9
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "Standard attention (Algorithm 0) requires \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baHBM accesses, while FlashAttention (Algorithm 1)\nrequires\u0398\u00b9\ud835\udc412\ud835\udc512\ud835\udc40\u00001\u00baHBM accesses.\nFor typical values of \ud835\udc51(64-128) and \ud835\udc40(around 100KB), \ud835\udc512is many times smaller than \ud835\udc40, and thus\nFlashAttention requires many times fewer HBM accesses than standard implementation. This leads to\nboth faster execution and lower memory footprint, which we validate in Section 4.3.\nThe main idea of the proof is that given the SRAM size of \ud835\udc40, we can load blocks of K\u0096Vof size\u0398\u00b9\ud835\udc40\u00baeach",
+          "score": -3.550663471221924,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "Why can cProfile and the CPU-mode autograd profiler give incorrect timings on CUDA code?",
+      "results": [
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "torch.utils.bottleneck  -h for more usage instructions.\nBecause your script will be profiled, please ensure that it exits in a finite amount of time.\nDue to the asynchronous nature of CUDA kernels, when running against CUDA code, the\ncProfile output and CPU-mode autograd profilers may not show correct timings: the\nreported CPU time reports the amount of time used to launch the kernels but does not\ninclude the time the kernel spent executing on a GPU unless the operation does a",
+          "score": 7.062397480010986,
+          "rank": 1
+        },
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "include the time the kernel spent executing on a GPU unless the operation does a\nsynchronize. Ops that do synchronize appear to be extremely expensive under regular\nCPU-mode profilers. In these case where timings are incorrect, the CUDA-mode autograd\nprofiler may be helpful.python  -m  torch .utils .bottleneck  /path /to /source /script .py  [args]\nWarning \u26a0\nWarning \u26a0\nTo analyze traffic and optimize your experience, we serve cookies on this site. By clicking or",
+          "score": 5.313739776611328,
+          "rank": 2
+        },
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "Similarly, Intel\u00ae VTune\u2122 Profiler  helps to analyze performance on Intel platforms\nfurther with torch.autograd.profiler.emit_itt() .\nIf you are profiling CUDA code, the first profiler that bottleneck  runs (cProfile) will\ninclude the CUDA startup time (CUDA buffer allocation cost) in its time reporting. This\nshould not matter if your bottlenecks result in code much slower than the CUDA startup\ntime.\nFor more complicated uses of the profilers (like in a multi-GPU case), please see",
+          "score": 2.41756010055542,
+          "rank": 3
+        },
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "should first check if your script is CPU-bound (\u201cCPU total time is much greater than CUDA\ntotal time\u201d). If it is CPU-bound, looking at the results of the CPU-mode autograd profiler\nwill help. If on the other hand your script spends most of its time executing on the GPU,\nthen it makes sense to start looking for responsible CUDA operators in the output of the\nCUDA-mode autograd profiler.\nOf course the reality is much more complicated and your script might not be in one of",
+          "score": 2.0239150524139404,
+          "rank": 4
+        },
+        {
+          "doc": "checkpoint",
+          "filename": "checkpoint",
+          "text": "Consequently, if any checkpointed functions involve randomness, this may result in\nincorrect gradients. (Note that if CUDA devices are among the devices detected, it will be\nprioritized; otherwise, the first device encountered will be selected.) If there are no CPU-\ntensors, the default device type state (default value is cuda, and it could be set to other\ndevice by DefaultDeviceType) will be saved and restored. However, the logic has no way",
+          "score": -0.49958229064941406,
+          "rank": 5
+        },
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or\nnavigating, you agree to allow our usage of cookies. As the current maintainers of this site,\nFacebook\u02bcs Cookies Policy applies. Learn more, including about available controls: Cookies\nPolicy.10/10/25, 3:03 PM torch.utils.bottleneck \u2014 PyTorch 2.8 documentation\nhttps://docs.pytorch.org/docs/stable/bottleneck.html 1/3To decide which (CPU-only-mode or CUDA-mode) autograd profiler output to look at, you",
+          "score": -2.546280860900879,
+          "rank": 6
+        },
+        {
+          "doc": "24_fsdp_2304_11277",
+          "filename": "24_fsdp_2304_11277",
+          "text": "fast CPU thread aggressively allocates GPU memory blocks and\ncauses defragmentations. If it is difficult to identify with certainty\nfrom latency measurements or profiled traces, CUDA malloc retry\ncan serve as a helpful indicator, which can be obtained from the\nnum_alloc_retries key in the torch.cuda.memory_stats() dictionary.\nThe experiments conducted with T5 models have demonstrated\nthat the rate limiter technique can greatly benefit training efficiency,611M 2.28B 11.3B",
+          "score": -3.398329734802246,
+          "rank": 7
+        },
+        {
+          "doc": "extending",
+          "filename": "extending",
+          "text": "down. The next feature in line will be autograd that will properly create the autograd graph and then\nredispatch down. Finally, we reach the backend kernel for CUDA which will launch the right CUDA\nkernel and return the final result. On the way out, autograd will attach the graph to the output and,\nfinally, autocast will have a chance to do any update it needs on exit.\nOne configuration of the dispatcher is the order in which all these feature and backend keys are",
+          "score": -3.5956103801727295,
+          "rank": 8
+        },
+        {
+          "doc": "bottleneck",
+          "filename": "bottleneck",
+          "text": "Of course the reality is much more complicated and your script might not be in one of\nthose two extremes depending on the part of the model you\u02bcre evaluating. If the profiler\noutputs don\u02bct help, you could try looking at the result of\ntorch.autograd.profiler.emit_nvtx()  with nvprof . However, please take into\naccount that the NVTX overhead is very high and often gives a heavily skewed timeline.\nSimilarly, Intel\u00ae VTune\u2122 Profiler  helps to analyze performance on Intel platforms",
+          "score": -5.073141098022461,
+          "rank": 9
+        },
+        {
+          "doc": "24_fsdp_2304_11277",
+          "filename": "24_fsdp_2304_11277",
+          "text": "Specifically, the caching allocator requests CUDA memory blocks\nand internally determines how to split and reuse the blocks without\nreturning them to CUDA with the goal being to reach a steady state\nwithout further calls to cudaMalloc and cudaFree .\nThe caching allocator runs from the CPU thread, meaning that it\nmust decide which caching allocator block to use for an allocation\nwhen the CPU thread processes the allocation request. It cannot\nwait until the GPU kernel needing the allocation actually runs,",
+          "score": -5.268333435058594,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "How does auto-differentiation work in these frameworks?",
+      "results": [
+        {
+          "doc": "func",
+          "filename": "func",
+          "text": "torch.func  has auto-differentiation transforms (grad(f) returns a function that computes\nthe gradient of f), a vectorization/batching transform (vmap(f) returns a function that\ncomputes f over batches of inputs), and others.\nThese function transforms can compose with each other arbitrarily. For example, composing\nvmap(grad(f))  computes a quantity called per-sample-gradients that stock PyTorch cannot\nefficiently compute today.\nWhy composable function transforms?",
+          "score": 1.5840634107589722,
+          "rank": 1
+        },
+        {
+          "doc": "16_neural_ode_1806_07366",
+          "filename": "16_neural_ode_1806_07366",
+          "text": "Joel Andersson. A general-purpose software framework for dynamic optimization . PhD thesis, 2013.\nJoel A E Andersson, Joris Gillis, Greg Horn, James B Rawlings, and Moritz Diehl. CasADi \u2013 A\nsoftware framework for nonlinear optimization and optimal control. Mathematical Programming\nComputation , In Press, 2018.\nAtilim Gunes Baydin, Barak A Pearlmutter, Alexey Andreyevich Radul, and Jeffrey Mark Siskind.\nAutomatic differentiation in machine learning: a survey. Journal of machine learning research , 18",
+          "score": -0.26604601740837097,
+          "rank": 2
+        },
+        {
+          "doc": "cmu_llmsys-04-autodiff",
+          "filename": "cmu_llmsys-04-autodiff",
+          "text": "11868 LLM Systems\nAuto Differentiation\nLei Li\n\u2022GPU is composed of \nostreaming processing units (SMs)\n\u25aaeach with four partitions of 32 cores\n\u25aashared L1 cache \nomemory\noL2 cache: share with all SMs\n\u2022Threads organized in\nogrid of thread blocks\noeach block is divided into warps \nrunning on one SM.\n2Recap\nGrid GPU\nWarp\n1Thread Block\nWarp\n1Warp\n2\nWarp\n3Warp\n4SM\npartition1\u2022Basic CUDA operations\nomemory allocation\nodata movement\nocreating threads and running on SMs",
+          "score": -1.0810999870300293,
+          "rank": 3
+        },
+        {
+          "doc": "16_neural_ode_1806_07366",
+          "filename": "16_neural_ode_1806_07366",
+          "text": "The results above extend those of Stapor et al. (2018, section 2.4.2). An extended version of\nAlgorithm 1 including derivatives w.r.t. t0andt1can be found in Appendix C. Detailed derivations\nare provided in Appendix B. Appendix D provides Python code which computes all derivatives for\nscipy.integrate.odeint by extending the autograd automatic differentiation package. This\ncode also supports all higher-order derivatives. We have since released a PyTorch (Paszke et al.,",
+          "score": -2.6133270263671875,
+          "rank": 4
+        },
+        {
+          "doc": "16_neural_ode_1806_07366",
+          "filename": "16_neural_ode_1806_07366",
+          "text": "Automatic differentiation in machine learning: a survey. Journal of machine learning research , 18\n(153):1\u2013153, 2018.\nRianne van den Berg, Leonard Hasenclever, Jakub M Tomczak, and Max Welling. Sylvester\nnormalizing \ufb02ows for variational inference. arXiv preprint arXiv:1803.05649 , 2018.\nBob Carpenter, Matthew D Hoffman, Marcus Brubaker, Daniel Lee, Peter Li, and Michael Betan-\ncourt. The Stan math library: Reverse-mode automatic differentiation in c++. arXiv preprint\narXiv:1509.07164 , 2015.",
+          "score": -2.685454845428467,
+          "rank": 5
+        },
+        {
+          "doc": "cmu_llmsys-05-dl-framework",
+          "filename": "cmu_llmsys-05-dl-framework",
+          "text": "Differentiation (recall previous lecture)\n17Gradient Computation\ntrain_step  = tf.train.GradientDescentOptimizer (0.5).minimize( cross_entropy )\u2022How to design a deep learning framework\noDesign ideas in TensorFlow\n\u25aaAbadi et al., \u201cTensorFlow: A System for Large -Scale Machine Learning\u201d, \nOSDI 2016\noBasic Graph node types in Tensorflow /Pytorch\noOverall design principles\n\u2022Hands -on practice to implement a mini -tensorflow\n\u2022Execution in Tensorflow\n18Today\u2019s Topic\n\u2022All nodes return tensors",
+          "score": -2.9027023315429688,
+          "rank": 6
+        },
+        {
+          "doc": "func",
+          "filename": "func",
+          "text": "coverage over PyTorch operations.\nIf you have suggestions on the API or use-cases you\u02bcd like to be covered, please open a\nGitHub issue or reach out. We\u02bcd love to hear about how you\u02bcre using the library.\nWhat are composable function transforms?\nA \u201cfunction transform\u201d is a higher-order function that accepts a numerical function and returns\na new function that computes a different quantity.\ntorch.func  has auto-differentiation transforms (grad(f) returns a function that computes",
+          "score": -2.9403443336486816,
+          "rank": 7
+        },
+        {
+          "doc": "16_neural_ode_1806_07366",
+          "filename": "16_neural_ode_1806_07366",
+          "text": "Yiping Lu, Aoxiao Zhong, Quanzheng Li, and Bin Dong. Beyond \ufb01nite layer neural networks:\nBridging deep architectures and numerical differential equations. arXiv preprint arXiv:1710.10121 ,\n2017.\nDougal Maclaurin, David Duvenaud, and Ryan P Adams. Autograd: Reverse-mode differentiation of\nnative Python. In ICML workshop on Automatic Machine Learning , 2015.\nHongyuan Mei and Jason M Eisner. The neural Hawkes process: A neurally self-modulating",
+          "score": -3.66262149810791,
+          "rank": 8
+        },
+        {
+          "doc": "16_neural_ode_1806_07366",
+          "filename": "16_neural_ode_1806_07366",
+          "text": "through the integrator dif\ufb01cult. We implement the adjoint sensitivity method in Python\u2019s autograd\nframework (Maclaurin et al., 2015). For the experiments in this section, we evaluated the hidden\nstate dynamics and their derivatives on the GPU using Tensor\ufb02ow, which were then called from the\nFortran ODE solvers, which were called from Python autograd code.\nTable 1: Performance on MNIST.yFrom LeCun\net al. (1998).\nTest Error # Params Memory Time\n1-Layer MLPy1.60% 0.24 M - -\nResNet 0.41% 0.60 M O(L)O(L)",
+          "score": -3.9151511192321777,
+          "rank": 9
+        },
+        {
+          "doc": "cmu_llmsys-04-autodiff",
+          "filename": "cmu_llmsys-04-autodiff",
+          "text": "oparents: the parent Nodes\n\u2022More details in next lecture\n18Implementation\nhttps://github.com/mattjj/autodidact  \u2022Autograd\u2019s  NumPy module provides primitive ops which \nlook and feel like NumPy functions, but secretly build the \ncomputation graph.\n19Wrapper around Numpy\n\u2022Learning algorithm for Neural Network\n\u2022Computation Graph\n\u2022Auto Differentiation\noconstructing the computation graph for calculating gradients\n20Today \u2019s Topic\n\u2022To learn a neural network, we need gradient of loss function \nw.r.t.  parameters. ",
+          "score": -4.444263458251953,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What are FlashMLA, DeepEP, and DeepGEMM, and what problems do they each solve?",
+      "results": [
+        {
+          "doc": "cmu_llmsys-25-sglang",
+          "filename": "cmu_llmsys-25-sglang",
+          "text": "Reinforcement learning integration\nWeight sync, asynchronous algorithms, memory saver\nveRL  Integration ( link ),Areal, LlamaFactory\nLow latency optimizations\nSpeculative decoding (e.g., EAGLE 3 ), kernel optimizations\nThe full roadmap : https://github.com/sgl -project/sglang/issues/4042  \n28A case study of the DeepSeek  system\n29\nLoad balancer + prefill / decode disaggregation + speculative decoding + quantization + ",
+          "score": -8.269318580627441,
+          "rank": 1
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "blocks are combined using the statistics to produce the \ufb01nal output. FlashAttention instead incrementally\nupdates the output (Algorithm 1 line 12) after processing each block, so only one copy of the output is needed\n(instead of\ud835\udc3ecopies for\ud835\udc3eblocks). This means that FlashAttention has smaller total memory requirement\ncompared to Rabe and Staats [66].\nThe \ufb01nal major di\ufb00erence is the way the backward pass is computed. Rabe and Staats [66]uses gradient",
+          "score": -8.364187240600586,
+          "rank": 2
+        },
+        {
+          "doc": "yiying_ai-agents",
+          "filename": "yiying_ai-agents",
+          "text": "https://gptpluginz.com/llm-agents/LLM agents can be utilized as personal assistants to assist users in breaking free from daily tasks and repetitive labor. They can analyze, plan, and solve problems independently, reducing the work pressure on individuals and enhancing task-solving efficiency.Single-agent applications\nhttps://github.com/langchain-ai/langchain",
+          "score": -8.95290756225586,
+          "rank": 3
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "Standard attention (Algorithm 0) requires \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baHBM accesses, while FlashAttention (Algorithm 1)\nrequires\u0398\u00b9\ud835\udc412\ud835\udc512\ud835\udc40\u00001\u00baHBM accesses.\nFor typical values of \ud835\udc51(64-128) and \ud835\udc40(around 100KB), \ud835\udc512is many times smaller than \ud835\udc40, and thus\nFlashAttention requires many times fewer HBM accesses than standard implementation. This leads to\nboth faster execution and lower memory footprint, which we validate in Section 4.3.\nThe main idea of the proof is that given the SRAM size of \ud835\udc40, we can load blocks of K\u0096Vof size\u0398\u00b9\ud835\udc40\u00baeach",
+          "score": -8.979684829711914,
+          "rank": 4
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "(the number of memory reads/writes). As mentioned in Section 2, the amount of memory access is the\nprimary determining factor of runtime. Reducing memory accesses also necessarily reduces the total amount\nof memory required (e.g., if an operation incurs \ud835\udc34memory accesses, then its total memory requirement is at\nmost\ud835\udc34). As a result, FlashAttention is faster than standard attention (2-4 \u0002) while Rabe and Staats [66]",
+          "score": -9.153470993041992,
+          "rank": 5
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "and sparse attention. We report a subset of baselines in the main body; Appendix E contains more baselines\nand full details.\n4Path-256 requires longer sequences but has relatively shorter paths than Path-X, so it is easier to obtain a higher accuracy.\n9Runtime. Figure 3 (left) reports the runtime in milliseconds of the forward + backward pass of FlashAt-\ntention and block-sparse FlashAttention compared to the baselines in exact, approximate, and sparse",
+          "score": -9.36859130859375,
+          "rank": 6
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "A100 GPU. Fewer HBM accesses result in faster runtime, up to a point. Right: The runtime (for seq. length 4K) of\nblock-sparse FlashAttention is faster than FlashAttention by a factor proportional to the sparsity.\nasymptotically improve on HBM accesses over all SRAM sizes. Proofs are in Appendix C.\nTheorem2. Let\ud835\udc41be the sequence length, \ud835\udc51be the head dimension, and \ud835\udc40be size of SRAM with \ud835\udc51\u0014\ud835\udc40\u0014\ud835\udc41\ud835\udc51.\nStandard attention (Algorithm 0) requires \u0398\u00b9\ud835\udc41\ud835\udc51\u00b8\ud835\udc412\u00baHBM accesses, while FlashAttention (Algorithm 1)",
+          "score": -9.376091957092285,
+          "rank": 7
+        },
+        {
+          "doc": "vTensor_ Flexible Virtual Tensor Management for Efficient LLM Serving",
+          "filename": "vTensor_ Flexible Virtual Tensor Management for Efficient LLM Serving",
+          "text": "and prefix-caching scenarios. For kernel evaluation, we com-\npare FLEXINFER against different versions of FlashAttention,\nPagedAttention from vLLM, and triton prefix-prefilling ker-\nnel from SGLang [63], which is adopted by vLLM, too. For\nconvenience, we take PagedAttention as vLLM, FlashAtten-\ntion with paged KV cache as FA_paged, our virtual-memory-\nenabled FlashAttention as FLEXINFER , native FlashAttention\nas FA_native and triton prefix-prefilling kernels as SGLang.",
+          "score": -9.37968635559082,
+          "rank": 8
+        },
+        {
+          "doc": "23_flashattention_2205_14135",
+          "filename": "23_flashattention_2205_14135",
+          "text": "\ud835\udc56\u00ba\u00001\u00b9diag\u00b9\u2113\ud835\udc56\u00ba\ud835\udc52\ud835\udc5a\ud835\udc56\u0000\ud835\udc5anew\n\ud835\udc56O\ud835\udc56\u00b8\ud835\udc52~\ud835\udc5a\ud835\udc56\ud835\udc57\u0000\ud835\udc5anew\n\ud835\udc56~P\ud835\udc56\ud835\udc57V\ud835\udc57\u00bato HBM.\n13:Write\u2113\ud835\udc56 \u2113new\n\ud835\udc56,\ud835\udc5a\ud835\udc56 \ud835\udc5anew\n\ud835\udc56to HBM.\n14:end for\n15:end for\n16:Return O.\nWe show FlashAttention \u2019s correctness, runtime, and memory requirement (proof in Appendix C).\nTheorem 1. Algorithm 1 returns O=softmax\u00b9QK>\u00baVwith\ud835\udc42\u00b9\ud835\udc412\ud835\udc51\u00baFLOPs and requires \ud835\udc42\u00b9\ud835\udc41\u00baadditional\nmemory beyond inputs and output.\n3.2 Analysis: IO Complexity of FlashAttention\nWe analyze the IO complexity of FlashAttention , showing signi\ufb01cant reduction in HBM accesses compared",
+          "score": -9.727119445800781,
+          "rank": 9
+        },
+        {
+          "doc": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "filename": "Balanced and Elastic End-to-end Training of Dynamic LLMs",
+          "text": "tutorial introduction.Computational Optimization and Applications1, 1 (01 Oct\n1992), 7\u201366. doi:10.1007/BF00247653\n[3]Davis Blalock, Jose Javier Gonzalez Ortiz, Jonathan Frankle, and John Guttag.\n2020. What is the state of neural network pruning?Proceedings of machine\nlearning and systems2 (2020), 129\u2013146.\n[4]Hongrong Cheng, Miao Zhang, and Javen Qinfeng Shi. 2024. A Survey on Deep\nNeural Network Pruning: Taxonomy, Comparison, Analysis, and Recommen-",
+          "score": -9.74921989440918,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What problem does the Model Context Protocol (MCP) solve?",
+      "results": [
+        {
+          "doc": "yiying_llm-perf",
+          "filename": "yiying_llm-perf",
+          "text": "https://lilianweng.github.io/posts/2023-06-23-agent/\nMCP (Model Context Protocol)\u25cfConnecting (N) LLMs to (M) external tools/resources used to be a NxM problem \u25cfMCP standardizes the LLM-tool communication into a N->1->M process \u25cfBuild with a client-server model \u25cfMCP client: the agent that needs to call tool/data \u25cfMCP server: a service to expose external tools and data sources",
+          "score": 5.85311222076416,
+          "rank": 1
+        },
+        {
+          "doc": "yiying_ai-agents",
+          "filename": "yiying_ai-agents",
+          "text": "LLMs + training for tool use: ToolformerMCP (Model Context Protocol)\u25cfConnecting (N) LLMs to (M) external tools/resources used to be a NxM problem \u25cfMCP standardizes the LLM-tool communication into a N->1->M process \u25cfBuild with a client-server model \u25cfMCP client: the agent that needs to call tool/data \u25cfMCP server: a service to expose external tools and data sources",
+          "score": 3.1608967781066895,
+          "rank": 2
+        },
+        {
+          "doc": "MoE Parallel Folding_ Heterogeneous Parallelism Mappings for Efficient   Large-S",
+          "filename": "MoE Parallel Folding_ Heterogeneous Parallelism Mappings for Efficient   Large-S",
+          "text": "superior performance. (2) ETP in the MoE layer introduces substantially higher communication\noverhead compared to EP, with this effect being particularly pronounced in fine-grained MoE models.\n(3) Fine-grained MoE models exhibit notably lower computation-to-communication ratios. When\nETPxEP exceeds 8, necessitating inter-node communication, communication overhead dominates,\nFigure 4: Context-scaling experiments by increasing context length and number of GPUs up to 128K\nand 1024.\n9(a) Mixtral 8x22B model",
+          "score": -2.7999556064605713,
+          "rank": 3
+        },
+        {
+          "doc": "yiying_llm-perf",
+          "filename": "yiying_llm-perf",
+          "text": "AI Agent/Workflow Frameworks\u25cfFrameworks initially proposed to standardize AI workflows, provide some out-of-box design patterns and abstractions \u25cfSome examples \u25cfLangChain: Came out the earliest, probably the most popular and hardest to use \u25cfLlamaIndex: Good RAG support \u25cfCrewAI and Camel: multi-agent framework for more complex tasks \u25cfBut a lot of unnecessary, added complexity for agents, harder to customize \u25cfMy experience of what\u2019s the easiest and sufficient for many tasks \u25cfNo framework (pure Python) \u25cfNo MCP (can just write your own functions or hooks) \u25cfNo A2A (no need for multi-agent)What is AI Agent Infra?\u25cfAgent testing and evaluation \u25cbUnit + e2e test, metrics, benchmarks, human-in-the-loop \u25cfAgent autotuning and optimization \u25cbAutomated prompt tuning, model selection, tool selection, workflow optimization \u25cfAgent hosting \u25cbServerless or long-running?  \u25cbStateful or stateless? \u25cfTooling, memory, dataDemo Time: Eigent Computer-Use Agent performing a Discord summarization taskOutline\u25cfTransformer primer \u25cfIntroduction oriented for LLM infra (perf problems), not the theory \u25cfLLM performanceSelf Attention",
+          "score": -4.342851638793945,
+          "rank": 4
+        },
+        {
+          "doc": "MoNTA_ Accelerating Mixture-of-Experts Training with   Network-Traffc-Aware Para",
+          "filename": "MoNTA_ Accelerating Mixture-of-Experts Training with   Network-Traffc-Aware Para",
+          "text": "(b)Backward Computation.\nFigure 11: Communication Conflict\nmunication, conflicts caused by asynchronous communica-\ntion between EP and DP/PP can be reduced by setting priori-\nties for different communication primitives: EP\u00bfPP\u00bfCP\u00bfDP,\nensuring the efficiency of EP AllToAll communication.\nCluster Expansion\nThis section analyzes the cluster expansion handling meth-\nods for long context MoE training in MoNTA implemen-\ntations. In the training of the MoE model, it typically in-",
+          "score": -4.534677505493164,
+          "rank": 5
+        },
+        {
+          "doc": "yiying_Overview",
+          "filename": "yiying_Overview",
+          "text": "Equipping Agents: The Power of Tooling\u2022Tools: external functions, APIs, or even another (utility) agent (e.g., MCP server)\n\u2022Agents can often decide when to call tools and what tools to call\n\u2022Common tools\n\u2022Web search + crawling\n\u2022Browser\n\u2022Social media, email hooks\n\u2022Code + CLI executionAgent Memory: Knowledge, History, State\u2022LLMs only have short-term memory (i.e., context window)\n\u2022Many agents needs long-term memory and/or internal/external knowledge",
+          "score": -4.673484802246094,
+          "rank": 6
+        },
+        {
+          "doc": "yiying_ai-agents",
+          "filename": "yiying_ai-agents",
+          "text": "AI Agent/Workflow Frameworks\u25cfFrameworks initially proposed to standardize AI workflows, provide some out-of-box design patterns and abstractions \u25cfSome examples \u25cfLangChain: Came out the earliest, probably the most popular and hardest to use \u25cfLlamaIndex: Good RAG support \u25cfCrewAI and Camel: multi-agent framework for more complex tasks \u25cfBut a lot of unnecessary, added complexity for agents, harder to customize \u25cfMy experience of what\u2019s the easiest and sufficient for many tasks \u25cfNo framework (pure Python) \u25cfNo MCP (can just write your own functions or hooks) \u25cfNo A2A (no need for multi-agent)What is AI Agent Infra?\u25cfAgent testing and evaluation \u25cbUnit + e2e test, metrics, benchmarks, human-in-the-loop \u25cfAgent autotuning and optimization \u25cbAutomated prompt tuning, model selection, tool selection, workflow optimization \u25cfAgent hosting \u25cbServerless or long-running?  \u25cbStateful or stateless? \u25cfTooling, memory, dataDemo Time: Eigent Computer-Use Agent performing a Discord summarization task",
+          "score": -5.540253639221191,
+          "rank": 7
+        },
+        {
+          "doc": "MCR-DL_ Mix-and-Match Communication Runtime for Deep Learning",
+          "filename": "MCR-DL_ Mix-and-Match Communication Runtime for Deep Learning",
+          "text": "the work handle h, which MCR-DL uses internally to wait on\nthe prior event e.\nThis scheme is similar to PyTorch\u2019s distributed module, but\nthere are a few key implementation details that enable greater\nperformance: (1): The use of multiple streams enables con-\ncurrent small-message operations (concurrent large-message\noperations are bandwidth-bound and show no bene\ufb01t), (2):\nInstead of having an overall communication stream, each back-\nend contains its own stream for overlap across backends. This",
+          "score": -5.8120436668396,
+          "rank": 8
+        },
+        {
+          "doc": "cmu_llmsys-20-FlashAttention_tridao",
+          "filename": "cmu_llmsys-20-FlashAttention_tridao",
+          "text": "Efficiency is the Bottleneck for Modeling Long Sequences with Attention\nHow to efficiently scale models  to longer sequences?\n3Context length: how many other \nelements in the sequence does \nthe current element interact with.\n2x\u2193Increasing context length slows down (or stops) trainingBackground: Attention is the Heart of Transformers\n4\nBackground: Attention Mechanism\nO = Softmax (QKT)V\n5Q\n(N x d)K\n(N x d)\nxV\n(N x d)\nxO\n(N x d)\n=\nQuery Key Similarity \nScoreAttention prob \n= row -wise normalized ",
+          "score": -6.286013126373291,
+          "rank": 9
+        },
+        {
+          "doc": "yiying_ai-agents",
+          "filename": "yiying_ai-agents",
+          "text": "https://lilianweng.github.io/posts/2023-06-23-agent/\nEquipping Agents: The Power of Tooling\u25cfTools: external functions, APIs, or even another (utility) agent (e.g., MCP server) \u25cfAgents can often decide when to call tools and what tools to call \u25cfCommon tools \u25cbWeb search + crawling \u25cbBrowser \u25cbSocial media, email hooks \u25cbCode + CLI executionhttps://lilianweng.github.io/posts/2023-06-23-agent/",
+          "score": -6.819299697875977,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What are the three core components of the TinyServe system?",
+      "results": [
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "3.1 System Overview: TinyServe\nTinyServe is a lightweight serving framework designed for serving\ntiny language models under tight memory and latency constraints.\nRather than acting as a benchmarking tool, TinyServe serves as a\nreal-time serving environment that enables sparsity-aware atten-\ntion, modular token selection, and efficient KV-cache reuse.\nThe system is organized around three core components:\n(1)Query-Aware KV Retriever: Dynamically selects relevant",
+          "score": 8.581113815307617,
+          "rank": 1
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "the training process.\nFor distributed training scenarios, TinyServe supports asynchro-\nnous gradient synchronization with configurable communication\npatterns, allowing researchers to experiment with different paral-\nlelization strategies without modifying the core training loop. This\nis particularly valuable for exploring efficient training strategies on\nresource-constrained hardware.\n3.3 Inference Time Is Dominated by Decode\nStage\nLLM inference consists of two stages: prefill and decode. In the",
+          "score": 2.7131171226501465,
+          "rank": 2
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "pages); - Reduced HBM bandwidth pressure.\nSystem Implication. TinyServe enables dynamic query-aware\nsparsity without requiring architectural retraining. The modular\nimplementation integrates directly into TinyServe\u2019s kernel loop\nand allows hardware-sensitive scheduling: e.g., keeping hot pages\nin shared memory or limiting K to match tensor core granularity.\nThe kernel design for TinyServe can be found at algorithm 1.\n3.6 Memory Efficiency Analysis",
+          "score": 2.3611176013946533,
+          "rank": 3
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "The kernel design for TinyServe can be found at algorithm 1.\n3.6 Memory Efficiency Analysis\nTo quantify memory access savings under query-aware sparsity, we\nconstruct a probabilistic cost model that accounts for (1) metadata\noverhead, (2) selected KV tokens, and (3) cross-step reuse. This anal-\nysis provides theoretical bounds on the performance improvements\nachievable through our approach.\nLet: -\ud835\udc3f: total cache length (tokens); - \ud835\udc46: page size (tokens per",
+          "score": -0.2723541557788849,
+          "rank": 4
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "sity dynamics\u2014emerge in small models under realistic serving work-\nloads. By emulating production serving scenarios with tiny LLMs,\nwe can approximate the performance trends and failure modes of\nlarge-scale deployments at a fraction of the cost.\nQuery-Aware Sparsity and Efficient KV Access. To demonstrate\nthe utility of TinyServe, we propose a query-aware token selection\nmechanism that leverages low-cost metadata to dynamically se-\nlect the most relevant parts of the KV cache for each query. This",
+          "score": -0.6477354764938354,
+          "rank": 5
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "and evaluation scripts will be made publicly available upon publi-\ncation. The codebase includes:\n\u2022TinyServe framework implementation with modular plugin\nsystem\n\u2022All baseline implementations (vLLM, TGI, TensorRT-LLM\nadapters)\n\u2022Evaluation scripts for all experiments\n\u2022Preprocessed datasets and model checkpointsMM \u201925, October 27\u201331, 2025, Dublin, Ireland Dong Liu and Yanxuan Yu\nAccuracyLatency\nThroughput\nKV Hit RateTinyLLaMA-125M\nFullCache\nStreamingLLM\nSoftPrune\nEntropyStop\nTinyServe\nAccuracyLatency\nThroughput",
+          "score": -2.0093562602996826,
+          "rank": 6
+        },
+        {
+          "doc": "Progressive Sparse Attention_ Algorithm and System Co-design for   Efficient Att",
+          "filename": "Progressive Sparse Attention_ Algorithm and System Co-design for   Efficient Att",
+          "text": "and unified memory management ( \u00a73.4).\n3.1 System Overview\nFigure 3 illustrates the overall system architecture for PSA, which comprises three key components:\nthe batch scheduler, the model executor, and the KV cache manager.\n\u2022The Batch Controller is responsible for grouping incoming requests into batches using dynamic\nbatching techniques [ 43] in a first-come-first-serve (FCFS) manner. These batches are subsequently",
+          "score": -2.2218735218048096,
+          "rank": 7
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "accuracy while achieving significant latency reduction across all\ntasks.\n4.8 KV Cache Efficiency and Access Breakdown\nWe visualize KV cache utilization over time and analyze memory\naccess patterns. Figure 6 shows cache reuse patterns, while Figure 7\nprovides detailed access breakdown. TinyServe preserves high-\nrelevance tokens and avoids cache flushing, resulting in higher\neffective reuse rate.\n4.9 Serving Synthetic Diagnostics\nTo validate behavioral consistency and stress-test our system under",
+          "score": -2.762092351913452,
+          "rank": 8
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "We use a default page size of 16 for best tradeoff.\n4.12 Multi-GPU Scaling\nWe evaluate TinyServe\u2019s scalability from 1 to 8 A100 GPUs on 128\nconcurrent prompts. Results show near-linear scaling in throughput,\nvalidating kernel fusion and inter-GPU cache reuse.\n4.13 Reproducibility and Implementation\nDetails\n4.13.1 Hyperparameter Search. We conducted extensive hyperpa-",
+          "score": -2.8304667472839355,
+          "rank": 9
+        },
+        {
+          "doc": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "filename": "TinyServe_ Query-Aware Cache Selection for Efficient LLM Serving",
+          "text": "\ud835\udc56=1softmax(\ud835\udc5e\u22a4\n\ud835\udc61\ud835\udc58\ud835\udc56)\u00b7\ud835\udc63\ud835\udc56\nThis process is latency-critical during inference due to two bot-\ntlenecks:\n\u2022Memory movement : loading all\ud835\udc58\ud835\udc56,\ud835\udc63\ud835\udc56from high-bandwidth\nmemory (HBM);\n\u2022Unstructured access : attention requires full key scan with\nno cache prefetch pattern.\nTo address this, TinyServe introduces a structured memory\nlayout via token grouping into fixed-size pages . Let\ud835\udc3e=\u00d0\ud835\udc43\n\ud835\udc57=1K\ud835\udc57\nbe partitioned into \ud835\udc43=\u2308\ud835\udc61/\ud835\udc46\u2309pages of size \ud835\udc46. Each pageK\ud835\udc57stores a\nsmall metadata summary \ud835\udf19(K\ud835\udc57)that enables relevance estimation.",
+          "score": -2.940300703048706,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "What is NVIDIA GPU Confidential Computing (CC) and how does it secure communication?",
+      "results": [
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "their memory, this encryption is separate from that used\nby NVIDIA CC. NVIDIA CC ensures the confidentiality and\nintegrity of communication between a CVM and a GPU via\nAES-GCM encryption [ 15]. A critical component of AES-\nGCM is the Initialization Vector (IV), a unique, non-repeating\nnumber (a nonce) required for each encryption session. As\nwe will show later (\u00a74.1), managing IVs presents a significant\nchallenge.\nFigure 1 illustrates the workflow of data transfers of the",
+          "score": 6.115840911865234,
+          "rank": 1
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "GPU to protect sensitive data and models from unauthorized\naccess. Moreover, the data communication between the CVM\nand the GPU enclave is encrypted, further reinforcing the\nsecurity of I/O operations.\nAlthough GPU confidential computing effectively enhances\nsecurity for traditional small-scale AI models, it significantly\nundermines the performance of LLMs in throughput and\nlatency. Our comprehensive experiments on NVIDIA H100\nGPUs reveal that the GPU enclave can incur up to a 52.8%",
+          "score": 6.101676940917969,
+          "rank": 2
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "denote ciphertexts moved from the GPU back to the CPU. After the\ntransfers, the current IV of CPU and GPU is 3 and 7, respectively.\nread/write GPU memory and modify the control flow. Hard-\nware GPU confidential computing has low performance over-\nhead and is backward-compatible with existing applications.\nThis paper focuses on studying hardware GPU confidential\ncomputing.\nA closer look at NVIDIA CC. Although CVMs encrypt\ntheir memory, this encryption is separate from that used",
+          "score": 4.933990478515625,
+          "rank": 3
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "tion of how NVIDIA Confidential Computing and PipeLLM\nexecute it.\nCPU\nGPU\nGPUCPUDecrypt Encrypt\nSaved\nTime1c 3c\n1t1c\n1t\nPipeLLMNVIDIA\nCC# 1. Swap\u00a0 from GPU\n# - PCIe transfer\n# - CPU decryption\ndata = swap_from_gpu()\n# 2. GPU computation\nllm.compute()\n# 3. Load back to GPU\n# - CPU encryption\n# - PCIe transfer\nload_back_to_gpu(data)1t\n1c\n2\n3c\n3tTime\n3t3t3c\n2\nCompute2\nCompute\nFor transparency, NVIDIA Confidential Computing per-\nforms on-the-fly encryption and decryption (indicated by",
+          "score": 4.7963175773620605,
+          "rank": 4
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "of NVIDIA Confidential Computing, while preserving its (1)\nsecurity guarantees and (2) user transparency. By user trans-\nparency, we mean that PipeLLM applies to non-modified\nLLM applications, including LLM models, deep learning\nframeworks, and any other supporting code and data. Next,\nwe elaborate on PipeLLM\u2019s threat model.\nThreat model. NVIDIA Confidential Computing aims at\nprotecting the confidentiality and integrity of applications\nrunning on GPUs; for LLM applications, these are the model",
+          "score": 4.627625942230225,
+          "rank": 5
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "commands, but this adds substantial performance overhead\ndue to extra runtime checks for indirect memory access,\nheavily used in systems like vLLM [25].\nUnlike software-based solutions, NVIDIA Confidential\nComputing relies on hardware: NVIDIA H100 GPU is the\nfirst commercial implementation with confidential comput-\ning capability [ 15]. Working with CVMs, H100 could build a\nGPU enclave, allowing users to have exclusive control over\nthe GPU and rejecting any access from the host, such as",
+          "score": 4.087099075317383,
+          "rank": 6
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "guarantees of NVIDIA Confidential Computing.\nAlthough PipeLLM does not compromise confidentiality\nor integrity, its mis-speculation introduces side channels in\nNOP transfers compared to NVIDIA Confidential Comput-\ning, including (1) attackers can detect if the LLM system is\ncurrently swapping by observing NOPs, and (2) attackers\ncould profile the frequency of prediction failures, potentially\nrevealing the swapping patterns of applications. The security",
+          "score": 3.955214023590088,
+          "rank": 7
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "gies such as Intel TDX [ 18], AMD SEV [ 2], and ARM CCA [ 3],\nserves as a prime example of this. Any software external to\na CVM is unable to access the code and data within it.\nRegarding machine learning workloads, people develop\nGPU enclaves to enhance security measures within GPUs [ 36,\n50]. A notable implementation of this is the NVIDIA H100\nGPU [ 36], which supports confidential computing inside the\nGPU to protect sensitive data and models from unauthorized",
+          "score": 3.8808560371398926,
+          "rank": 8
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "encrypted version on the CPU. This would allow the en-\ncrypted data to be transferred directly to the GPU during\nloading, thereby eliminating encryption overhead. While this\napproach improves performance, implementing it naively\ncompromises security guarantees. For example, reusing en-\ncrypted data enables attackers to identify data that matches\na previous transfer; more critically, it could make the system\nvulnerable to replay attacks [35].\nCurrently, NVIDIA Confidential Computing uses the AES-",
+          "score": 3.8148505687713623,
+          "rank": 9
+        },
+        {
+          "doc": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "filename": "PipeLLM_ Fast and Confidential Large Language Model Services with   Speculative ",
+          "text": "their memory to guarantee privacy. CVMs generally incur\nminimal performance overhead, averaging around 4% [ 24].\nI/O operations however may introduce significant perfor-\nmance overhead due to data copying and encryption [27].\nConfidential Computing (CC) on GPUs. Beyond CPU-\nbased CVMs, confidential computing on GPUs secures GPU\ncomputations such as LLM serving and training. Soter [40],\ndesigned for edge computing, uses CPU-side confidential\ncomputing to eliminate the trust on GPU hardware. It em-",
+          "score": 3.680403232574463,
+          "rank": 10
+        }
+      ]
+    },
+    {
+      "query": "Why can\u2019t you perform data-dependent operations on meta tensors?",
+      "results": [
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "represent the actual tensors. Because meta tensors do not have real data, you cannot perform\ndata-dependent operations like torch.nonzero()  or item() . In some cases, not all device\ntypes (e.g., CPU and CUDA) have exactly the same output metadata for an operation; we\ntypically prefer representing the CUDA behavior faithfully in this situation.\nAlthough in principle meta tensor computation should always be faster than an equivalent",
+          "score": 8.517169952392578,
+          "rank": 1
+        },
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "make transformations on the model before you load the actual data.\nMost operations can be performed on meta tensors, producing new meta tensors that describe\nwhat the result would have been if you performed the operation on a real tensor. You can use\nthis to perform abstract analysis without needing to spend time on compute or space to\nrepresent the actual tensors. Because meta tensors do not have real data, you cannot perform",
+          "score": 6.987880706787109,
+          "rank": 2
+        },
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "a device for initialization:\nYou cannot convert a meta tensor directly to a CPU/CUDA tensor, because the meta tensor stores\nno data and we do not know what the correct data values for your new tensor are:\nUse a factory function like torch.empty_like()  to explicitly specify how you would like the\nmissing data to be filled in.\nNN modules have a convenience method torch.nn.Module.to_empty()  that allows you to move",
+          "score": 3.9004530906677246,
+          "rank": 3
+        },
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "Meta device\nCreated On: Jun 17, 2025 | Last Updated On: Jun 17, 2025\nThe \u201cmeta\u201d device is an abstract device which denotes a tensor which records only metadata, but\nno actual data. Meta tensors have two primary use cases:\nModels can be loaded on the meta device, allowing you to load a representation of the model\nwithout actually loading the actual parameters into memory. This can be helpful if you need to\nmake transformations on the model before you load the actual data.",
+          "score": 1.6692577600479126,
+          "rank": 4
+        },
+        {
+          "doc": "24_fsdp_2304_11277",
+          "filename": "24_fsdp_2304_11277",
+          "text": "ing a rich set of data manipulation operations. Every Tensor object\nhas an associated storage that is allocated on a specific device.\nWhen Tensor s only represent simple transformations such as reshape\nand split , they can share the same underlying storage. Each Module\ndescribes a transformation from input to output values, and its\nbehavior during the forward pass is specified by its forward member\nfunction. Such a module may feature Tensor objects as parameters,",
+          "score": 0.26471370458602905,
+          "rank": 5
+        },
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "Although in principle meta tensor computation should always be faster than an equivalent\nCPU/CUDA computation, many meta tensor implementations are implemented in Python\nand have not been ported to C++ for speed, so you may find that you get lower absolute\nframework latency with small CPU tensors.\nIdioms for working with meta tensors\nAn object can be loaded with torch.load()  onto meta device by specifying\nmap_location='meta' :\n>>> torch.save(torch.randn(2), 'foo.pt' )",
+          "score": -0.15679049491882324,
+          "rank": 6
+        },
+        {
+          "doc": "meta",
+          "filename": "meta",
+          "text": "Policy.10/10/25, 3:03 PM Meta device \u2014 PyTorch 2.8 documentation\nhttps://docs.pytorch.org/docs/stable/meta.html 1/4If you have some arbitrary code which performs some tensor construction without explicitly\nspecifying a device, you can override it to instead construct on meta device by using the\ntorch.device()  context manager:\nThis is especially helpful NN module construction, where you often are not able to explicitly pass in\na device for initialization:",
+          "score": -2.635075092315674,
+          "rank": 7
+        },
+        {
+          "doc": "torch",
+          "filename": "torch",
+          "text": "torch\nCreated On: Dec 23, 2016 | Last Updated On: Mar 10, 2025\nThe torch package contains data structures for multi-dimensional tensors and defines mathematic\noperations over these tensors. Additionally, it provides many utilities for efficient serialization of\nTensors and arbitrary types, and other useful utilities.\nIt has a CUDA counterpart, that enables you to run your tensor computations on an NVIDIA GPU\nwith compute capability >= 3.0.\nTensors\nis_tensorReturns True if obj is a PyTorch tensor.",
+          "score": -3.030456066131592,
+          "rank": 8
+        },
+        {
+          "doc": "extending",
+          "filename": "extending",
+          "text": "data structures and will only consider tensors that are direct arguments to the call. You can\nreturn either a single Tensor output, or a tuple of tensors if there are multiple outputs. Also\nplease refer to the docs of Function  to find descriptions of useful methods that can be called\nonly from forward().\nsetup_context()  (optional). One can either write a \u201ccombined\u201d forward()  that accepts a",
+          "score": -3.1074986457824707,
+          "rank": 9
+        },
+        {
+          "doc": "futures",
+          "filename": "futures",
+          "text": "has thrown an error, this value() method will also throw an error.\nReturn type:\nT\nwait ( )\nBlock until the value of this Future is ready.\nIf the value contains tensors that reside on GPUs, then an additional synchronization is\nperformed with the kernels (executing on the device) which may be asynchronously\npopulating those tensors. Such sync is non-blocking, which means that wait() will inser\nthe necessary instructions in the current streams to ensure that further operations",
+          "score": -4.395951271057129,
+          "rank": 10
+        }
+      ]
+    }
+  ]
+}
