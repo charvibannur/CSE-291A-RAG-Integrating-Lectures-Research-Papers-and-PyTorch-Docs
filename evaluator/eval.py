@@ -698,7 +698,7 @@ def evaluate_cs_rag_textonly(
 
 if __name__ == "__main__":
     agg, df = evaluate_cs_rag_textonly(
-    multi_csv="queries/single_file_retrieval_queries.csv",
+    multi_csv="queries/multi_file_retrieval_queries.csv",
     single_csv="queries/single_file_retrieval_queries.csv",
     results_json="results/rag_results.json",
     out_dir="evaluator/evaluation_results"
