@@ -8,7 +8,5 @@ numpy
 matplotlib
 seaborn
 rank_bm25
-transformers
 torch
-boto3
 openai
