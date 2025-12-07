@@ -1,0 +1,24 @@
+{
+  "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "region": "us-west-2",
+  "total_queries": 15,
+  "verdict_breakdown": {
+    "error": 15
+  },
+  "mean_coverage_score": 0.0,
+  "mean_precision_score": 0.0,
+  "mean_confidence": 0.0,
+  "config": {
+    "output_dir": "evaluator/evaluation_results",
+    "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+    "region_name": "us-west-2",
+    "profile_name": null,
+    "max_tokens": 512,
+    "temperature": 0.0,
+    "top_k_contexts": 3,
+    "context_char_limit": 600,
+    "include_gold_reference": true,
+    "dry_run": false,
+    "system_prompt": "You are an impartial evaluator for Retrieval-Augmented Generation systems. Given a user question, optional gold references, and retrieved context snippets, score how well the snippets let a respondent answer the question. Return strictly valid JSON with the fields described in the user prompt."
+  }
+}

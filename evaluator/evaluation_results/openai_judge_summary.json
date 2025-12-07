@@ -1,0 +1,20 @@
+{
+  "model": "gpt-4o-mini",
+  "total_queries": 15,
+  "verdict_breakdown": {
+    "sufficient": 11,
+    "insufficient": 4
+  },
+  "mean_coverage_score": 0.7,
+  "mean_precision_score": 0.6866666666666666,
+  "mean_confidence": 0.7033333333333334,
+  "config": {
+    "model": "gpt-4o-mini",
+    "output_dir": "evaluator/evaluation_results",
+    "api_key": "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",
+    "temperature": 0.0,
+    "top_k_contexts": 3,
+    "context_char_limit": 600,
+    "system_prompt": "You are an impartial evaluator for Retrieval-Augmented Generation systems. Given a query, optional gold references, and retrieved context snippets, score whether the snippets allow answering the question faithfully. Respond strictly in JSON as instructed."
+  }
+}
