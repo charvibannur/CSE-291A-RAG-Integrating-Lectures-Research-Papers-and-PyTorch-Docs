@@ -10,20 +10,20 @@ Avg Gold Texts / Query: 1.60
 
 GLOBAL METRICS (means ± stdev)
 ------------------------------------------------------------------------------------------
-       text_recall: 0.5500 ± 0.4848 (min 0.0000, max 1.0000)
-    text_precision: 0.1000 ± 0.0894 (min 0.0000, max 0.2000)
-           text_f1: 0.1401 ± 0.1411 (min 0.0000, max 0.3333)
-     ctx_precision: 0.0665 ± 0.0512 (min 0.0000, max 0.1967)
-        ctx_recall: 0.6051 ± 0.4084 (min 0.0000, max 1.0000)
-            ctx_f1: 0.1172 ± 0.0878 (min 0.0000, max 0.3288)
-     chunk_overlap: 0.2359 ± 0.0345 (min 0.1813, max 0.2971)
-  text_supported@3: 0.2222 ± 0.2331 (min 0.0000, max 0.6667)
-     text_recall@3: 0.4667 ± 0.4989 (min 0.0000, max 1.0000)
-              bleu: 0.0342 ± 0.0343 (min 0.0000, max 0.1230)
+       text_recall: 0.6500 ± 0.4453 (min 0.0000, max 1.0000)
+    text_precision: 0.1333 ± 0.0869 (min 0.0000, max 0.3000)
+           text_f1: 0.1855 ± 0.1288 (min 0.0000, max 0.3333)
+     ctx_precision: 0.0757 ± 0.0457 (min 0.0000, max 0.1915)
+        ctx_recall: 0.7694 ± 0.3549 (min 0.0000, max 1.0000)
+            ctx_f1: 0.1353 ± 0.0779 (min 0.0000, max 0.3214)
+     chunk_overlap: 0.2424 ± 0.0361 (min 0.1931, max 0.3293)
+  text_supported@3: 0.2444 ± 0.2266 (min 0.0000, max 0.6667)
+     text_recall@3: 0.5667 ± 0.4784 (min 0.0000, max 1.0000)
+              bleu: 0.0439 ± 0.0310 (min 0.0000, max 0.1136)
 
 SPLIT-SPECIFIC (means)
 ------------------------------------------------------------------------------------------
-MULTI  | n=5   | tF1=0.1111  cF1=0.1167  tR@3=0.2000
- SINGLE | n=10  | tF1=0.1545  cF1=0.1174  tR@3=0.6000
+MULTI  | n=5   | tF1=0.1141  cF1=0.0885  tR@3=0.1000
+ SINGLE | n=10  | tF1=0.2212  cF1=0.1587  tR@3=0.8000
  BOTH   | n=0   | tF1=nan  cF1=nan  tR@3=nan
  

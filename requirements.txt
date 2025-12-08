@@ -10,3 +10,4 @@ seaborn
 rank_bm25
 torch
 openai
+tiktoken

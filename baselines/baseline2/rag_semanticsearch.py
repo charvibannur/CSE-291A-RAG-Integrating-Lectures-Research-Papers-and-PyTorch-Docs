@@ -26,8 +26,10 @@ import csv
 # Vector database and embeddings
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer, CrossEncoder
+from openai import OpenAI
+from sentence_transformers import CrossEncoder
 from rank_bm25 import BM25Okapi
+import tiktoken
 
 # Text processing
 import nltk
@@ -147,7 +149,7 @@ class LLMSystemsRAG:
     def __init__(self, 
                  data_dir: str = "data",
                  vector_db_path: str = "vector_db",
-                 embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
+                 embedding_model: str = "text-embedding-3-small",
                  rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
                  chunk_size: int = 512,
                  chunk_overlap: int = 100):
@@ -160,8 +162,16 @@ class LLMSystemsRAG:
         self.chunk_overlap = chunk_overlap
         
         # Initialize embedding model
-        logger.info(f"Loading embedding model: {embedding_model}")
-        self.embedding_model = SentenceTransformer(embedding_model)
+        logger.info(f"Preparing OpenAI embedding model: {embedding_model}")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise EnvironmentError("OPENAI_API_KEY must be set to use OpenAI embeddings.")
+        self.openai_client = OpenAI(api_key=api_key)
+        self.embedding_model = embedding_model
+        try:
+            self._tokenizer = tiktoken.encoding_for_model(embedding_model)
+        except KeyError:
+            self._tokenizer = tiktoken.get_encoding("cl100k_base")
         
         # Initialize reranking model
         logger.info(f"Loading reranking model: {rerank_model}")
@@ -179,7 +189,49 @@ class LLMSystemsRAG:
         self.bm25 = None
         self.bm25_corpus = []
         self.bm25_mapping = [] # Maps BM25 index to (doc_id, chunk_index)
-        
+
+    def _estimate_tokens(self, text: str) -> int:
+        return len(self._tokenizer.encode(text, disallowed_special=()))
+
+    def _truncate_to_limit(self, text: str, max_tokens: int) -> str:
+        token_ids = self._tokenizer.encode(text, disallowed_special=())
+        if len(token_ids) <= max_tokens:
+            return text
+        logger.warning("Truncating text exceeding %d tokens for embedding", max_tokens)
+        return self._tokenizer.decode(token_ids[:max_tokens])
+
+    def _batch_texts(self, texts: List[str], max_tokens: int = 7000) -> List[List[str]]:
+        batches = []
+        current = []
+        token_sum = 0
+        for text in texts:
+            truncated = self._truncate_to_limit(text, max_tokens)
+            tokens = self._estimate_tokens(truncated)
+            if current and token_sum + tokens > max_tokens:
+                batches.append(current)
+                current = []
+                token_sum = 0
+            current.append(truncated)
+            token_sum += tokens
+        if current:
+            batches.append(current)
+        return batches
+
+    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Embed texts using the configured OpenAI embedding model, respecting token limits."""
+        if not texts:
+            return np.empty((0, 0))
+        vectors = []
+        offset = 0
+        for batch in self._batch_texts(texts):
+            response = self.openai_client.embeddings.create(
+                model=self.embedding_model,
+                input=batch
+            )
+            vectors.extend([item.embedding for item in response.data])
+            offset += len(batch)
+        return np.array(vectors, dtype=np.float32)
+
     def _init_vector_db(self):
         """Initialize ChromaDB client and collection"""
         self.client = chromadb.PersistentClient(
@@ -310,7 +362,7 @@ class LLMSystemsRAG:
         
         # Build Vector Index
         logger.info("Generating embeddings and populating Vector DB...")
-        embeddings = self.embedding_model.encode(all_chunks, show_progress_bar=True)
+        embeddings = self._embed_texts(all_chunks)
         
         batch_size = 1000
         total_batches = (len(all_chunks) + batch_size - 1) // batch_size
@@ -331,7 +383,7 @@ class LLMSystemsRAG:
         Perform hybrid search (Vector + BM25) followed by Reranking
         """
         # 1. Vector Search
-        query_embedding = self.embedding_model.encode([query])
+        query_embedding = self._embed_texts([query])
         vector_results = self.collection.query(
             query_embeddings=query_embedding.tolist(),
             n_results=top_k * 2 # Fetch more for reranking
