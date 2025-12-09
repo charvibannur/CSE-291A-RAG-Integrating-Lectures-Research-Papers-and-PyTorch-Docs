@@ -1,22 +1,17 @@
-
-from __future__ import annotations
-
 import argparse
 import json
 import logging
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
-
 import pandas as pd
 from dotenv import load_dotenv
-env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
-load_dotenv(dotenv_path=env_path)
 from openai import OpenAI
-from evaluator import TextOnlyRAGEvaluator
+from evaluator.eval import TextOnlyRAGEvaluator
 
 logger = logging.getLogger(__name__)
-
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(dotenv_path=env_path)
 
 @dataclass
 class OpenAIJudgeConfig:
@@ -32,8 +27,6 @@ class OpenAIJudgeConfig:
         "score whether the snippets allow answering the question faithfully. "
         "Respond strictly in JSON as instructed."
     )
-
-
 
 class OpenAIJudge:
 
@@ -52,13 +45,12 @@ class OpenAIJudge:
         )
         rows = [self.judge_query(qk) for qk in all_qs]
         df = pd.DataFrame(rows)
-        per_query = os.path.join(self.config.output_dir, "openai_judge_per_query.csv")
+        per_query = os.path.join(self.config.output_dir, "openai_hybrid.csv")
         df.to_csv(per_query, index=False)
-        summary_path = os.path.join(self.config.output_dir, "openai_judge_summary.json")
+        summary_path = os.path.join(self.config.output_dir, "openai_summary_hybrid.json")
         summary = self._summarize(df)
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
-        logger.info("[OpenAI Judge] Wrote %s and %s", per_query, summary_path)
         return df
 
     def judge_query(self, canon_key: str) -> Dict[str, Any]:
@@ -94,8 +86,7 @@ class OpenAIJudge:
                 confidence=float(parsed.get("confidence", 0.0)),
                 raw_response=content,
             )
-        except Exception as err:  # pragma: no cover
-            logger.error("[OpenAI Judge] API call failed for '%s': %s", question, err)
+        except Exception as err:
             return self._record(
                 canon_key, question, subset, verdict="error", precision=0.0, confidence=0.0, error=str(err)
             )
@@ -199,7 +190,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--out-dir",
-        default="evaluator/evaluation_results",
+        default="results/",
         help="Directory for outputs.",
     )
     parser.add_argument(
