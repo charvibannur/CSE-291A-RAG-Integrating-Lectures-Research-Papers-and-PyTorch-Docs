@@ -1,6 +1,4 @@
-"""
-LLM-as-a-judge evaluation using OpenAI Chat Completions.
-"""
+
 from __future__ import annotations
 
 import argparse
@@ -11,14 +9,10 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
-
-try:  # pragma: no cover
-    from openai import OpenAI
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "openai package is required. Install it via `pip install -r requirements.txt`."
-    ) from exc
-
+from dotenv import load_dotenv
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(dotenv_path=env_path)
+from openai import OpenAI
 from evaluator import TextOnlyRAGEvaluator
 
 logger = logging.getLogger(__name__)
@@ -26,8 +20,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OpenAIJudgeConfig:
-    """OpenAI model configuration."""
-
     model: str = "gpt-4o-mini"
     output_dir: str = "evaluator/evaluation_results"
     api_key: Optional[str] = None
@@ -42,8 +34,8 @@ class OpenAIJudgeConfig:
     )
 
 
+
 class OpenAIJudge:
-    """Implements LLM-as-a-judge with OpenAI Chat Completions."""
 
     def __init__(self, evaluator: TextOnlyRAGEvaluator, config: OpenAIJudgeConfig) -> None:
         self.evaluator = evaluator
@@ -53,7 +45,6 @@ class OpenAIJudge:
             raise EnvironmentError("OPENAI_API_KEY is not set. Export it before running.")
         self.client = OpenAI(api_key=key)
 
-    # ------------------------------------------------------------------ #
     def run(self) -> pd.DataFrame:
         os.makedirs(self.config.output_dir, exist_ok=True)
         all_qs = sorted(
@@ -72,18 +63,16 @@ class OpenAIJudge:
 
     def judge_query(self, canon_key: str) -> Dict[str, Any]:
         question = self.evaluator.display_lookup.get(canon_key, canon_key)
-        gold_entry = self.evaluator.gold_lookup.get(canon_key, {"texts": []})
-        gold_texts: List[str] = gold_entry.get("texts", [])
         results_entry = self.evaluator.results_map.get(canon_key, {"texts": []})
         retrieved_texts: List[str] = results_entry.get("texts", [])
         subset = retrieved_texts[: self.config.top_k_contexts]
 
         if not subset:
             return self._record(
-                canon_key, question, gold_texts, subset, verdict="insufficient", error="no_context"
+                canon_key, question, subset, verdict="insufficient", precision=0.0, confidence=0.0, error="no_context"
             )
 
-        prompt = self._build_prompt(question, gold_texts, subset)
+        prompt = self._build_prompt(question, [], subset)
         try:
             response = self.client.chat.completions.create(
                 model=self.config.model,
@@ -99,19 +88,16 @@ class OpenAIJudge:
             return self._record(
                 canon_key,
                 question,
-                gold_texts,
                 subset,
                 verdict=parsed.get("verdict", "undecided"),
-                coverage=float(parsed.get("answer_coverage", 0.0)),
                 precision=float(parsed.get("context_precision", 0.0)),
                 confidence=float(parsed.get("confidence", 0.0)),
-                rationale=parsed.get("rationale", ""),
                 raw_response=content,
             )
         except Exception as err:  # pragma: no cover
             logger.error("[OpenAI Judge] API call failed for '%s': %s", question, err)
             return self._record(
-                canon_key, question, gold_texts, subset, verdict="error", error=str(err)
+                canon_key, question, subset, verdict="error", precision=0.0, confidence=0.0, error=str(err)
             )
 
     @staticmethod
@@ -124,7 +110,6 @@ class OpenAIJudge:
             return "\n".join(lines).strip()
         return stripped
 
-    # ------------------------------------------------------------------ #
     def _build_prompt(
         self, question: str, gold_texts: Sequence[str], retrieved_texts: Sequence[str]
     ) -> str:
@@ -157,13 +142,10 @@ class OpenAIJudge:
         self,
         canon_key: str,
         question: str,
-        gold_texts: Sequence[str],
         retrieved_subset: Sequence[str],
         verdict: str,
-        coverage: float = 0.0,
         precision: float = 0.0,
         confidence: float = 0.0,
-        rationale: str = "",
         raw_response: str = "",
         error: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -172,16 +154,13 @@ class OpenAIJudge:
             "canon_key": canon_key,
             "split": self.evaluator.query_split.get(canon_key, "unknown"),
             "verdict": verdict,
-            "coverage_score": coverage,
             "precision_score": precision,
             "confidence": confidence,
-            "rationale": rationale,
             "raw_response": raw_response,
             "error": error,
             "model": self.config.model,
             "num_contexts": len(list(retrieved_subset)),
             "context_preview": self._preview_snippets(retrieved_subset),
-            "gold_preview": self._preview_snippets(gold_texts),
         }
 
     @staticmethod
@@ -196,10 +175,8 @@ class OpenAIJudge:
             "model": self.config.model,
             "total_queries": int(df.shape[0]),
             "verdict_breakdown": verdicts,
-            "mean_coverage_score": float(df["coverage_score"].fillna(0.0).mean()),
             "mean_precision_score": float(df["precision_score"].fillna(0.0).mean()),
             "mean_confidence": float(df["confidence"].fillna(0.0).mean()),
-            "config": asdict(self.config),
         }
 
 
@@ -226,14 +203,9 @@ def _parse_args() -> argparse.Namespace:
         help="Directory for outputs.",
     )
     parser.add_argument(
-        "--model",
-        default="gpt-4o-mini",
-        help="OpenAI model id (e.g., gpt-4o, gpt-4o-mini, gpt-4.1).",
-    )
-    parser.add_argument(
         "--temperature",
         type=float,
-        default=0.0,
+        default=0.3,
         help="Sampling temperature.",
     )
     parser.add_argument(
@@ -248,11 +220,6 @@ def _parse_args() -> argparse.Namespace:
         default=600,
         help="Character limit per snippet in prompt.",
     )
-    parser.add_argument(
-        "--api-key",
-        default=None,
-        help="Optional OpenAI API key (otherwise read from OPENAI_API_KEY env var).",
-    )
     return parser.parse_args()
 
 
@@ -266,9 +233,9 @@ def main() -> None:
         out_dir=args.out_dir,
     )
     config = OpenAIJudgeConfig(
-        model=args.model,
+        model="gpt-4o-mini",
         output_dir=args.out_dir,
-        api_key=args.api_key,
+        api_key=None,
         temperature=args.temperature,
         top_k_contexts=args.context_topk,
         context_char_limit=args.context_char_limit,
