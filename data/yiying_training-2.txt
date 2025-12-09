@@ -9,6 +9,7 @@ Background: distributed training on Trainium
 Training Setups
 5© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
 HLAT Model Architecture
+
 6•HLAT adopts the decoder-only transformer architecture and applies same modifications used in LLaMA 7B•pre-normalization with RMSNorm•SwiGLU activation function•Rotary Embeddings•4K sequence length•Dataset•We use public datasets and train for 1.8T tokens© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
 Training Hyperparameters
 7•Cosine learning rate scheduler •Maximum learning rate of 3𝑒−4.•Minimum learning rate of 3𝑒−5.•Linear warmup of 2000 steps.•AdamW optimizer with 𝛽=[0.9,0.95].•Weight decay value of 0.1 for all parameters, including normalization weights.•Gradient-norm clipping of 1.0.•1.8 trillion tokens, ~450k steps© 2025, Amazon Web Services, Inc. or its affiliates. All rights reserved. Amazon Confidential and Trademark.
