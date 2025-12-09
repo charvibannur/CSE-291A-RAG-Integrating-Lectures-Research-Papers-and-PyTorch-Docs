@@ -45,7 +45,7 @@ class OpenAIJudge:
         )
         rows = [self.judge_query(qk) for qk in all_qs]
         df = pd.DataFrame(rows)
-        per_query = os.path.join(self.config.output_dir, "openai_hybrid.csv")
+        per_query = os.path.join(self.config.output_dir, "openai_query_hybrid.csv")
         df.to_csv(per_query, index=False)
         summary_path = os.path.join(self.config.output_dir, "openai_summary_hybrid.json")
         summary = self._summarize(df)
