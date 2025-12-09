@@ -11,7 +11,7 @@
   "config": {
     "model": "gpt-4o-mini",
     "output_dir": "evaluator/evaluation_results",
-    "api_key": "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",
+    "api_key": "",
     "temperature": 0.0,
     "top_k_contexts": 3,
     "context_char_limit": 600,
