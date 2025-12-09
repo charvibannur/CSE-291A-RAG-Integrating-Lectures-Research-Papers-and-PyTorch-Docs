@@ -11,7 +11,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger("run_rag_and_eval")
-
+from dotenv import load_dotenv
 
 def find_repo_root(script_path: Path) -> Path:
     return (script_path.parent.parent.parent).resolve()
@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     script_path = Path(__file__).resolve()
     repo_root = find_repo_root(script_path)
     os.chdir(repo_root)
-    logger.info("Repo root: %s", repo_root)
+    load_dotenv(dotenv_path=repo_root / ".env")
 
     python = args.python or os.environ.get("PYTHON") or sys.executable
     # If python is something like 'python3 -u' we still check the binary
