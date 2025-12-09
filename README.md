@@ -77,6 +77,14 @@ single_file = queries_dir / "single_file_retrieval_queries.csv" # Change path
 ```
 An example of the queries.csv files are present in the queries folder.
 
+To run the RAG pipeline use the following command.
+```
+python model/script.py \
+    --openai-key $OPENAI_API_KEY \
+    --rag-script model/hybrid_rag.py \
+    --eval-script evaluator/eval.py
+```
+
 ### Evaluator:
 Our custom evaluator suits consist of a list of metrics that prioritise retrievals that are factually correct and contextually aligned with the gold standard.
 ```bash
