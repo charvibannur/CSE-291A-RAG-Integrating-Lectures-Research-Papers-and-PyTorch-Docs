@@ -20,8 +20,13 @@ Thumbs.db
 outputs/
 runs/
 
-.env
+*.env
 
 build/
 dist/
 *.egg-info/
+
+*.deepeval
+*vector_db*
+
+evaluate_rag.py
