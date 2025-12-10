@@ -150,7 +150,8 @@ class LLMSystemsRAG:
                  data_dir: str = "data",
                  vector_db_path: str = "vector_db",
                  embedding_model: str = "text-embedding-3-small",
-                 rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                 rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-12-v2",
+                #  rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
                  chunk_size: int = 512,
                  chunk_overlap: int = 100):
         """

@@ -1,0 +1,42 @@
+{
+  "total_queries": 15,
+  "models_evaluated": [
+    "Baseline 1 (BM25)",
+    "Baseline 2 (Semantic)",
+    "Hybrid RAG"
+  ],
+  "metrics_used": [
+    "ContextualPrecisionMetric",
+    "ContextualRecallMetric",
+    "ContextualRelevancyMetric",
+    "AnswerRelevancyMetric",
+    "FaithfulnessMetric"
+  ],
+  "aggregated_results": {
+    "ContextualPrecisionMetric": {
+      "Baseline 1 (BM25)": 0.8055555555555556,
+      "Baseline 2 (Semantic)": 0.7277777777777777,
+      "Hybrid RAG": 0.8777777777777778
+    },
+    "ContextualRecallMetric": {
+      "Baseline 1 (BM25)": 0.7666666666666667,
+      "Baseline 2 (Semantic)": 0.6857142857142856,
+      "Hybrid RAG": 0.7618386243386244
+    },
+    "ContextualRelevancyMetric": {
+      "Baseline 1 (BM25)": 0.16708333065211078,
+      "Baseline 2 (Semantic)": 0.4463045886575298,
+      "Hybrid RAG": 0.4927579438105754
+    },
+    "AnswerRelevancyMetric": {
+      "Baseline 1 (BM25)": 0.794949494949495,
+      "Baseline 2 (Semantic)": 0.8415417915417915,
+      "Hybrid RAG": 0.9100593034416564
+    },
+    "FaithfulnessMetric": {
+      "Baseline 1 (BM25)": 0.951851851851852,
+      "Baseline 2 (Semantic)": 0.9851851851851853,
+      "Hybrid RAG": 0.9777777777777777
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "model": "Baseline 1 (BM25)",
+    "avg_latency": 0.0006043434143066407,
+    "median_latency": 0.000518798828125,
+    "p95_latency": 0.0009789466857910156,
+    "init_time": 0.5814061164855957
+  },
+  {
+    "model": "Baseline 2 (Semantic)",
+    "avg_latency": 0.12258777618408204,
+    "median_latency": 0.02246880531311035,
+    "p95_latency": 0.5231690406799316,
+    "init_time": 2.9490742683410645
+  },
+  {
+    "model": "Hybrid RAG",
+    "avg_latency": 0.3709855079650879,
+    "median_latency": 0.37646055221557617,
+    "p95_latency": 0.6056363582611084,
+    "init_time": 167.87382769584656
+  }
+]
